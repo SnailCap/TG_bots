@@ -1,0 +1,9 @@
+{
+  "public_home": {
+    "text": "test",
+    "keyboard_layout": [
+      ["test_button"],
+      ["start_test_process"]
+    ]
+  }
+}

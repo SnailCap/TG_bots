@@ -1,0 +1,20 @@
+{
+  "test_step_1": {
+    "text": "test step 1",
+    "keyboard_layout": [
+      ["prc_next"]
+    ]
+  },
+    "test_step_2": {
+    "text": "test step 2",
+    "keyboard_layout": [
+      ["prc_prev", "prc_next"]
+    ]
+  },
+  "test_step_3": {
+    "text": "test step 3",
+    "keyboard_layout": [
+      ["prc_prev", "prc_next"]
+    ]
+  }
+}
