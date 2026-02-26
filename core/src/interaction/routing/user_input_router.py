@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from core.src.interaction.contracts.start_page_resolver import StartPageResolver
 from core.src.interaction.contracts.ui_builder import UiBuilder
-from core.src.interaction.input.start_page_resolver import DefaultStartPageResolver
+from core.src.interaction.routing.start_page_resolver import DefaultStartPageResolver
 from core.src.interaction.input.user_input import UserInput, ServiceKind
 from core.src.interaction.logging.user_data_logger import UserDataLogger
 from core.src.interaction.ui.binding import get_default_registry

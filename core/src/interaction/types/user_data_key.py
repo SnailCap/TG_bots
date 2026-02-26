@@ -12,4 +12,5 @@ class UserDataProcessKey(str, Enum):
     FINISHED_PROCESS = "finished_process"
     CANCELED_PROCESS = "canceled_process"
     NEXT_STEP_REQUESTED = "next_step_requested"
-    PROCESSES = "process"
+
+    PROCESSES = "processes"

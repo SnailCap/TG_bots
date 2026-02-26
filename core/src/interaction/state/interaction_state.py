@@ -4,10 +4,21 @@ from typing import Any, Optional
 
 from core.src.interaction.contracts.state_store import StateStore
 from core.src.interaction.state.user_data_schema import (
+    # shape/normalization
+    ensure_page_history,
     ensure_process_slot,
     ensure_processes_root,
-    ensure_page_history,
-    ensure_user_data_shape, ProcessesDict, ProcessSlot,
+    ensure_user_data_shape,
+    make_default_process_slot,
+    # types
+    ProcessesDict,
+    ProcessSlot,
+    # slot/meta helpers (no magic strings here)
+    get_payload,
+    get_step_index as schema_get_step_index,
+    set_step_index as schema_set_step_index,
+    get_step_key as schema_get_step_key,
+    set_step_key as schema_set_step_key,
 )
 from core.src.interaction.types.user_data_key import UserDataPageKey, UserDataProcessKey
 from core.src.interaction.utils.normalize_key import normalize_key
@@ -21,21 +32,16 @@ class InteractionState:
     - Ephemeral: stored in self._meta and should live for a single update.
     """
 
-    # ---- internal constants to avoid magic strings ----
-    _PROC_META: str = "meta"
-    _PROC_PAYLOAD: str = "payload"
-    _PROC_STEP_INDEX: str = "step_index"
-
     def __init__(self, store: StateStore) -> None:
         self._store = store
         self._meta: dict[str, Any] = {}  # ephemeral per-update metadata
 
-        # One-time normalize the store shape (idempotent).
+        # Normalize the store shape (idempotent).
         fixed = ensure_user_data_shape(self._store.dump())
 
-        # Apply only the canonical system keys (don't overwrite unknown user keys).
+        # Apply only canonical system keys (don't overwrite unknown user keys).
         self._store.set(UserDataPageKey.PAGE_HISTORY, fixed.get("page_history", []))
-        self._store.set(UserDataProcessKey.PROCESSES, fixed.get("process", {}))
+        self._store.set(UserDataProcessKey.PROCESSES, fixed.get("processes", {}))
 
         if fixed.get("current_page") is not None:
             self._store.set(UserDataPageKey.CURRENT_PAGE, normalize_key(fixed["current_page"]))
@@ -45,6 +51,10 @@ class InteractionState:
 
         if fixed.get("name") is not None:
             self._store.set(UserDataPageKey.NAME, fixed["name"])
+
+        # Invariant: if current_process points to a missing slot, recreate the slot (fail-soft).
+        if self.has_active_process():
+            _ = self.get_active_process()
 
     # ====== metadata (ephemeral) ======
 
@@ -83,11 +93,12 @@ class InteractionState:
         return procs
 
     def _get_or_create_process_slot(self, process_name: str) -> ProcessSlot:
+        process_name = normalize_key(process_name)
         procs = self._get_processes_root()
 
         slot = procs.get(process_name)
         if slot is None:
-            slot = {"meta": {"step_index": 0}, "payload": {}}
+            slot = make_default_process_slot()
 
         slot = ensure_process_slot(slot)
         procs[process_name] = slot
@@ -95,8 +106,9 @@ class InteractionState:
         return slot
 
     def set_active_process(self, name: str) -> None:
+        name = normalize_key(name)
         self.set(UserDataProcessKey.CURRENT_PROCESS, name)
-        self._get_or_create_process_slot(str(name))
+        self._get_or_create_process_slot(name)
 
     def clear_active_process(self) -> None:
         self.pop(UserDataProcessKey.CURRENT_PROCESS)
@@ -109,46 +121,70 @@ class InteractionState:
         if not name:
             raise RuntimeError("No active process is set")
 
-        name_str = str(name)
-        # Ensure the slot exists & is well-formed.
+        name_str = normalize_key(name)
         self._get_or_create_process_slot(name_str)
         return name_str
 
     def get_process_payload(self, process_name: str) -> dict[str, Any]:
-        return self._get_or_create_process_slot(process_name)["payload"]
+        slot = self._get_or_create_process_slot(normalize_key(process_name))
+        return get_payload(slot)
 
     def update_process_payload(self, process_name: str, **kwargs: Any) -> None:
+        process_name = normalize_key(process_name)
         slot = self._get_or_create_process_slot(process_name)
-        slot["payload"].update(kwargs)
+
+        get_payload(slot).update(kwargs)
 
         procs = self._get_processes_root()
         procs[process_name] = slot
         self.set(UserDataProcessKey.PROCESSES, procs)
 
     def get_step_index(self, process_name: str, default: int = 0) -> int:
-        slot = self._get_or_create_process_slot(process_name)
-        value = slot["meta"].get("step_index", default)
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return int(default)
+        slot = self._get_or_create_process_slot(normalize_key(process_name))
+        return schema_get_step_index(slot, default)
 
     def set_step_index(self, process_name: str, index: int) -> None:
+        process_name = normalize_key(process_name)
         slot = self._get_or_create_process_slot(process_name)
-        slot["meta"]["step_index"] = int(index)
+
+        schema_set_step_index(slot, index)
+
+        procs = self._get_processes_root()
+        procs[process_name] = slot
+        self.set(UserDataProcessKey.PROCESSES, procs)
+
+    def get_step_key(self, process_name: str) -> Optional[str]:
+        slot = self._get_or_create_process_slot(normalize_key(process_name))
+        return schema_get_step_key(slot)
+
+    def set_step_key(self, process_name: str, step_key: str | None) -> None:
+        process_name = normalize_key(process_name)
+        slot = self._get_or_create_process_slot(process_name)
+
+        schema_set_step_key(slot, step_key)
 
         procs = self._get_processes_root()
         procs[process_name] = slot
         self.set(UserDataProcessKey.PROCESSES, procs)
 
     def clear_process_state(self, process_name: str) -> None:
+        process_name = normalize_key(process_name)
         procs = self._get_processes_root()
+
         if process_name in procs:
             procs.pop(process_name, None)
             self.set(UserDataProcessKey.PROCESSES, procs)
 
+        # Invariant: if we removed the active process slot, clear pointer too.
+        if self.has_active_process():
+            try:
+                active = self.get_active_process()
+            except RuntimeError:
+                return
+            if active == process_name:
+                self.clear_active_process()
+
     # ====== step flow flags (ephemeral) ======
-    # (Оставлено для обратной совместимости; в Variant A почти не используется)
 
     def request_next_step(self) -> None:
         self.set_meta(UserDataProcessKey.NEXT_STEP_REQUESTED, True)
@@ -157,14 +193,14 @@ class InteractionState:
         return bool(self.pop_meta(UserDataProcessKey.NEXT_STEP_REQUESTED, False))
 
     def set_finished_process(self, process_name: str) -> None:
-        self.set_meta(UserDataProcessKey.FINISHED_PROCESS, process_name)
+        self.set_meta(UserDataProcessKey.FINISHED_PROCESS, normalize_key(process_name))
 
     def set_canceled_process(self, process_name: str) -> None:
-        self.set_meta(UserDataProcessKey.CANCELED_PROCESS, process_name)
+        self.set_meta(UserDataProcessKey.CANCELED_PROCESS, normalize_key(process_name))
 
     def get_finished_process(self) -> Optional[str]:
         value = self.get_meta(UserDataProcessKey.FINISHED_PROCESS)
-        return str(value) if value is not None else None
+        return normalize_key(value) if value is not None else None
 
     def cancel_current_process(self) -> None:
         if not self.has_active_process():
@@ -205,8 +241,15 @@ class InteractionState:
     def push_page_to_history(self, page_name: str) -> None:
         name = normalize_key(page_name)
         history = self.get_page_history()
+
+        # avoid consecutive duplicates
         if not history or history[-1] != name:
             history.append(name)
+
+            # prevent unbounded growth
+            if len(history) > 50:
+                history = history[-50:]
+
             self.set_page_history(history)
 
     def get_previous_page(self) -> Optional[str]:

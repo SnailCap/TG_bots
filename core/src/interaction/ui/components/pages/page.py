@@ -4,7 +4,7 @@ from typing import Optional, Any, Sequence, Dict
 
 from telegram import InlineKeyboardMarkup
 
-from core.src.interaction.input.input_reactive import InputReactive
+from core.src.interaction.contracts.input_reactive import InputReactive
 from core.src.interaction.input.user_input import UserInput
 from core.src.interaction.ui.components import UiComponent
 from core.src.interaction.ui.builders.keyboard_builder import KeyboardBuilder

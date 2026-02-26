@@ -1,46 +1,34 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from telegram import Update
 from telegram.ext import ContextTypes
 
 from core.src.interaction.contracts.messenger import Messenger
+from core.src.interaction.input.responder import Responder
+from core.src.interaction.input.intents.service_intent import (
+    ServiceCallback,
+    ServiceCallbackParser,
+    ServiceKind,
+)
+from core.src.interaction.input.snapshot import InputSnapshot
 from core.src.interaction.state import InteractionState
 from core.src.interaction.types import ProcessCommand, ServiceCallbackData
 from core.src.interaction.types.user_input_type import UserInputType
 from core.src.interaction.types.user_role import UserRole
 
 
-class ServiceKind(str, Enum):
-    NONE = "none"
-    NAV = "nav"
-    NAV_TO = "nav_to"
-    PRC_START = "prc_start"
-    PRC_CMD = "prc_cmd"
-
-
-@dataclass(frozen=True, slots=True)
-class ServiceCallback:
-    kind: ServiceKind
-    raw: str
-    nav_target: Optional[str] = None
-    process_key: Optional[str] = None
-    process_cmd: Optional[ProcessCommand] = None
-
-
 class UserInput:
     """
     Facade over Telegram Update + PTB Context + DB session + InteractionState.
 
-    Goals:
-    - Keep update/context/session available (backwards compatible).
-    - Provide parsed snapshot fields (type/text/callback_data).
-    - Centralize parsing of callback_data into intent-level flags.
-    - Avoid magic strings: rely on enums (ServiceCallbackData / ProcessCommand).
+    Responsibilities:
+    - Hold infra objects (update/context/session/messenger/state) and identity snapshot
+    - Expose an InputSnapshot for routing
+    - Provide thin access to parsed service intent (via ServiceCallbackParser)
+    - Provide thin access to message delivery (via Responder)
     """
 
     def __init__(
@@ -51,14 +39,14 @@ class UserInput:
         *,
         messenger: Messenger,
         state: InteractionState,
+        service_parser: ServiceCallbackParser | None = None,
     ) -> None:
         self._update = update
         self._context = context
-        self._session: AsyncSession = session
+        self._session = session
         self._messenger = messenger
-        self._state: InteractionState = state
+        self._state = state
 
-        # identity snapshot (safe)
         user = update.effective_user
         chat = update.effective_chat
         msg = update.effective_message
@@ -71,21 +59,17 @@ class UserInput:
         self.chat_id: int = chat.id if chat else 0
         self.message_id: int = msg.message_id if msg else 0
 
+        # set by identity layer
         self.user_role: UserRole = UserRole.PUBLIC
 
-        # input (parsed snapshot)
-        self.type: UserInputType = UserInputType.UNKNOWN
-        self.text: Optional[str] = None
-        self.callback_data: Optional[str] = None
+        self._snapshot: InputSnapshot = InputSnapshot.from_update(update)
 
-        self._parse_input_from_update()
+        self._service_parser = service_parser or ServiceCallbackParser()
+        self._responder = Responder(messenger=messenger, chat_id=self.chat_id, message_id=self.message_id)
 
-        # Cached parsed service callback (single source of truth)
         self._service: Optional[ServiceCallback] = None
 
-    # -------------------------
-    # Backwards-compatible access
-    # -------------------------
+    # --- infra ---
 
     @property
     def update(self) -> Update:
@@ -107,143 +91,63 @@ class UserInput:
     def state(self) -> InteractionState:
         return self._state
 
-    # -------------------------
-    # Parsing (private)
-    # -------------------------
+    # --- snapshot passthrough ---
 
-    def _parse_input_from_update(self) -> None:
-        if self._update.callback_query is not None:
-            self._parse_callback()
-            return
+    @property
+    def type(self) -> UserInputType:
+        return self._snapshot.type
 
-        if self._update.message is not None:
-            self._parse_message(self._update.message.text)
-            return
+    @property
+    def text(self) -> Optional[str]:
+        return self._snapshot.text
 
-        self.type = UserInputType.UNKNOWN
-        self.text = None
-        self.callback_data = None
-
-    def _parse_callback(self) -> None:
-        self.type = UserInputType.CALLBACK
-        self.callback_data = self._update.callback_query.data or ""
-        self.text = None
-
-    def _parse_message(self, raw_text: Optional[str]) -> None:
-        if not raw_text:
-            self.type = UserInputType.MESSAGE
-            self.text = None
-            self.callback_data = None
-            return
-
-        if raw_text.startswith("/"):
-            self.type = UserInputType.COMMAND
-            self.text = raw_text[1:]
-            self.callback_data = None
-            return
-
-        self.type = UserInputType.MESSAGE
-        self.text = raw_text
-        self.callback_data = None
-
-    # -------------------------
-    # Kind flags
-    # -------------------------
+    @property
+    def callback_data(self) -> Optional[str]:
+        return self._snapshot.callback_data
 
     @property
     def is_command(self) -> bool:
-        return self.type == UserInputType.COMMAND
+        return self._snapshot.is_command
 
     @property
     def is_callback(self) -> bool:
-        return self.type == UserInputType.CALLBACK
+        return self._snapshot.is_callback
 
     @property
     def is_message(self) -> bool:
-        return self.type == UserInputType.MESSAGE
-
-    # -------------------------
-    # Convenience values
-    # -------------------------
+        return self._snapshot.is_message
 
     @property
     def callback(self) -> str:
-        """Callback data as non-null string."""
-        return self.callback_data or ""
+        return self._snapshot.callback
 
     @property
     def command(self) -> Optional[str]:
-        """Command name (without '/') if this input is a command, else None."""
-        return self.text if self.is_command else None
+        return self._snapshot.command
 
     @property
     def with_send_default(self) -> bool:
-        """
-        Default render strategy:
-        - CALLBACK -> edit a bot message
-        - MESSAGE/COMMAND -> send a new bot message
-        """
-        return not self.is_callback
+        return self._snapshot.with_send_default
 
-    # -------------------------
-    # Service callback parsing (single source of truth)
-    # -------------------------
-
-    def _parse_service_callback(self) -> ServiceCallback:
-        cb = self.callback
-        if not (self.is_callback and cb.startswith(ServiceCallbackData.SVC.value)):
-            return ServiceCallback(kind=ServiceKind.NONE, raw=cb)
-
-        # NAV: exact commands first
-        if cb == ServiceCallbackData.NAV_PREVIOUS.value:
-            return ServiceCallback(kind=ServiceKind.NAV, raw=cb)
-        if cb == ServiceCallbackData.NAV_CURRENT.value:
-            return ServiceCallback(kind=ServiceKind.NAV, raw=cb)
-        if cb == ServiceCallbackData.NAV_HOME.value:
-            return ServiceCallback(kind=ServiceKind.NAV, raw=cb)
-
-        # NAV_TO
-        if cb.startswith(ServiceCallbackData.NAV_TO.value):
-            target = cb.removeprefix(ServiceCallbackData.NAV_TO.value).strip() or None
-            return ServiceCallback(kind=ServiceKind.NAV_TO, raw=cb, nav_target=target)
-
-        # PRC_START
-        if cb.startswith(ServiceCallbackData.PRC_START.value):
-            key = cb.removeprefix(ServiceCallbackData.PRC_START.value).strip() or None
-            return ServiceCallback(kind=ServiceKind.PRC_START, raw=cb, process_key=key)
-
-        # PRC_CMD
-        if cb.startswith(ServiceCallbackData.PRC_CMD.value):
-            raw_cmd = cb.removeprefix(ServiceCallbackData.PRC_CMD.value).strip()
-            cmd: ProcessCommand | None
-            try:
-                cmd = ProcessCommand(raw_cmd) if raw_cmd else None
-            except ValueError:
-                cmd = None
-            return ServiceCallback(kind=ServiceKind.PRC_CMD, raw=cb, process_cmd=cmd)
-
-        # Unknown svc namespace (still svc:* but not supported here)
-        return ServiceCallback(kind=ServiceKind.NONE, raw=cb)
+    # --- service intent (single source of truth) ---
 
     @property
     def service(self) -> ServiceCallback:
         if self._service is None:
-            self._service = self._parse_service_callback()
+            self._service = self._service_parser.parse(self._snapshot)
         return self._service
 
     @property
     def service_kind(self) -> ServiceKind:
         return self.service.kind
 
-    # -------------------------
-    # Service flags (backwards compatible wrappers)
-    # -------------------------
+    # --- backwards-compatible flags ---
 
     @property
     def is_service_callback(self) -> bool:
         return self.is_callback and self.callback.startswith(ServiceCallbackData.SVC.value)
 
-    # --- NAV ---
+    # NAV
 
     @property
     def is_nav_callback(self) -> bool:
@@ -269,7 +173,7 @@ class UserInput:
     def nav_target(self) -> Optional[str]:
         return self.service.nav_target
 
-    # --- PROCESS START ---
+    # PROCESS START
 
     @property
     def is_proc_start(self) -> bool:
@@ -279,7 +183,7 @@ class UserInput:
     def proc_key(self) -> Optional[str]:
         return self.service.process_key
 
-    # --- PROCESS COMMANDS ---
+    # PROCESS COMMANDS
 
     @property
     def is_proc_cmd(self) -> bool:
@@ -301,26 +205,7 @@ class UserInput:
     def is_proc_cancel(self) -> bool:
         return self.proc_cmd == ProcessCommand.CANCEL
 
-    # -------------------------
-    # Messaging
-    # -------------------------
+    # --- messaging ---
 
-    async def reply(self, text: str, reply_markup=None, with_send: bool = False):
-        """
-        Reply facade:
-        - with_send=True -> always sends a new message
-        - with_send=False -> send_or_edit using current message_id
-        """
-        if with_send:
-            return await self._messenger.send(
-                chat_id=self.chat_id,
-                text=text,
-                reply_markup=reply_markup,
-            )
-
-        return await self._messenger.send_or_edit(
-            chat_id=self.chat_id,
-            message_id=self.message_id,
-            text=text,
-            reply_markup=reply_markup,
-        )
+    async def reply(self, text: str, reply_markup: Any = None, with_send: bool = False):
+        return await self._responder.reply(text, reply_markup, with_send=with_send)

@@ -12,7 +12,7 @@ from core.src.interaction.contracts.messenger import Messenger
 from core.src.interaction.contracts.session_provider import SessionProvider
 from core.src.interaction.contracts.state_store import StateStore
 from core.src.interaction.input.user_input import UserInput
-from core.src.interaction.input.user_input_router import UserInputRouter
+from core.src.interaction.routing.user_input_router import UserInputRouter
 from core.src.interaction.state import InteractionState
 from core.src.interaction.types.user_role import UserRole
 from core.src.services.identity.contracts import IdentityProvider

@@ -15,7 +15,7 @@ from core.src.db.providers.sqlalchemy_session_provider import SqlAlchemySessionP
 from core.src.interaction.adapters.ptb.update_dispatcher import UpdateDispatcher
 from core.src.interaction.config.api import build_config_loader
 from core.src.interaction.config.paths import ResourcePaths
-from core.src.interaction.input.user_input_router import UserInputRouter
+from core.src.interaction.routing.user_input_router import UserInputRouter
 from core.src.interaction.ui.builders.renderable_builder import RenderableBuilder
 from core.src.interaction.ui.builders.ui_builder import PtbUiBuilder
 from core.src.runtime import AppConfig, run_app

@@ -39,14 +39,17 @@ class Process(ABC):
 
     # === lifecycle ===
 
-    async def start(self, user_input: UserInput) -> List[ProcessEffect]: # NOSONAR
+    async def start(self, user_input: UserInput) -> List[ProcessEffect]:  # NOSONAR
         key = self._key()
-        st = user_input.state
+        state = user_input.state
 
-        st.set_active_process(key)
-        st.set_step_index(key, 0)
+        state.set_active_process(key)
+        state.set_step_index(key, 0)
 
-        # Always render the first step when the process starts.
+        # NEW: keep step_key in sync with the actual active step
+        if self.step_names:
+            state.set_step_key(key, self.step_names[0])
+
         return [self._render_current_effect(user_input)]
 
     async def handle_input(self, user_input: UserInput) -> List[ProcessEffect]:
@@ -61,45 +64,53 @@ class Process(ABC):
 
     async def go_to_next_step(self, user_input: UserInput) -> List[ProcessEffect]:
         key = self._key()
-        st = user_input.state
+        state = user_input.state
 
         if self._is_last_step_index(user_input):
             return await self.finish(user_input)
 
         idx = self._get_current_step_index(user_input)
-        st.set_step_index(key, idx + 1)
+        new_idx = idx + 1
 
-        # After changing step index, explicitly render the new current step.
+        state.set_step_index(key, new_idx)
+
+        # NEW: sync step_key
+        state.set_step_key(key, self.step_names[new_idx])
+
         return [self._render_current_effect(user_input)]
 
     async def go_to_previous_step(self, user_input: UserInput) -> List[ProcessEffect]:
         key = self._key()
-        st = user_input.state
+        state = user_input.state
 
         idx = self._get_current_step_index(user_input)
         if idx <= 0:
             return await self.cancel(user_input)
 
-        st.set_step_index(key, idx - 1)
+        new_idx = idx - 1
 
-        # After changing step index, explicitly render the new current step.
+        state.set_step_index(key, new_idx)
+
+        # NEW: sync step_key
+        state.set_step_key(key, self.step_names[new_idx])
+
         return [self._render_current_effect(user_input)]
 
     async def finish(self, user_input: UserInput) -> List[ProcessEffect]: # NOSONAR
         key = self._key()
-        st = user_input.state
+        state = user_input.state
 
         self._clear_state(user_input)
-        st.set_finished_process(key)
+        state.set_finished_process(key)
 
         return [FinishProcess(key)]
 
     async def cancel(self, user_input: UserInput) -> List[ProcessEffect]: # NOSONAR
         key = self._key()
-        st = user_input.state
+        state = user_input.state
 
         self._clear_state(user_input)
-        st.set_canceled_process(key)
+        state.set_canceled_process(key)
 
         return [CancelProcess(key)]
 
@@ -122,9 +133,9 @@ class Process(ABC):
 
     def _clear_state(self, user_input: UserInput) -> None:
         key = self._key()
-        st = user_input.state
+        state = user_input.state
 
-        if st.has_active_process() and st.get_active_process() == key:
-            st.clear_active_process()
+        if state.has_active_process() and state.get_active_process() == key:
+            state.clear_active_process()
 
-        st.clear_process_state(key)
+        state.clear_process_state(key)
