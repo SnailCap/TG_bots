@@ -7,8 +7,8 @@ import sys
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 
-from core.src.db import Base
-import core.src.db.models # noqa: F401
+from core.db import Base
+import core.db.models  # noqa: F401
 
 
 if sys.platform == "win32":
