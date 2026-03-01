@@ -25,10 +25,11 @@ class TutoringLesson(TutoringOwnedMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    student_id: Mapped[int] = mapped_column(
+    # Can be NULL until you implement matching event -> student
+    student_id: Mapped[int | None] = mapped_column(
         ForeignKey("tutoring_students.id", ondelete="RESTRICT"),
         index=True,
-        nullable=False,
+        nullable=True,
     )
 
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -36,14 +37,16 @@ class TutoringLesson(TutoringOwnedMixin, Base):
 
     status: Mapped[LessonStatus] = mapped_column(default=LessonStatus.PLANNED, nullable=False)
 
+    # UI/notes from calendar
+    title: Mapped[str | None] = mapped_column(String(512))
+    notes: Mapped[str | None] = mapped_column(Text)
+
     # Money snapshot for THIS lesson instance (important for history)
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     rate_snapshot: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
     charge_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
 
-    notes: Mapped[str | None] = mapped_column(Text)
-
-    # Google Calendar mapping
+    # Google Calendar mapping (instance-level when singleEvents=true)
     google_calendar_id: Mapped[str | None] = mapped_column(String(256), index=True)
     google_event_id: Mapped[str | None] = mapped_column(String(256))
     google_recurring_event_id: Mapped[str | None] = mapped_column(String(256))
@@ -53,13 +56,15 @@ class TutoringLesson(TutoringOwnedMixin, Base):
     meet_url: Mapped[str | None] = mapped_column(String(1024))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+    )
 
     student = relationship("TutoringStudent", back_populates="lessons")
     allocations = relationship("TutoringPaymentAllocation", back_populates="lesson")
 
     __table_args__ = (
-        # Idempotency: one Google event -> one local lesson, scoped per tutor
+        # Idempotency: one Google event instance -> one local lesson, scoped per tutor
         UniqueConstraint(
             "tutor_user_id",
             "google_calendar_id",

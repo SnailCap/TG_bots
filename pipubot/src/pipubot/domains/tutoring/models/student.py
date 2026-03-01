@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Numeric, String, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Numeric, String, UniqueConstraint, Index, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
@@ -34,6 +34,12 @@ class TutoringStudent(TutoringOwnedMixin, Base):
     payments = relationship("TutoringPayment", back_populates="student")
 
     __table_args__ = (
-        # Helps avoid collisions if you ever use telegram_id matching inside one tutor cabinet
         UniqueConstraint("tutor_user_id", "telegram_id", name="uq_tutoring_students_tutor_telegram"),
+        Index(
+            "uq_tutoring_students_active_name",
+            "tutor_user_id",
+            "full_name",
+            unique=True,
+            postgresql_where=text("is_active"),
+        ),
     )

@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.background.errors import NonRetryableTaskError
 from core.db.models import BackgroundTask
 from core.enums.background_task_enums import BackgroundTaskStatus
 from core.db.repositories.background.background_task_repository import (
@@ -29,7 +31,17 @@ class TaskDispatcher(Protocol):
 class WorkerConfig:
     poll_interval_seconds: float = 1.0
     batch_size: int = 25
-    retry_backoff_seconds: int = 30
+
+    # lease for claim
+    claim_lease_seconds: int = 120
+
+    # processing concurrency
+    max_concurrency: int = 10
+
+    # retry policy
+    retry_base_seconds: int = 10
+    retry_max_seconds: int = 15 * 60
+    retry_jitter_seconds: int = 5
 
 
 class BackgroundWorker:
@@ -65,10 +77,14 @@ class BackgroundWorker:
         if not ids:
             return 0
 
-        processed = 0
-        for task_id in ids:
-            processed += int(await self._process_one(task_id))
-        return processed
+        sem = asyncio.Semaphore(self._cfg.max_concurrency)
+
+        async def run_one(tid: int) -> bool:
+            async with sem:
+                return await self._process_one(tid)
+
+        results = await asyncio.gather(*(run_one(tid) for tid in ids), return_exceptions=False)
+        return sum(1 for r in results if r)
 
     # -------------------------
     # internals
@@ -77,7 +93,12 @@ class BackgroundWorker:
     async def _claim_batch(self) -> list[int]:
         now = utcnow()
         async with self._session_maker() as session:
-            ids = await claim_due_task_ids(session, now=now, limit=self._cfg.batch_size)
+            ids = await claim_due_task_ids(
+                session,
+                now=now,
+                limit=self._cfg.batch_size,
+                lease_seconds=self._cfg.claim_lease_seconds,
+            )
             if not ids:
                 return []
             await session.commit()
@@ -105,15 +126,33 @@ class BackgroundWorker:
     async def _handle_success(self, session: AsyncSession, task: BackgroundTask) -> None:
         await mark_task_done(session, task_id=task.id, finished_at=utcnow())
 
+    def _calc_backoff(self, retries: int) -> int:
+        base = self._cfg.retry_base_seconds * (2 ** (retries - 1))
+        base = min(base, self._cfg.retry_max_seconds)
+        jitter = random.randint(0, self._cfg.retry_jitter_seconds)
+        return base + jitter
+
     async def _handle_failure(self, session: AsyncSession, task: BackgroundTask, exc: Exception) -> None:
         log.exception("[worker] task failed id=%s type=%s", task.id, task.task_type)
 
         next_retries = task.retries + 1
+
+        if isinstance(exc, NonRetryableTaskError):
+            await mark_task_failed(
+                session,
+                task_id=task.id,
+                error=str(exc),
+                retries=next_retries,
+                finished_at=utcnow(),
+            )
+            return
+
         if next_retries <= task.max_retries:
+            delay = self._calc_backoff(next_retries)
             await reschedule_task_for_retry(
                 session,
                 task_id=task.id,
-                run_at=utcnow() + timedelta(seconds=self._cfg.retry_backoff_seconds),
+                run_at=utcnow() + timedelta(seconds=delay),
                 retries=next_retries,
                 error=str(exc),
             )

@@ -48,6 +48,8 @@ class BackgroundTask(Base):
 
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
     recurring_task_id: Mapped[int | None] = mapped_column(
         Integer,
         ForeignKey("recurring_tasks.id", ondelete="SET NULL"),

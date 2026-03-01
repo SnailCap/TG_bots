@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, Text
+from sqlalchemy import DateTime, Index, Integer, Text, String, UniqueConstraint
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import JSON as SAJSON
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,6 +16,8 @@ class RecurringTask(Base):
     __tablename__ = "recurring_tasks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
 
     task_type: Mapped[BackgroundTaskType] = mapped_column(
         SAEnum(BackgroundTaskType, native_enum=False, validate_strings=True, length=64),
@@ -39,6 +41,8 @@ class RecurringTask(Base):
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
     run_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     max_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -48,6 +52,7 @@ class RecurringTask(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     __table_args__ = (
+        UniqueConstraint("key", name="uq_recurring_tasks_key"),
         Index("ix_recurring_tasks_status_next_run", "status", "next_run_at"),
         Index("ix_recurring_tasks_task_type_status", "task_type", "status"),
     )

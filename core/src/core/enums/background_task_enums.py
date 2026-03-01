@@ -12,11 +12,10 @@ class BackgroundTaskStatus(StrEnum):
 
 
 class BackgroundTaskType(StrEnum):
-    SEND_JOIN_LINK = auto()
     SEND_NOTIFICATION = auto()
-    CLEANUP_EXPIRED_INVITES = auto()
 
 class RecurringTaskStatus(StrEnum):
     ACTIVE = auto()     # планировщик создаёт новые BackgroundTask
+    PROCESSING = auto()
     PAUSED = auto()     # временно выключена, но не удалена
     DISABLED = auto() # полностью отключена, можно считать "архивной"

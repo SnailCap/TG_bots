@@ -47,9 +47,9 @@ async def create_or_update_user(
     *,
     telegram_id: int,
     telegram_username: str = None,
-    first_name: Optional[str],
-    last_name: Optional[str],
-    role: UserRole | str | None = None,        # <-- ПРИНИМАЕМ enum ИЛИ строку
+    first_name: Optional[str] = None,
+    last_name: Optional[str] = None,
+    role: UserRole | str = UserRole.PUBLIC,
     stripe_customer_id: Optional[str] = None,
 ) -> User:
     user = await get_user_by_telegram_id(session, telegram_id)

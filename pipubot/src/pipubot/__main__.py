@@ -77,9 +77,6 @@ def register_handlers(app: Application, dispatcher: UpdateDispatcher) -> None:
 
 
 def main() -> None:
-    if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",

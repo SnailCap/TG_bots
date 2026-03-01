@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import BackgroundTask
@@ -28,10 +28,6 @@ async def create_task(
 ) -> BackgroundTask:
     """
     Create a BackgroundTask row in DB.
-
-    Notes:
-    - No transaction control here (no commit/rollback). Caller controls it.
-    - Returns ORM object with PK populated after flush.
     """
     task = BackgroundTask(
         task_type=task_type,
@@ -73,25 +69,27 @@ async def claim_due_task_ids(
         session: AsyncSession,
         *,
         now: datetime | None = None,
-        limit: int = 25,
+        limit: int = 50,
+        lease_seconds: int = 120,
 ) -> list[int]:
-    """
-    Claim (lock + mark as PROCESSING) due PENDING tasks and return their IDs.
-
-    Pattern:
-    - SELECT ids ... FOR UPDATE SKIP LOCKED
-    - UPDATE claimed ids -> PROCESSING + started_at + updated_at
-
-    Notes:
-    - No commit here. Worker should commit after claiming.
-    - SKIP LOCKED makes it safe to run multiple workers later.
-    """
     now = now or utcnow()
+    lease_until = now + timedelta(seconds=lease_seconds)
 
     statement = (
         select(BackgroundTask.id)
-        .where(BackgroundTask.status == BackgroundTaskStatus.PENDING)
-        .where(BackgroundTask.run_at <= now)
+        .where(
+            or_(
+                and_(
+                    BackgroundTask.status == BackgroundTaskStatus.PENDING,
+                    BackgroundTask.run_at <= now,
+                ),
+                and_(
+                    BackgroundTask.status == BackgroundTaskStatus.PROCESSING,
+                    BackgroundTask.lease_expires_at.isnot(None),
+                    BackgroundTask.lease_expires_at <= now,
+                ),
+            )
+        )
         .order_by(
             BackgroundTask.priority.desc(),
             BackgroundTask.run_at.asc(),
@@ -100,6 +98,7 @@ async def claim_due_task_ids(
         .with_for_update(skip_locked=True)
         .limit(limit)
     )
+
     result = await session.execute(statement)
     ids = [row[0] for row in result.all()]
     if not ids:
@@ -112,10 +111,10 @@ async def claim_due_task_ids(
             status=BackgroundTaskStatus.PROCESSING,
             started_at=now,
             updated_at=now,
+            lease_expires_at=lease_until,
             last_error=None,
         )
     )
-
     return ids
 
 
@@ -130,7 +129,7 @@ async def mark_task_done(
         finished_at: datetime | None = None,
 ) -> None:
     """
-    Mark task as DONE.
+    Mark the task as DONE.
     """
     ts = finished_at or utcnow()
     await session.execute(
@@ -140,6 +139,7 @@ async def mark_task_done(
             status=BackgroundTaskStatus.DONE,
             finished_at=ts,
             updated_at=ts,
+            lease_expires_at=None,
         )
     )
 
@@ -153,23 +153,21 @@ async def mark_task_failed(
         retries: int | None = None,
 ) -> None:
     """
-    Mark task as FAILED (terminal).
+    Mark the task as FAILED (terminal).
     """
     ts = finished_at or utcnow()
-    values: dict[str, Any] = {
-        "status": BackgroundTaskStatus.FAILED,
-        "finished_at": ts,
-        "updated_at": ts,
-    }
-    if error is not None:
-        values["last_error"] = error
-    if retries is not None:
-        values["retries"] = retries
 
     await session.execute(
         update(BackgroundTask)
         .where(BackgroundTask.id == task_id)
-        .values(**values)
+        .values(
+            status=BackgroundTaskStatus.FAILED,
+            finished_at=ts,
+            updated_at=ts,
+            lease_expires_at=None,
+            last_error=error,
+            retries=retries,
+        )
     )
 
 
@@ -182,23 +180,21 @@ async def reschedule_task_for_retry(
         error: str | None = None,
 ) -> None:
     """
-    Put task back to PENDING with incremented retries and new run_at.
+    Put the task back to PENDING with incremented retries and new run_at.
 
-    Worker decides retry policy (backoff, max retries, etc.).
+    Worker decides to retry policy (backoff, max retries, etc.).
     """
-    values: dict[str, Any] = {
-        "status": BackgroundTaskStatus.PENDING,
-        "run_at": run_at,
-        "retries": retries,
-        "updated_at": utcnow(),
-        "started_at": None,
-        "finished_at": None,
-    }
-    if error is not None:
-        values["last_error"] = error
-
     await session.execute(
         update(BackgroundTask)
         .where(BackgroundTask.id == task_id)
-        .values(**values)
+        .values(
+            status=BackgroundTaskStatus.PENDING,
+            run_at=run_at,
+            retries=retries,
+            updated_at=utcnow(),
+            started_at=None,
+            finished_at=None,
+            lease_expires_at=None,
+            last_error=error,
+        )
     )

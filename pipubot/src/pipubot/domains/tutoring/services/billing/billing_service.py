@@ -8,9 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.transaction import transactional
 from pipubot.domains.tutoring.models.enums import PaymentMethod
-from pipubot.domains.tutoring.repositories.student_repository import get_student_by_id
+from pipubot.domains.tutoring.repositories.allocation_repository import (
+    create_allocation,
+    sum_payment_allocated,
+)
 from pipubot.domains.tutoring.repositories.lesson_repository import (
     list_unpaid_lessons,
+    sum_student_charges,
     sum_student_paid_allocations,
 )
 from pipubot.domains.tutoring.repositories.payment_repository import (
@@ -18,10 +22,7 @@ from pipubot.domains.tutoring.repositories.payment_repository import (
     get_payment_by_external_ref,
     sum_student_payments,
 )
-from pipubot.domains.tutoring.repositories.allocation_repository import (
-    create_allocation,
-    sum_payment_allocated,
-)
+from pipubot.domains.tutoring.repositories.student_repository import get_student_by_id
 
 
 class TutoringOwnershipError(RuntimeError):
@@ -51,12 +52,10 @@ async def allocate_payment(
     include_planned: bool = True,
     include_done: bool = True,
 ) -> PaymentAllocationResult:
-    # ownership guard
     student = await get_student_by_id(session, tutor_user_id=tutor_user_id, student_id=student_id)
     if not student:
         raise TutoringOwnershipError("Student not found or not owned by tutor_user_id")
 
-    # idempotent payment lookup by external_ref
     payment = None
     if external_ref:
         payment = await get_payment_by_external_ref(session, tutor_user_id=tutor_user_id, external_ref=external_ref)
@@ -73,7 +72,6 @@ async def allocate_payment(
             external_ref=external_ref,
             note=note,
         )
-        # Need id for allocations
         await session.flush()
     else:
         if payment.student_id != student_id:
@@ -140,6 +138,25 @@ async def get_student_balance(
 ) -> Decimal:
     """
     Positive = prepaid (credit), negative = debt.
+    This is a true "accounting" balance: payments - lesson charges.
+    """
+    student = await get_student_by_id(session, tutor_user_id=tutor_user_id, student_id=student_id)
+    if not student:
+        raise TutoringOwnershipError("Student not found or not owned by tutor_user_id")
+
+    paid_total = await sum_student_payments(session, tutor_user_id=tutor_user_id, student_id=student_id)
+    charges_total = await sum_student_charges(session, tutor_user_id=tutor_user_id, student_id=student_id)
+    return paid_total - charges_total
+
+
+async def get_student_unallocated_credit(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    student_id: int,
+) -> Decimal:
+    """
+    How much money is paid but not yet allocated to lessons (useful for 'prepaid for next lessons').
     """
     student = await get_student_by_id(session, tutor_user_id=tutor_user_id, student_id=student_id)
     if not student:
