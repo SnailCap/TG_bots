@@ -5,7 +5,7 @@ from typing import Optional
 
 from core.enums.background_task_enums import RecurringTaskStatus
 
-from pipubot.background.types.task_types import PipubotTaskType
+from pipubot.background.types.task_types import BackgroundTaskType
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +22,7 @@ class RecurringSpec:
 SYSTEM_RECURRING_SPECS = [
     RecurringSpec(
         key="system.print_hello.10s",
-        task_type=str(PipubotTaskType.PRINT_HELLO),
+        task_type=str(BackgroundTaskType.PRINT_HELLO),
         interval_seconds=10,
         payload_template={"message": "Hello every 10 seconds 🚀"},
     ),

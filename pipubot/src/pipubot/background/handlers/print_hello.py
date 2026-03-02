@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pipubot.background.binding.task_registry import task_handler
-from pipubot.background.types.task_types import PipubotTaskType
+from core.background.handler_registry import task_handler
+from pipubot.background.types.task_types import BackgroundTaskType
 
 
-@task_handler(PipubotTaskType.PRINT_HELLO)
+@task_handler(BackgroundTaskType.PRINT_HELLO)
 async def print_hello(session: AsyncSession, payload: dict) -> None:
     """
     Simple test handler.

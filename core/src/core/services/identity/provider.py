@@ -23,6 +23,7 @@ class DbIdentityProvider:
             username: Optional[str],
             first_name: Optional[str],
             last_name: Optional[str],
+            role: Optional[UserRole | str] = UserRole.PUBLIC,
     ) -> User:
         return await create_or_update_user(
             session,
@@ -30,7 +31,7 @@ class DbIdentityProvider:
             telegram_username=username,
             first_name=first_name,
             last_name=last_name,
-            role=None,
+            role=role,
             stripe_customer_id=None,
         )
 

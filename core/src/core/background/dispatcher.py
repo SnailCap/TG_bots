@@ -5,25 +5,24 @@ from typing import Any, Awaitable, Callable, Mapping
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.background.errors import NonRetryableTaskError
+from core.background.errors import NonRetryableTaskError, UnknownTaskTypeError
 from core.db.models.background_task import BackgroundTask
 from core.enums.background_task_enums import BackgroundTaskType
+from core.runtime.app_services import AppServices
 
 Handler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]
-
-
-class UnknownTaskTypeError(NonRetryableTaskError):
-    """No handler registered for task.task_type."""
 
 
 @dataclass(frozen=True, slots=True)
 class DefaultTaskDispatcher:
     handlers: Mapping[BackgroundTaskType, Handler]
+    services: AppServices
 
     async def dispatch(self, session: AsyncSession, task: BackgroundTask) -> None:
-        handler = self.handlers.get(task.task_type)
+        task_type: BackgroundTaskType = BackgroundTaskType(str(task.task_type))
+        handler = self.handlers.get(task_type)
         if handler is None:
-            raise UnknownTaskTypeError(f"No handler registered for task_type={task.task_type}")
+            raise UnknownTaskTypeError(f"No handler registered for task_type={task_type}")
 
         payload = task.payload
         if not isinstance(payload, dict):

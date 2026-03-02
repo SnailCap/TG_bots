@@ -2,21 +2,23 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from core.interaction.contracts.messenger import Messenger
 from core.interaction.contracts.render_data import RenderData
 from core.interaction.contracts.ui_builder import UiBuilder
 from core.interaction.messaging.message_operations import send_or_edit
 
 
 async def send_notification(
-    name: str,
-    *,
-    ui: UiBuilder,
-    chat_id: int,
-    message_id: Optional[int] = None,
-    text_vars: Optional[dict] = None,
-    kb_vars: Optional[dict] = None,
-    parse_mode: Optional[str] = None,
-    **extra: Any,
+        name: str,
+        *,
+        ui: UiBuilder,
+        messenger: Messenger,
+        chat_id: int,
+        message_id: Optional[int] = None,
+        text_vars: Optional[dict] = None,
+        kb_vars: Optional[dict] = None,
+        parse_mode: Optional[str] = None,
+        **extra: Any,
 ):
     notification = ui.build_notification(name)
 
@@ -37,4 +39,4 @@ async def send_notification(
         **extra,
     )
 
-    return await send_or_edit(**params)
+    return await send_or_edit(messenger=messenger, **params)

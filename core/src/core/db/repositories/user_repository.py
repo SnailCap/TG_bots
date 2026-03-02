@@ -49,7 +49,7 @@ async def create_or_update_user(
     telegram_username: str = None,
     first_name: Optional[str] = None,
     last_name: Optional[str] = None,
-    role: UserRole | str = UserRole.PUBLIC,
+    role: UserRole | str = None,
     stripe_customer_id: Optional[str] = None,
 ) -> User:
     user = await get_user_by_telegram_id(session, telegram_id)
@@ -61,7 +61,7 @@ async def create_or_update_user(
             telegram_username=telegram_username,
             first_name=first_name,
             last_name=last_name,
-            role=db_role or UserRole.PUBLIC,
+            role=db_role or role,
         )
         session.add(user)
         return user

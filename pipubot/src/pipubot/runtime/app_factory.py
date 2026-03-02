@@ -3,11 +3,12 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Callable, Final
+from typing import Callable, Final, Sequence
 
 from telegram.ext import Application
 
 from core.db.providers.sqlalchemy_session_provider import SqlAlchemySessionProvider
+from core.interaction.adapters.ptb.messenger import PtbMessenger
 from core.interaction.adapters.ptb.update_dispatcher import UpdateDispatcher
 from core.interaction.config.api import build_config_loader
 from core.interaction.config.paths import ResourcePaths
@@ -15,14 +16,22 @@ from core.interaction.routing.user_input_router import UserInputRouter
 from core.interaction.ui.builders.renderable_builder import RenderableBuilder
 from core.interaction.ui.builders.ui_builder import PtbUiBuilder
 from core.runtime.app_config import AppConfig
+from core.runtime.app_host import AppHost
+from core.runtime.app_services import AppServices
+from core.runtime.plugins.app_plugin import AppPlugin
+from core.runtime.plugins.background.background_worker_plugin import BackgroundServicesPlugin
+from core.runtime.plugins.ui_bindings_plugin import UiBindingsPlugin
 from core.services.identity.provider import DbIdentityProvider
 from core.shared.utils.session_helper import create_engine, create_session_maker
-from pipubot.background.binding.bindings import BG_HANDLER_TARGETS
 
+from pipubot.background.binding.bindings import BG_HANDLER_TARGETS
 from pipubot.background.build.build_services import build_background_services
 from pipubot.paths.main_paths import PipubotPaths
-from pipubot.runtime.run_app import run_app
+from pipubot.runtime.runtime_services import DefaultAppServices, DefaultInteractionServices
 from pipubot.ui.binding.bindings import UI_BINDINGS
+
+BOT_DATA_SESSION_MAKER: Final[str] = "session_maker"
+BOT_DATA_SERVICES: Final[str] = "services"
 
 
 def _setup_logging() -> None:
@@ -40,22 +49,31 @@ class BuiltApp:
     config: AppConfig
     build_application: Callable[[AppConfig], Application]
     register_handlers: Callable[[Application], None]
+    build_plugins: Callable[[AppConfig], list[AppPlugin]]
 
     def run(self) -> None:
-        run_app(
+        plugins = self.build_plugins(self.config)
+
+        host = AppHost(
             self.config,
             build_application=self.build_application,
             register_handlers=self.register_handlers,
+            plugins=plugins,
         )
+        host.run()
 
 
 class PipubotAppFactory:
     """
-    pipubot-specific assembly point.
+    Project-specific assembly point.
+
+    - __init__: build-time wiring (DB, UI builder, router, identity)
+    - register_handlers: runtime wiring (messenger + services)
+    - build_plugins: plugin assembly
     """
 
     def __init__(self, *, config: AppConfig) -> None:
-        self._config: Final = config
+        self._config: Final[AppConfig] = config
 
         if not self._config.database_url:
             raise RuntimeError("DATABASE_URL is not set. Please set env var DATABASE_URL.")
@@ -70,32 +88,72 @@ class PipubotAppFactory:
         loader = build_config_loader(self._config.config_root)
 
         renderable_builder = RenderableBuilder(loader=loader)
-        ui_builder = PtbUiBuilder(paths=paths, loader=loader, renderable_builder=renderable_builder)
-        router = UserInputRouter(ui=ui_builder)
+        self._ui_builder = PtbUiBuilder(paths=paths, loader=loader, renderable_builder=renderable_builder)
+        self._router = UserInputRouter(ui=self._ui_builder)
 
         # --- Identity ---
-        identity_provider = DbIdentityProvider()
+        self._identity_provider = DbIdentityProvider()
 
-        self._dispatcher = UpdateDispatcher(
-            router=router,
-            session_provider=self._session_provider,
-            identity_provider=identity_provider,
-        )
+    # ------------------------------------------------------------------
+    # Application lifecycle
+    # ------------------------------------------------------------------
 
-    # callbacks for AppHost
     def build_application(self, config: AppConfig) -> Application:
         return Application.builder().token(config.bot_token).build()
 
     def register_handlers(self, app: Application) -> None:
-        # expose session_maker for background plugin
-        app.bot_data["session_maker"] = self._session_maker
-        self._dispatcher.register_handlers(app)
+        app.bot_data[BOT_DATA_SESSION_MAKER] = self._session_maker
+
+        messenger = PtbMessenger(app.bot)
+
+        services: AppServices = DefaultAppServices(
+            interaction=DefaultInteractionServices(
+                ui=self._ui_builder,
+                messenger=messenger,
+            ),
+            identity=self._identity_provider,
+        )
+        app.bot_data[BOT_DATA_SERVICES] = services
+
+        dispatcher = UpdateDispatcher(
+            router=self._router,
+            session_provider=self._session_provider,
+            identity_provider=self._identity_provider,
+            messenger=messenger,
+        )
+        dispatcher.register_handlers(app)
+
+    # ------------------------------------------------------------------
+    # Plugin assembly
+    # ------------------------------------------------------------------
+
+    def build_plugins(self, config: AppConfig) -> list[AppPlugin]:
+        plugins: list[AppPlugin] = []
+
+        if config.ui_binding_modules:
+            plugins.append(UiBindingsPlugin(config.ui_binding_modules))
+
+        if config.build_background_services is not None:
+            plugins.append(
+                BackgroundServicesPlugin(
+                    config=config,
+                    build_services=config.build_background_services,
+                    handler_modules=config.background_handler_modules,
+                )
+            )
+
+        return plugins
+
+    # ------------------------------------------------------------------
+    # Build
+    # ------------------------------------------------------------------
 
     def build(self) -> BuiltApp:
         return BuiltApp(
             config=self._config,
             build_application=self.build_application,
             register_handlers=self.register_handlers,
+            build_plugins=self.build_plugins,
         )
 
     @classmethod
@@ -112,4 +170,5 @@ class PipubotAppFactory:
             build_background_services=build_background_services,
             background_handler_modules=tuple(BG_HANDLER_TARGETS.packages),
         )
+
         return cls(config=config).build()
