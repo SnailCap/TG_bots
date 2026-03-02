@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable, Final
 
 from telegram.ext import Application
@@ -18,10 +17,12 @@ from core.interaction.ui.builders.ui_builder import PtbUiBuilder
 from core.runtime.app_config import AppConfig
 from core.services.identity.provider import DbIdentityProvider
 from core.shared.utils.session_helper import create_engine, create_session_maker
+from pipubot.background.binding.bindings import BG_HANDLER_TARGETS
 
-from pipubot.background.build_services import build_background_services
-from pipubot.bindings import PIPUBOT_UI_BINDINGS
+from pipubot.background.build.build_services import build_background_services
+from pipubot.paths.main_paths import PipubotPaths
 from pipubot.runtime.run_app import run_app
+from pipubot.ui.binding.bindings import UI_BINDINGS
 
 
 def _setup_logging() -> None:
@@ -101,14 +102,14 @@ class PipubotAppFactory:
     def from_env(cls) -> BuiltApp:
         _setup_logging()
 
-        config_root = str(Path(__file__).resolve().parents[3] / "resources" / "config")
+        paths = PipubotPaths.from_file(__file__)
 
         config = AppConfig(
             bot_token=os.environ["BOT_TOKEN"],
-            config_root=config_root,
-            # ✅ Centralized list lives in pipubot/bindings.py
-            ui_binding_modules=tuple(PIPUBOT_UI_BINDINGS.packages),
+            config_root=paths.config_root,
+            ui_binding_modules=tuple(UI_BINDINGS.packages),
             database_url=os.environ.get("DATABASE_URL"),
             build_background_services=build_background_services,
+            background_handler_modules=tuple(BG_HANDLER_TARGETS.packages),
         )
         return cls(config=config).build()

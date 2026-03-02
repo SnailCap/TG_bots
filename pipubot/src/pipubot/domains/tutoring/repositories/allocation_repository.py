@@ -8,21 +8,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pipubot.domains.tutoring.models.allocation import TutoringPaymentAllocation
 
 
-async def sum_payment_allocated(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    payment_id: int,
-) -> Decimal:
-    stmt = (
-        select(func.coalesce(func.sum(TutoringPaymentAllocation.amount_applied), 0))
-        .where(TutoringPaymentAllocation.tutor_user_id == tutor_user_id)
-        .where(TutoringPaymentAllocation.payment_id == payment_id)
-    )
-    val = await session.scalar(stmt)
-    return val  # type: ignore[return-value]
-
-
 async def create_allocation(
     session: AsyncSession,
     *,
@@ -55,3 +40,49 @@ async def list_allocations_for_payment(
     )
     res = await session.scalars(stmt)
     return list(res)
+
+
+async def list_allocations_for_lesson(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    lesson_id: int,
+) -> list[TutoringPaymentAllocation]:
+    stmt = (
+        select(TutoringPaymentAllocation)
+        .where(TutoringPaymentAllocation.tutor_user_id == tutor_user_id)
+        .where(TutoringPaymentAllocation.lesson_id == lesson_id)
+        .order_by(TutoringPaymentAllocation.id.asc())
+    )
+    res = await session.scalars(stmt)
+    return list(res)
+
+
+async def sum_payment_allocated(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    payment_id: int,
+) -> Decimal:
+    stmt = (
+        select(func.coalesce(func.sum(TutoringPaymentAllocation.amount_applied), 0))
+        .where(TutoringPaymentAllocation.tutor_user_id == tutor_user_id)
+        .where(TutoringPaymentAllocation.payment_id == payment_id)
+    )
+    val = await session.scalar(stmt)
+    return val  # type: ignore[return-value]
+
+
+async def sum_lesson_allocated(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    lesson_id: int,
+) -> Decimal:
+    stmt = (
+        select(func.coalesce(func.sum(TutoringPaymentAllocation.amount_applied), 0))
+        .where(TutoringPaymentAllocation.tutor_user_id == tutor_user_id)
+        .where(TutoringPaymentAllocation.lesson_id == lesson_id)
+    )
+    val = await session.scalar(stmt)
+    return val  # type: ignore[return-value]

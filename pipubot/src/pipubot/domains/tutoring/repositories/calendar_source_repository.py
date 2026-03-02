@@ -34,7 +34,7 @@ async def upsert_calendar_source(
 
     obj = TutoringCalendarSource(tutor_user_id=tutor_user_id, calendar_id=calendar_id)
     session.add(obj)
-    await session.flush()  # ensures obj.id
+    await session.flush()  # ensure obj.id
     return obj
 
 
@@ -60,7 +60,7 @@ async def set_last_synced_at(
     obj.last_synced_at = last_synced_at
 
 
-async def set_window_days(
+async def set_sync_window_days(
     session: AsyncSession,
     *,
     tutor_user_id: int,
@@ -68,4 +68,4 @@ async def set_window_days(
     window_days: int,
 ) -> None:
     obj = await upsert_calendar_source(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id)
-    obj.window_days = window_days
+    obj.sync_window_days = window_days

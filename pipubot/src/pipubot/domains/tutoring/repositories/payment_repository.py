@@ -38,6 +38,26 @@ async def get_payment_by_external_ref(
     return await session.scalar(stmt)
 
 
+async def list_payments_for_student(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    student_id: int,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[TutoringPayment]:
+    stmt = (
+        select(TutoringPayment)
+        .where(TutoringPayment.tutor_user_id == tutor_user_id)
+        .where(TutoringPayment.student_id == student_id)
+        .order_by(TutoringPayment.paid_at.desc(), TutoringPayment.id.desc())
+        .limit(limit)
+        .offset(offset)
+    )
+    res = await session.scalars(stmt)
+    return list(res)
+
+
 async def create_payment(
     session: AsyncSession,
     *,
@@ -64,7 +84,7 @@ async def create_payment(
     return obj
 
 
-async def sum_student_payments(
+async def sum_payments_for_student(
     session: AsyncSession,
     *,
     tutor_user_id: int,

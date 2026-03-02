@@ -5,7 +5,7 @@ from typing import Optional
 
 from core.enums.background_task_enums import RecurringTaskStatus
 
-from pipubot.background.task_types import PipubotTaskType
+from pipubot.background.types.task_types import PipubotTaskType
 
 
 @dataclass(frozen=True, slots=True)

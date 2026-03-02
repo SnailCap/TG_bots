@@ -10,6 +10,7 @@ from pipubot.domains.tutoring.repositories.student_repository import (
     list_students_by_first_name_ci,
     list_students_by_full_name_ci,
 )
+from pipubot.domains.tutoring.utils.name_normalize import normalize_human_name
 
 ResolveKind = Literal["matched", "unmatched", "ambiguous"]
 
@@ -61,18 +62,6 @@ def parse_student_name_from_title(title: str | None) -> str | None:
 
     s = " ".join(s.split())
     return s or None
-
-
-def normalize_name_key(name: str) -> str:
-    """
-    Normalize a name for matching (repository already does case fold, but we also fix 'ё').
-
-    - Collapse spaces
-    - case fold
-    - replace ё -> е
-    """
-    s = " ".join(name.split()).casefold()
-    return s.replace("ё", "е")
 
 
 def _pick_best_candidate(candidates: list[TutoringStudent]) -> StudentResolveResult:
@@ -132,14 +121,14 @@ async def resolve_student_id_by_event_title(
         return StudentResolveResult(kind="unmatched", parsed_name=None)
 
     tokens = parsed.split()
-    key = normalize_name_key(parsed)
+    norm = normalize_human_name(parsed)
 
     # "Имя Фамилия" (or more tokens) -> exact full_name match only
     if len(tokens) >= 2:
         candidates = await list_students_by_full_name_ci(
             session,
             tutor_user_id=tutor_user_id,
-            full_name=key,
+            full_name=norm,
         )
         if not candidates:
             return StudentResolveResult(kind="unmatched", parsed_name=parsed)
@@ -158,7 +147,7 @@ async def resolve_student_id_by_event_title(
     candidates = await list_students_by_first_name_ci(
         session,
         tutor_user_id=tutor_user_id,
-        first_name=key,
+        first_name=norm,
     )
     if not candidates:
         return StudentResolveResult(kind="unmatched", parsed_name=parsed)

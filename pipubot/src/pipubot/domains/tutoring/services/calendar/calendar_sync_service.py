@@ -24,7 +24,6 @@ from pipubot.domains.tutoring.integrations.google_calendar.calendar_client impor
 
 
 def _map_status(ev_status: str) -> LessonStatus:
-    # Google: confirmed | cancelled | tentative
     return LessonStatus.CANCELED if ev_status == "cancelled" else LessonStatus.PLANNED
 
 

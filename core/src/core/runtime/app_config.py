@@ -10,14 +10,22 @@ class AppConfig:
     bot_token: str
     config_root: str
 
+    # UI bindings (side effect imports)
     ui_binding_modules: Sequence[str] = field(default_factory=tuple)
 
     database_url: Optional[str] = None
     database_echo: bool = False
 
+    # Background services builder (optional)
     build_background_services: Optional[
         Callable[[Any, "AppConfig"], Sequence[BackgroundService]]
     ] = None
+
+    # Background task handlers (side effect imports)
+    background_handler_modules: Sequence[str] = field(default_factory=tuple)
+
+    # Optional: validate that all expected handlers are registered at startup
+    validate_background_handlers: bool = True
 
     asgi_server: Optional[AsgiServerConfig] = None
 

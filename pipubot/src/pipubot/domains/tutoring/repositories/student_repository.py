@@ -1,20 +1,18 @@
 from __future__ import annotations
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from pipubot.domains.tutoring.models.student import TutoringStudent
-
-
-def _norm_spaces(s: str) -> str:
-    return " ".join(s.split())
+from pipubot.domains.tutoring.utils.name_normalize import normalize_human_name
+from pipubot.domains.tutoring.utils.sql_name_expr import normalized_name_expr
 
 
 async def get_student_by_id(
-        session: AsyncSession,
-        *,
-        tutor_user_id: int,
-        student_id: int,
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    student_id: int,
 ) -> TutoringStudent | None:
     stmt = (
         select(TutoringStudent)
@@ -24,18 +22,32 @@ async def get_student_by_id(
     return await session.scalar(stmt)
 
 
+async def get_student_by_telegram_id(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    telegram_id: int,
+) -> TutoringStudent | None:
+    stmt = (
+        select(TutoringStudent)
+        .where(TutoringStudent.tutor_user_id == tutor_user_id)
+        .where(TutoringStudent.telegram_id == telegram_id)
+    )
+    return await session.scalar(stmt)
+
+
 async def list_active_students(
-        session: AsyncSession,
-        *,
-        tutor_user_id: int,
-        limit: int = 100,
-        offset: int = 0,
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    limit: int = 100,
+    offset: int = 0,
 ) -> list[TutoringStudent]:
     stmt = (
         select(TutoringStudent)
         .where(TutoringStudent.tutor_user_id == tutor_user_id)
         .where(TutoringStudent.is_active.is_(True))
-        .order_by(TutoringStudent.full_name.asc())
+        .order_by(TutoringStudent.full_name.asc(), TutoringStudent.id.asc())
         .limit(limit)
         .offset(offset)
     )
@@ -44,50 +56,60 @@ async def list_active_students(
 
 
 async def list_students_by_full_name_ci(
-        session: AsyncSession,
-        *,
-        tutor_user_id: int,
-        full_name: str,
-        limit: int = 50,
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    full_name: str,
+    limit: int = 50,
 ) -> list[TutoringStudent]:
-    """
-    Case-insensitive exact match by full_name.
-    """
-    full_name = _norm_spaces(full_name).casefold()
+    key = normalize_human_name(full_name)
+    if not key:
+        return []
+
+    norm_full_name = normalized_name_expr(TutoringStudent.full_name)
 
     stmt = (
         select(TutoringStudent)
         .where(TutoringStudent.tutor_user_id == tutor_user_id)
-        .where(func.lower(TutoringStudent.full_name) == full_name)
+        .where(norm_full_name == key)
+        .order_by(
+            TutoringStudent.is_active.desc(),
+            TutoringStudent.full_name.asc(),
+            TutoringStudent.id.asc(),
+        )
         .limit(limit)
     )
+
     res = await session.scalars(stmt)
     return list(res)
 
-
 async def list_students_by_first_name_ci(
-        session: AsyncSession,
-        *,
-        tutor_user_id: int,
-        first_name: str,
-        limit: int = 50,
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    first_name: str,
+    limit: int = 50,
 ) -> list[TutoringStudent]:
-    """
-    Case-insensitive match for:
-    - full_name == first_name
-    - full_name starts with 'first_name ' (so "Анна Петрова" matches "Анна")
-    """
-    first_name = _norm_spaces(first_name).casefold()
+    key = normalize_human_name(first_name)
+    if not key:
+        return []
+
+    norm_full_name = normalized_name_expr(TutoringStudent.full_name)
 
     stmt = (
         select(TutoringStudent)
         .where(TutoringStudent.tutor_user_id == tutor_user_id)
         .where(
-            (func.lower(TutoringStudent.full_name) == first_name)
-            | (func.lower(TutoringStudent.full_name).like(f"{first_name} %"))
+            (norm_full_name == key)
+            | (norm_full_name.like(f"{key} %"))
         )
-        .order_by(TutoringStudent.is_active.desc(), TutoringStudent.full_name.asc())
+        .order_by(
+            TutoringStudent.is_active.desc(),
+            TutoringStudent.full_name.asc(),
+            TutoringStudent.id.asc(),
+        )
         .limit(limit)
     )
+
     res = await session.scalars(stmt)
     return list(res)

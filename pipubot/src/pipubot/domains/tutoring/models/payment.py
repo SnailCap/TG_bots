@@ -1,9 +1,19 @@
+# pipubot/domains/tutoring/models/payment.py
 from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, Text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Numeric,
+    String,
+    Text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
@@ -27,7 +37,11 @@ class TutoringPayment(TutoringOwnedMixin, Base):
     currency: Mapped[str] = mapped_column(String(3), default="EUR", nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
-    method: Mapped[PaymentMethod] = mapped_column(default=PaymentMethod.BANK_TRANSFER, nullable=False)
+    method: Mapped[PaymentMethod] = mapped_column(
+        Enum(PaymentMethod, name="tutoring_payment_method"),
+        default=PaymentMethod.BANK_TRANSFER,
+        nullable=False,
+    )
 
     external_ref: Mapped[str | None] = mapped_column(String(256), index=True)
     note: Mapped[str | None] = mapped_column(Text)
@@ -41,4 +55,5 @@ class TutoringPayment(TutoringOwnedMixin, Base):
     __table_args__ = (
         Index("ix_tutoring_payments_tutor_paid_at", "tutor_user_id", "paid_at"),
         Index("ix_tutoring_payments_tutor_student_paid_at", "tutor_user_id", "student_id", "paid_at"),
+        CheckConstraint("amount > 0", name="ck_tut_payment_amount_positive"),
     )
