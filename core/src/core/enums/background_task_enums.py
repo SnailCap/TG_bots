@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from enum import StrEnum, auto
+from typing import TypeAlias
+
+BackgroundTaskType: TypeAlias = str
 
 
 class BackgroundTaskStatus(StrEnum):
@@ -11,11 +14,8 @@ class BackgroundTaskStatus(StrEnum):
     CANCELED = auto()
 
 
-class BackgroundTaskType(StrEnum):
-    SEND_NOTIFICATION = auto()
-
 class RecurringTaskStatus(StrEnum):
-    ACTIVE = auto()     # планировщик создаёт новые BackgroundTask
+    ACTIVE = auto()
     PROCESSING = auto()
-    PAUSED = auto()     # временно выключена, но не удалена
-    DISABLED = auto() # полностью отключена, можно считать "архивной"
+    PAUSED = auto()
+    DISABLED = auto()

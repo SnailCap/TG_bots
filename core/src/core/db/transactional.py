@@ -2,17 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import Any, ParamSpec, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-P = ParamSpec("P")
 R = TypeVar("R")
 
 
-def transactional(
-    func: Callable[P, Awaitable[R]],
-) -> Callable[P, Awaitable[R]]:
+def transactional(func: Callable[..., Awaitable[R]]) -> Callable[..., Awaitable[R]]:
     """
     Wraps an async function into a DB transaction.
 
@@ -22,7 +19,7 @@ def transactional(
     """
 
     @wraps(func)
-    async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+    async def wrapper(*args: Any, **kwargs: Any) -> R:
         session = _extract_session(args, kwargs)
 
         # If already inside a transaction (nested service call), do nothing special
@@ -33,7 +30,7 @@ def transactional(
         async with session.begin():
             return await func(*args, **kwargs)
 
-    return cast(Callable[P, Awaitable[R]], wrapper)
+    return cast(Callable[..., Awaitable[R]], wrapper)
 
 
 def _extract_session(args: tuple[Any, ...], kwargs: dict[str, Any]) -> AsyncSession:

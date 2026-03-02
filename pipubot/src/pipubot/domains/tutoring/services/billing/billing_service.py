@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.transaction import transactional
+from core.db.transactional import transactional
 from pipubot.domains.tutoring.models.enums import PaymentMethod
 from pipubot.domains.tutoring.repositories.allocation_repository import (
     create_allocation,

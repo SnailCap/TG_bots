@@ -22,7 +22,7 @@ def create_engine(database_url: str, *, echo: bool = False) -> AsyncEngine:
     )
 
 
-def create_session_maker(engine: AsyncEngine) -> Callable[[], AsyncSession]:
+def create_session_maker(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     """
     Returns a factory that creates AsyncSession.
     """

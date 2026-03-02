@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Iterable, Sequence
 
-from core.runtime.app_config import AppConfig
+from core.runtime.plugins.app_plugin import AppPlugin
 
 logger = logging.getLogger(__name__)
 
@@ -16,52 +16,47 @@ class UiBindingImportError(RuntimeError):
     pass
 
 
-@dataclass(slots=True)
-class UiBindingsPlugin:
+@dataclass(frozen=True, slots=True)
+class UiBindingsPlugin(AppPlugin):
     """
-    Импортирует пользовательские модули/пакеты, которые регистрируют UI классы через декораторы.
+    Imports user modules/packages that register UI classes via decorator side effects.
 
-    Контракт:
-    - Каждый элемент AppConfig.ui_binding_modules может быть:
-        1) модулем (e.g. "ui.ui_bindings")
-        2) пакетом (e.g. "ui.components") — тогда импортируются ВСЕ подмодули рекурсивно
-    - Регистрация происходит через side-effect декораторов при импорте.
+    Contract:
+    - Each item in `targets` may be:
+        1) a module (e.g. "pipubot.ui.ui_bindings")
+        2) a package (e.g. "pipubot.ui.components") — then ALL submodules are imported recursively
+    - Registration happens via side effects at import time.
     """
 
-    config: AppConfig
+    targets: Sequence[str]
 
-    async def start(self, app: Any) -> None:  # noqa
-        targets: Sequence[str] = tuple(self.config.ui_binding_modules or ())
-        if not targets:
-            logger.info("UiBindingsPlugin: no ui_binding_modules configured; skipping.")
+    async def start(self, app: Any) -> None:  # noqa: ARG002
+        normalized = tuple(t.strip() for t in (self.targets or ()) if t and t.strip())
+        if not normalized:
+            logger.info("UiBindingsPlugin: no targets configured; skipping.")
             return
 
         imported: list[str] = []
-        for target in targets:
+        for target in normalized:
             try:
                 imported.extend(self._import_target(target))
             except Exception as e:
                 raise UiBindingImportError(
-                    f"Failed to import ui bindings target '{target}'. "
-                    f"Check AppConfig.ui_binding_modules and your project structure."
+                    f"Failed to import UI bindings target '{target}'. "
+                    f"Check your bindings list and project structure."
                 ) from e
 
-        if imported:
-            logger.info("UiBindingsPlugin: imported %d module(s).", len(imported))
-            logger.debug("UiBindingsPlugin: imported modules: %s", ", ".join(imported))
+        logger.info("UiBindingsPlugin: imported %d module(s).", len(imported))
+        logger.debug("UiBindingsPlugin: imported modules: %s", ", ".join(imported))
 
     async def stop(self) -> None:
-        # Ничего не делаем: registry живёт на процесс
+        # Nothing to clean up; registry lives for process lifetime.
         return
 
     # -------------------------
     # internals
     # -------------------------
     def _import_target(self, target: str) -> list[str]:
-        """
-        Импортирует либо модуль, либо (если это пакет) все подмодули.
-        Возвращает список реально импортированных модулей (включая корневой).
-        """
         root = importlib.import_module(target)
         imported: list[str] = [root.__name__]
 

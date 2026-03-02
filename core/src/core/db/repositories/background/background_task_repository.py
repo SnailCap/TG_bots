@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, cast
 
-from sqlalchemy import select, update, or_, and_
+from sqlalchemy import select, update, or_, and_, CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import BackgroundTask
@@ -198,3 +198,30 @@ async def reschedule_task_for_retry(
             last_error=error,
         )
     )
+
+
+async def renew_task_lease(
+    session: AsyncSession,
+    *,
+    task_id: int,
+    lease_seconds: int,
+    now: datetime | None = None,
+) -> int:
+    now = now or utcnow()
+    lease_until = now + timedelta(seconds=lease_seconds)
+
+    stmt = (
+        update(BackgroundTask)
+        .where(
+            BackgroundTask.id == task_id,
+            BackgroundTask.status == BackgroundTaskStatus.PROCESSING,
+        )
+        .values(
+            lease_expires_at=lease_until,
+            updated_at=now,
+        )
+    )
+
+    result = await session.execute(stmt)
+    cursor_result = cast(CursorResult, result)
+    return int(cursor_result.rowcount or 0)

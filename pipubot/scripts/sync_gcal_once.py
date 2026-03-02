@@ -9,7 +9,7 @@ from pipubot.domains.tutoring.integrations.google_calendar.google_calendar_clien
 )
 from pipubot.domains.tutoring.services.calendar.calendar_sync_service import sync_calendar
 
-from core.db.session import create_session_maker, create_engine
+from core.shared.utils.session_helper import create_session_maker, create_engine
 import core.db.models  # noqa: F401  # регистрирует users в Base.metadata
 import pipubot.domains.tutoring.models  # noqa: F401  # регистрирует tutoring таблицы
 

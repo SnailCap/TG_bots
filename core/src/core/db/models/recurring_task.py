@@ -19,11 +19,7 @@ class RecurringTask(Base):
 
     key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
 
-    task_type: Mapped[BackgroundTaskType] = mapped_column(
-        SAEnum(BackgroundTaskType, native_enum=False, validate_strings=True, length=64),
-        nullable=False,
-        index=True,
-    )
+    task_type: Mapped[BackgroundTaskType] = mapped_column(String(128), nullable=False, index=True)
 
     status: Mapped[RecurringTaskStatus] = mapped_column(
         SAEnum(RecurringTaskStatus, native_enum=False, validate_strings=True, length=32),

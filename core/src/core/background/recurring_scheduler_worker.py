@@ -2,6 +2,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.shared.utils.time_helpers import utcnow
@@ -11,10 +12,11 @@ from core.db.repositories.background.recurring_task_repository import (
     advance_recurring_schedule,
     mark_recurring_error,
 )
-from core.db.repositories.background.background_task_repository import create_task  # если нет — добавьте repo-функцию
+from core.db.repositories.background.background_task_repository import create_task
 from core.enums.background_task_enums import RecurringTaskStatus
 
 log = logging.getLogger(__name__)
+
 
 @dataclass(frozen=True)
 class RecurringSchedulerConfig:
@@ -22,7 +24,12 @@ class RecurringSchedulerConfig:
     batch_size: int = 50
     claim_lease_seconds: int = 120
 
-class RecurringSchedulerService:
+    tick_throttle_seconds: float = 0.1
+
+    skip_missed_runs: bool = True
+
+
+class RecurringSchedulerWorker:
     def __init__(self, session_maker: async_sessionmaker[AsyncSession], cfg: RecurringSchedulerConfig | None = None):
         self._session_maker = session_maker
         self._cfg = cfg or RecurringSchedulerConfig()
@@ -36,8 +43,11 @@ class RecurringSchedulerService:
         try:
             while not self._stop_event.is_set():
                 n = await self._tick_once()
+
                 if n == 0:
                     await asyncio.sleep(self._cfg.poll_interval_seconds)
+                else:
+                    await asyncio.sleep(self._cfg.tick_throttle_seconds)
         finally:
             log.info("[recurring] stopped")
 
@@ -67,20 +77,30 @@ class RecurringSchedulerService:
 
             try:
                 now = utcnow()
+                interval = timedelta(seconds=rt.interval_seconds)
 
-                # 1) create a background task (linked)
+                run_at = rt.next_run_at
+                if run_at is None:
+                    run_at = now
+                else:
+                    run_at = max(run_at, now)
+
                 await create_task(
                     session,
                     task_type=rt.task_type,
-                    run_at=rt.next_run_at,  # или now, если “просрочено”
+                    run_at=run_at,
                     payload=rt.payload_template,
                     recurring_task_id=rt.id,
                 )
 
-                # 2) advance schedule (no drift)
-                next_run = rt.next_run_at + timedelta(seconds=rt.interval_seconds)
-                next_count = rt.run_count + 1
+                if rt.next_run_at is None:
+                    next_run = now + interval
+                elif self._cfg.skip_missed_runs and rt.next_run_at <= now:
+                    next_run = now + interval
+                else:
+                    next_run = rt.next_run_at + interval
 
+                next_count = rt.run_count + 1
                 disable = (rt.max_runs is not None) and (next_count >= rt.max_runs)
 
                 await advance_recurring_schedule(

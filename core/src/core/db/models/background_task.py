@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, Text, String
 from sqlalchemy import Enum as SAEnum
 from sqlalchemy import JSON as SAJSON
 from sqlalchemy.orm import Mapped, mapped_column
@@ -17,11 +17,7 @@ class BackgroundTask(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    task_type: Mapped[BackgroundTaskType] = mapped_column(
-        SAEnum(BackgroundTaskType, native_enum=False, validate_strings=True, length=64),
-        nullable=False,
-        index=True,
-    )
+    task_type: Mapped[BackgroundTaskType] = mapped_column(String(128), nullable=False, index=True)
 
     status: Mapped[BackgroundTaskStatus] = mapped_column(
         SAEnum(BackgroundTaskStatus, native_enum=False, validate_strings=True, length=32),

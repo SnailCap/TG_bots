@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.transaction import transactional
+from core.db.transactional import transactional
 from core.shared.utils.time_helpers import utcnow
 from pipubot.domains.tutoring.models.enums import LessonStatus
 from pipubot.domains.tutoring.repositories.calendar_source_repository import (

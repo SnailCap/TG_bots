@@ -1,4 +1,3 @@
-# core/src/runtime/plugins/db_plugin.py
 from __future__ import annotations
 
 import logging
@@ -7,7 +6,7 @@ from typing import Any, Optional
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from core.db.session import create_engine, create_session_maker
+from core.shared.utils.session_helper import create_engine, create_session_maker
 from core.runtime.app_config import AppConfig
 
 log = logging.getLogger(__name__)
