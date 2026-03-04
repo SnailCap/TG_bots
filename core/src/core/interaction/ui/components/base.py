@@ -6,8 +6,8 @@ from typing import TYPE_CHECKING, Optional, Dict, Any, Tuple, Final
 from telegram import InlineKeyboardMarkup
 
 from core.interaction.exceptions.template_errors import PlaceholderFormatError
-from core.interaction.types.template_context import TemplateContext
-from core.interaction.ui.builders.keyboard_builder import KeyboardBuilder
+from core.interaction.types import TemplateContext
+from core.interaction.ui.keyboard.keyboard_builder import KeyboardBuilder
 from core.interaction.ui.templating.keyboard import format_inline_keyboard
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ class UiComponent:
     Stateless UI component.
 
     Keyboard rendering strategy:
-      1) If keyboard context contains {"layout": ...} -> build via KeyboardBuilder
+      1) If the keyboard context contains {"layout": ...} -> build via KeyboardBuilder
       2) Else -> legacy template formatting via format_inline_keyboard(inline_keyboard_template, kb_vars)
     """
 

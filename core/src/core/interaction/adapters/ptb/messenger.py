@@ -5,7 +5,7 @@ from typing import Any, Optional
 from telegram import Bot
 from telegram.error import BadRequest
 
-from core.interaction.contracts.messenger import ChatId
+from core.interaction.contracts.messenger import ChatId, Messenger
 
 _EDIT_FALLBACK_SUBSTRINGS: tuple[str, ...] = (
     "message to edit not found",

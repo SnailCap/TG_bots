@@ -43,5 +43,11 @@ class GoPrev:
     pass
 
 
-StepDirective = Union[GoNext, GoPrev]
+@dataclass(frozen=True, slots=True)
+class GoToStep:
+    """Step requests transition to a specific step of the active process."""
+    step_name: str
+
+
+StepDirective = Union[GoNext, GoPrev, GoToStep]
 StepResult = Union[None, StepDirective, ProcessEffect, Sequence[ProcessEffect]]

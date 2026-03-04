@@ -7,17 +7,17 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core.interaction.contracts.messenger import Messenger
-from core.interaction.input.responder import Responder
-from core.interaction.input.intents.service_intent import (
+from core.interaction.input.intents import (
     ServiceCallback,
     ServiceCallbackParser,
     ServiceKind,
 )
 from core.interaction.input.snapshot import InputSnapshot
+from core.interaction.messaging import Responder
 from core.interaction.state import InteractionState
 from core.interaction.types import ProcessCommand, ServiceCallbackData
-from core.interaction.types.user_input_type import UserInputType
-from core.interaction.types.user_role import UserRole
+from core.interaction.types import UserInputType
+from core.interaction.types import UserRole
 
 
 class UserInput:

@@ -1,19 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Type, cast
+from typing import List, Type, cast, TYPE_CHECKING
 
-from core.interaction.contracts.ui_builder import UiBuilder
-from core.interaction.input.user_input import UserInput
-from core.interaction.ui.binding import get_default_registry
-from core.interaction.ui.components.process import Process
-from core.interaction.ui.components.process.effects import (
+if TYPE_CHECKING:
+    from core.interaction.input.user_input import UserInput
+from ...build import UiBuilder
+from ...binding import get_default_ui_registry
+from .base_process import Process
+from .effects import (
     ProcessEffect,
     RenderStep,
     FinishProcess,
     CancelProcess,
     GoNext,
     GoPrev,
+    GoToStep,
     StepResult,
 )
 
@@ -27,17 +29,14 @@ class ProcessCoordinator:
     ui: UiBuilder
 
     async def handle(self, user_input: UserInput) -> bool:
-        proc_key = user_input.state.get_active_process()
-        if not proc_key:
+        # Be robust: InteractionState.get_active_process() raises if not set.
+        if not user_input.state.has_active_process():
             return False
 
+        proc_key = user_input.state.get_active_process()
         proc = self._resolve_process(proc_key)
 
-        idx = user_input.state.get_step_index(proc_key, 0)
-        if idx < 0 or idx >= len(proc.step_names):
-            raise IndexError(f"Step index out of range: {idx} for process '{proc_key}'")
-
-        step_name = proc.step_names[idx]
+        step_name = self._resolve_active_step_name(user_input, proc_key, proc)
         step = self.ui.build_step(step_name)
 
         # Process-level navigation commands have priority (svc:prc:*).
@@ -54,11 +53,32 @@ class ProcessCoordinator:
         ended = await self._apply_effects(user_input, effects)
         return ended
 
+    def _resolve_active_step_name(self, user_input: UserInput, proc_key: str, proc: Process) -> str:
+        """
+        Source of truth: step_key in state.
+
+        Backward compatibility:
+        - If step_key is missing, fallback to step_index and *persist* step_key.
+        - If step_key is invalid, try to recover via step_index; otherwise raise.
+        """
+        state = user_input.state
+
+        step_key = state.get_step_key(proc_key)
+        if step_key is None:
+            if not proc.step_names:
+                raise RuntimeError(f"Process '{proc_key}' has no step_names.")
+            step_key = proc.step_names[0]
+            state.set_step_key(proc_key, step_key)
+
+        if step_key not in proc.step_names:
+            raise KeyError(...)
+        return step_key
+
     async def _effects_from_step_result(
-        self,
-        user_input: UserInput,
-        proc: Process,
-        result: StepResult,
+            self,
+            user_input: UserInput,
+            proc: Process,
+            result: StepResult,
     ) -> List[ProcessEffect]:
         if result is None:
             return []
@@ -69,14 +89,17 @@ class ProcessCoordinator:
         if isinstance(result, GoPrev):
             return await proc.go_to_previous_step(user_input)
 
+        if isinstance(result, GoToStep):
+            return proc.go_to_step(user_input, result.step_name)
+
         if isinstance(result, (RenderStep, FinishProcess, CancelProcess)):
             return [result]
 
+        # Sequence[ProcessEffect]
         return list(result)
 
-
     def _resolve_process(self, key: str) -> Process:
-        registry = get_default_registry()
+        registry = get_default_ui_registry()
         cls = registry.get("process", key)
 
         if cls is None:
@@ -85,11 +108,7 @@ class ProcessCoordinator:
         proc_cls = cast(Type[Process], cls)
         return proc_cls()
 
-    async def _apply_effects(
-            self,
-            user_input: UserInput,
-            effects: List[ProcessEffect],
-    ) -> bool:
+    async def _apply_effects(self, user_input: UserInput, effects: List[ProcessEffect]) -> bool:
         ended = False
 
         for eff in effects:
@@ -102,9 +121,5 @@ class ProcessCoordinator:
 
         return ended
 
-    async def apply_effects(
-            self,
-            user_input: UserInput,
-            effects: list[ProcessEffect],
-    ) -> bool:
+    async def apply_effects(self, user_input: UserInput, effects: list[ProcessEffect]) -> bool:
         return await self._apply_effects(user_input, effects)

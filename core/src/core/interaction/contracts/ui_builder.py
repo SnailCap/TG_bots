@@ -5,9 +5,9 @@ from typing import Protocol, runtime_checkable, Optional
 
 from telegram import InlineKeyboardMarkup
 
-from core.interaction.ui.components.pages.page import Page
-from core.interaction.ui.components.process.base_step import Step
-from core.interaction.ui.components.notifications.base import Notification
+from core.interaction.ui import Page
+from core.interaction.ui import Step
+from core.interaction.ui import Notification
 
 
 @dataclass(frozen=True, slots=True)

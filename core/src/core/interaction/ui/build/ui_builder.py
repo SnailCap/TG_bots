@@ -4,17 +4,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from core.interaction.config.loader import ConfigLoader
-from core.interaction.config.paths import ResourcePaths
+from core.interaction.config import ConfigLoader
+from core.interaction.config import ResourcePaths
 from core.interaction.ui.binding import UiClassResolver
-from core.interaction.ui.builders.renderable_builder import RenderableBuilder
+from .renderable_builder import RenderableBuilder
 
-from core.interaction.ui.builders.button_builder import ButtonBuilder
-from core.interaction.ui.builders.keyboard_builder import KeyboardBuilder
+from ..keyboard import ButtonBuilder
+from ..keyboard import KeyboardBuilder
 
-from core.interaction.ui.components.pages.page import Page
-from core.interaction.ui.components.process.base_step import Step
-from core.interaction.ui.components.notifications.base import Notification
+from ..components.page.base_page import Page
+from ..components.process.base_step import Step
+from ..components.notification.base_notification import Notification
 
 
 class UiBuildError(RuntimeError):
@@ -26,7 +26,7 @@ class UnknownUiKey(UiBuildError):
 
 
 @dataclass(slots=True)
-class PtbUiBuilder:
+class UiBuilder:
     """
     Универсальный билдер сущностей UI.
 

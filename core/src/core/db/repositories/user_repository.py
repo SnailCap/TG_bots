@@ -4,7 +4,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import User
-from core.interaction.types.user_role import UserRole
+from core.interaction.types import UserRole
 
 
 from sqlalchemy.exc import ProgrammingError

@@ -1,0 +1,38 @@
+{
+  "$id": "page.schema.json",
+  "type": "object",
+  "description": "UI page configuration",
+
+  "minProperties": 1,
+
+  "patternProperties": {
+    "^[a-zA-Z0-9_]+$": {
+      "type": "object",
+      "required": ["text", "keyboard_layout"],
+      "additionalProperties": false,
+
+      "properties": {
+        "text": {
+          "type": "string",
+          "description": "Main message text template"
+        },
+        "keyboard_layout": {
+          "type": "array",
+          "description": "2D array of button keys",
+          "minItems": 1,
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Button reference key"
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "additionalProperties": false
+}

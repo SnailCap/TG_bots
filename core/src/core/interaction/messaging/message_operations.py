@@ -47,7 +47,7 @@ async def edit_message(
     )
 
 
-async def send_or_edit(
+async def send_or_edit_message(
         *,
         chat_id: Union[int, str],
         text: str,

@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any, TYPE_CHECKING
 
-from core.interaction.input.user_input import UserInput
-from core.interaction.types.user_input_type import UserInputType
+if TYPE_CHECKING:
+    from core.interaction.input.user_input import UserInput
+from core.interaction.types import UserInputType
 
 
 class InputReactive(ABC):
-    async def handle_input(self, user_input: UserInput) -> None:
+    async def handle_input(self, user_input: UserInput) -> Any:
         """
         Main entrypoint to process user input (text, command, callback, etc.)
         """
@@ -28,13 +30,13 @@ class InputReactive(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def handle_callback(self, user_input: UserInput) -> None:
+    async def handle_callback(self, user_input: UserInput) -> Any:
         raise NotImplementedError
 
     @abstractmethod
-    async def handle_message(self, user_input: UserInput) -> None:
+    async def handle_message(self, user_input: UserInput) -> Any:
         raise NotImplementedError
 
-    async def handle_unexpected_message(self, user_input: UserInput) -> None:
+    async def handle_unexpected_message(self, user_input: UserInput) -> Any:
         # дефолт можно оставить здесь
         await user_input.reply("Неожиданное сообщение", None)

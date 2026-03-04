@@ -11,7 +11,7 @@ from core.db.repositories.user_repository import (
     get_user_by_telegram_id,
     set_user_role,
 )
-from core.interaction.types.user_role import UserRole
+from core.interaction.types import UserRole
 
 
 @dataclass(slots=True, frozen=True)

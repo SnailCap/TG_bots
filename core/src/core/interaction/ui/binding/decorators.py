@@ -7,13 +7,13 @@ from .registry import UiRegistry, EntityKind
 _default_registry = UiRegistry()
 
 
-def get_default_registry() -> UiRegistry:
+def get_default_ui_registry() -> UiRegistry:
     return _default_registry
 
 
 def _bind(kind: EntityKind, key: str) -> Callable[[Type[Any]], Type[Any]]:
     def decorator(cls: Type[Any]) -> Type[Any]:
-        get_default_registry().register(kind, key, cls)
+        get_default_ui_registry().register(kind, key, cls)
         setattr(cls, "__ui_kind__", kind)
         setattr(cls, "__ui_key__", key)
         return cls

@@ -1,33 +1,23 @@
 from __future__ import annotations
 
-# callback
+from .template_context import TemplateContext
 from .callback_data import ServiceCallbackData
 from .process_commands import ProcessCommand
-
-# user
+from .template_context import TemplateContext
 from .user_role import UserRole
 from .user_input_type import UserInputType
-
-# routing / pages
 from .page_route import DefaultPageKey
 from .page_access_level import PageAccessLevel
-
-# user_data keys
 from .user_data_key import (
     UserDataPageKey,
     UserDataProcessKey,
-)  # :contentReference[oaicite:6]{index=6}
-
-# config
+)
 from .config_key import (
     ButtonConfigKey,
     RenderableConfigKey,
     PageConfigKey,
-)  # :contentReference[oaicite:7]{index=7}
-
-# bot commands
-from .command import BotCommand  # :contentReference[oaicite:8]{index=8}
-
+)
+from .command import BotCommand
 
 __all__ = [
     # callback
@@ -55,5 +45,5 @@ __all__ = [
     "BotCommand",
 
     # template context
-    "template_context"
+    "TemplateContext"
 ]

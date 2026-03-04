@@ -14,7 +14,7 @@ import core.db.models  # noqa: F401
 import pipubot.domains.tutoring.models  # noqa: F401
 
 from core.db.repositories.user_repository import create_or_update_user
-from core.interaction.types.user_role import UserRole
+from core.interaction.types import UserRole
 
 
 async def _reset_full(url: str) -> None:

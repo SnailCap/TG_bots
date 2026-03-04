@@ -1,4 +1,4 @@
-from core.interaction.input import UserInput
+from core.interaction.input.user_input import UserInput
 from core.interaction import DefaultPageKey
 
 

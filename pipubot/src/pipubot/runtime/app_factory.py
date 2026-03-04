@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
-from typing import Callable, Final, Sequence
+from typing import Callable, Final
 
 from telegram.ext import Application
 
@@ -13,15 +13,15 @@ from core.interaction.adapters.ptb.update_dispatcher import UpdateDispatcher
 from core.interaction.config.api import build_config_loader
 from core.interaction.config.paths import ResourcePaths
 from core.interaction.routing.user_input_router import UserInputRouter
-from core.interaction.ui.builders.renderable_builder import RenderableBuilder
-from core.interaction.ui.builders.ui_builder import PtbUiBuilder
+from core.interaction.ui.build.renderable_builder import RenderableBuilder
+from core.interaction.ui.build.ui_builder import UiBuilder
 from core.runtime.app_config import AppConfig
 from core.runtime.app_host import AppHost
-from core.runtime.app_services import AppServices
 from core.runtime.plugins.app_plugin import AppPlugin
 from core.runtime.plugins.background.background_worker_plugin import BackgroundServicesPlugin
 from core.runtime.plugins.ui_bindings_plugin import UiBindingsPlugin
 from core.services.identity.provider import DbIdentityProvider
+from core.services.notification_service import NotificationService
 from core.shared.utils.session_helper import create_engine, create_session_maker
 
 from pipubot.background.binding.bindings import BG_HANDLER_TARGETS
@@ -68,7 +68,7 @@ class PipubotAppFactory:
     Project-specific assembly point.
 
     - __init__: build-time wiring (DB, UI builder, router, identity)
-    - register_handlers: runtime wiring (messenger + services)
+    - register_handlers: runtime wiring (messenger and services)
     - build_plugins: plugin assembly
     """
 
@@ -88,7 +88,7 @@ class PipubotAppFactory:
         loader = build_config_loader(self._config.config_root)
 
         renderable_builder = RenderableBuilder(loader=loader)
-        self._ui_builder = PtbUiBuilder(paths=paths, loader=loader, renderable_builder=renderable_builder)
+        self._ui_builder = UiBuilder(paths=paths, loader=loader, renderable_builder=renderable_builder)
         self._router = UserInputRouter(ui=self._ui_builder)
 
         # --- Identity ---
@@ -105,11 +105,16 @@ class PipubotAppFactory:
         app.bot_data[BOT_DATA_SESSION_MAKER] = self._session_maker
 
         messenger = PtbMessenger(app.bot)
+        notification_service = NotificationService(
+            ui=self._ui_builder,
+            messenger=messenger
+        )
 
-        services: AppServices = DefaultAppServices(
+        services: DefaultAppServices = DefaultAppServices(
             interaction=DefaultInteractionServices(
                 ui=self._ui_builder,
                 messenger=messenger,
+                notification_service=notification_service,
             ),
             identity=self._identity_provider,
         )

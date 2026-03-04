@@ -1,11 +1,11 @@
-# base_process.py
 from __future__ import annotations
 
 from abc import ABC
-from typing import List
+from typing import List, TYPE_CHECKING
 
-from core.interaction.input.user_input import UserInput
-from core.interaction.ui.components.process.effects import (
+if TYPE_CHECKING:
+    from core.interaction.input.user_input import UserInput
+from .effects import (
     ProcessEffect,
     RenderStep,
     FinishProcess,
@@ -39,16 +39,16 @@ class Process(ABC):
 
     # === lifecycle ===
 
-    async def start(self, user_input: UserInput) -> List[ProcessEffect]:  # NOSONAR
+    async def start(self, user_input: UserInput) -> List[ProcessEffect]:
         key = self._key()
         state = user_input.state
 
         state.set_active_process(key)
-        state.set_step_index(key, 0)
 
-        # NEW: keep step_key in sync with the actual active step
-        if self.step_names:
-            state.set_step_key(key, self.step_names[0])
+        if not self.step_names:
+            raise RuntimeError(f"Process '{key}' has no step_names.")
+
+        state.set_step_key(key, self.step_names[0])
 
         return [self._render_current_effect(user_input)]
 
@@ -66,15 +66,11 @@ class Process(ABC):
         key = self._key()
         state = user_input.state
 
-        if self._is_last_step_index(user_input):
+        idx = self._get_current_step_index(user_input)
+        if idx >= (len(self.step_names) - 1):
             return await self.finish(user_input)
 
-        idx = self._get_current_step_index(user_input)
         new_idx = idx + 1
-
-        state.set_step_index(key, new_idx)
-
-        # NEW: sync step_key
         state.set_step_key(key, self.step_names[new_idx])
 
         return [self._render_current_effect(user_input)]
@@ -88,15 +84,25 @@ class Process(ABC):
             return await self.cancel(user_input)
 
         new_idx = idx - 1
-
-        state.set_step_index(key, new_idx)
-
-        # NEW: sync step_key
         state.set_step_key(key, self.step_names[new_idx])
 
         return [self._render_current_effect(user_input)]
 
-    async def finish(self, user_input: UserInput) -> List[ProcessEffect]: # NOSONAR
+    def go_to_step(self, user_input: UserInput, step_name: str) -> List[ProcessEffect]:
+        key = self._key()
+        state = user_input.state
+
+        # validate
+        if step_name not in self.step_names:
+            raise KeyError(
+                f"Unknown step_name '{step_name}' for process '{self._get_registered_key()}'. "
+                f"Known: {self.step_names}"
+            )
+
+        state.set_step_key(key, step_name)
+        return [self._render_current_effect(user_input)]
+
+    async def finish(self, user_input: UserInput) -> List[ProcessEffect]:  # NOSONAR
         key = self._key()
         state = user_input.state
 
@@ -105,7 +111,7 @@ class Process(ABC):
 
         return [FinishProcess(key)]
 
-    async def cancel(self, user_input: UserInput) -> List[ProcessEffect]: # NOSONAR
+    async def cancel(self, user_input: UserInput) -> List[ProcessEffect]:  # NOSONAR
         key = self._key()
         state = user_input.state
 
@@ -129,7 +135,22 @@ class Process(ABC):
         return self._get_current_step_index(user_input) >= (len(self.step_names) - 1)
 
     def _get_current_step_index(self, user_input: UserInput) -> int:
-        return user_input.state.get_step_index(self._key(), 0)
+        key = self._key()
+        state = user_input.state
+
+        step_key = state.get_step_key(key)
+        if step_key is None:
+            # если по какой-то причине пусто — считаем, что это старт
+            state.set_step_key(key, self.step_names[0])
+            return 0
+
+        if step_key not in self.step_names:
+            raise KeyError(
+                f"Unknown step_key '{step_key}' for process '{key}'. "
+                f"Known: {self.step_names}"
+            )
+
+        return self.step_names.index(step_key)
 
     def _clear_state(self, user_input: UserInput) -> None:
         key = self._key()
@@ -139,3 +160,12 @@ class Process(ABC):
             state.clear_active_process()
 
         state.clear_process_state(key)
+
+    def _index_of_step_name(self, step_name: str) -> int:
+        try:
+            return self.step_names.index(step_name)
+        except ValueError as e:
+            raise KeyError(
+                f"Unknown step_name '{step_name}' for process '{self._get_registered_key()}'. "
+                f"Known: {self.step_names}"
+            ) from e

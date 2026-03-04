@@ -15,13 +15,11 @@ from core.interaction.state.user_data_schema import (
     ProcessSlot,
     # slot/meta helpers (no magic strings here)
     get_payload,
-    get_step_index as schema_get_step_index,
-    set_step_index as schema_set_step_index,
     get_step_key as schema_get_step_key,
     set_step_key as schema_set_step_key,
 )
-from core.interaction.types.user_data_key import UserDataPageKey, UserDataProcessKey
-from core.interaction.utils.normalize_key import normalize_key
+from core.interaction.types import UserDataPageKey, UserDataProcessKey
+from core.interaction.utils import normalize_key
 
 
 class InteractionState:
@@ -134,20 +132,6 @@ class InteractionState:
         slot = self._get_or_create_process_slot(process_name)
 
         get_payload(slot).update(kwargs)
-
-        procs = self._get_processes_root()
-        procs[process_name] = slot
-        self.set(UserDataProcessKey.PROCESSES, procs)
-
-    def get_step_index(self, process_name: str, default: int = 0) -> int:
-        slot = self._get_or_create_process_slot(normalize_key(process_name))
-        return schema_get_step_index(slot, default)
-
-    def set_step_index(self, process_name: str, index: int) -> None:
-        process_name = normalize_key(process_name)
-        slot = self._get_or_create_process_slot(process_name)
-
-        schema_set_step_index(slot, index)
 
         procs = self._get_processes_root()
         procs[process_name] = slot

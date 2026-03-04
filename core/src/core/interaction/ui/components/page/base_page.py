@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Optional, Any, Sequence, Dict
+from typing import Optional, Any, Sequence, Dict, TYPE_CHECKING
 
 from telegram import InlineKeyboardMarkup
 
+if TYPE_CHECKING:
+    from core.interaction.input.user_input import UserInput
 from core.interaction.contracts.input_reactive import InputReactive
-from core.interaction.input.user_input import UserInput
-from core.interaction.ui.components import UiComponent
-from core.interaction.ui.builders.keyboard_builder import KeyboardBuilder
+from core.interaction.ui.components.base import UiComponent
+from core.interaction.ui.keyboard.keyboard_builder import KeyboardBuilder
 
 
 class Page(UiComponent, InputReactive):

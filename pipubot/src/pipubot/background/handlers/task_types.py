@@ -4,5 +4,4 @@ from enum import StrEnum, auto
 
 
 class BackgroundTaskType(StrEnum):
-    SEND_NOTIFICATION = auto()
-    PRINT_HELLO = auto()
+    SYNC_GCAL = auto()

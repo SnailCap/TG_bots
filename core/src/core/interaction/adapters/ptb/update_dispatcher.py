@@ -13,7 +13,7 @@ from core.interaction.contracts.state_store import StateStore
 from core.interaction.input.user_input import UserInput
 from core.interaction.routing.user_input_router import UserInputRouter
 from core.interaction.state import InteractionState
-from core.interaction.types.user_role import UserRole
+from core.interaction.types import UserRole
 from core.services.identity.contracts import IdentityProvider
 
 

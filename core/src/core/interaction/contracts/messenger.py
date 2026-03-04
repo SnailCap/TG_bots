@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Optional, Protocol, TypeAlias, runtime_checkable, Union
+from typing import Any, Optional, runtime_checkable, Union, Protocol
 
 ChatId = Union[int, str]
 

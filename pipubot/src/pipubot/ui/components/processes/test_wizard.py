@@ -1,5 +1,5 @@
 from core.interaction.ui.binding.decorators import process
-from core.interaction.ui.components.process.base_process import Process
+from core.interaction.ui import Process
 
 
 @process("test_wizard")

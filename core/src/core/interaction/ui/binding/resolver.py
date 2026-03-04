@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Type, Any
 
 from .registry import UiRegistry, EntityKind
-from .decorators import get_default_registry
+from .decorators import get_default_ui_registry
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,7 +18,7 @@ class UiClassResolver:
 
     @classmethod
     def default(cls) -> "UiClassResolver":
-        return cls(registry=get_default_registry())
+        return cls(registry=get_default_ui_registry())
 
     def resolve(self, kind: EntityKind, key: str, default_cls: Type[Any]) -> Type[Any]:
         found = self.registry.get(kind, key)

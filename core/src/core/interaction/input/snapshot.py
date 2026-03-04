@@ -5,7 +5,7 @@ from typing import Optional
 
 from telegram import Update
 
-from core.interaction.types.user_input_type import UserInputType
+from core.interaction.types import UserInputType
 
 
 @dataclass(frozen=True, slots=True)

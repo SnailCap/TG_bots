@@ -5,6 +5,7 @@ from typing import Protocol
 from core.interaction.contracts.messenger import Messenger
 from core.interaction.contracts.ui_builder import UiBuilder
 from core.services.identity.contracts import IdentityProvider
+from core.services.notification_service import NotificationService
 
 
 class InteractionServices(Protocol):
@@ -13,6 +14,9 @@ class InteractionServices(Protocol):
 
     @property
     def messenger(self) -> Messenger: ...
+
+    @property
+    def notification_service(self) -> NotificationService: ...
 
 
 class AppServices(Protocol):

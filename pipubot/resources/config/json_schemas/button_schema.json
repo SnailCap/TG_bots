@@ -1,0 +1,45 @@
+{
+  "$id": "buttons.schema.json",
+  "type": "object",
+  "description": "Button registry configuration",
+
+  "minProperties": 1,
+
+  "patternProperties": {
+    "^[a-zA-Z0-9_]+$": {
+      "type": "object",
+      "required": ["text", "callback_data"],
+      "additionalProperties": false,
+
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Button label text"
+        },
+
+        "callback_data": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Callback payload. Either infrastructure svc:* or step action st:*",
+          "oneOf": [
+            {
+              "title": "Navigation",
+              "pattern": "^svc:nav:[a-zA-Z0-9_-]+$"
+            },
+            {
+              "title": "Process start/command",
+              "pattern": "^svc:prc:(start|cmd):[a-zA-Z0-9_-]+(:[a-zA-Z0-9_-]+)*$"
+            },
+            {
+              "title": "Step action (short protocol)",
+              "pattern": "^st:[a-zA-Z0-9_-]+(:[a-zA-Z0-9_-]+)*$"
+            }
+          ]
+        }
+      }
+    }
+  },
+
+  "additionalProperties": false
+}

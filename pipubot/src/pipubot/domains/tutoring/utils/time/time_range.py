@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from pipubot.domains.tutoring.errors import TimeRangeError
-
+class TimeRangeError(ValueError):
+    pass
 
 @dataclass(frozen=True, slots=True)
 class TimeRange:

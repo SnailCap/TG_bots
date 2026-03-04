@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update, or_, and_
+from sqlalchemy import select, update, or_, and_, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import RecurringTask
@@ -16,15 +16,15 @@ from core.shared.utils.time_helpers import utcnow
 # -------------------------
 
 async def create_recurring_task(
-    session: AsyncSession,
-    *,
-    key: str,
-    task_type: BackgroundTaskType,
-    payload_template: dict[str, Any] | None = None,
-    first_run_at: datetime | None = None,
-    interval_seconds: int,
-    max_runs: int | None = None,
-    status: RecurringTaskStatus = RecurringTaskStatus.ACTIVE,
+        session: AsyncSession,
+        *,
+        key: str,
+        task_type: BackgroundTaskType,
+        payload_template: dict[str, Any] | None = None,
+        first_run_at: datetime | None = None,
+        interval_seconds: int,
+        max_runs: int | None = None,
+        status: RecurringTaskStatus = RecurringTaskStatus.ACTIVE,
 ) -> RecurringTask:
     """
     Create a RecurringTask row in DB.
@@ -53,9 +53,9 @@ async def create_recurring_task(
 
 
 async def get_recurring_task(
-    session: AsyncSession,
-    *,
-    recurring_task_id: int,
+        session: AsyncSession,
+        *,
+        recurring_task_id: int,
 ) -> RecurringTask | None:
     """
     Get RecurringTask by ID.
@@ -67,9 +67,9 @@ async def get_recurring_task(
 
 
 async def get_recurring_by_key(
-    session: AsyncSession,
-    *,
-    key: str,
+        session: AsyncSession,
+        *,
+        key: str,
 ) -> RecurringTask | None:
     result = await session.execute(
         select(RecurringTask).where(RecurringTask.key == key)
@@ -82,11 +82,11 @@ async def get_recurring_by_key(
 # -------------------------
 
 async def claim_due_recurring_ids(
-    session: AsyncSession,
-    *,
-    now: datetime | None = None,
-    limit: int = 50,
-    lease_seconds: int = 120,
+        session: AsyncSession,
+        *,
+        now: datetime | None = None,
+        limit: int = 50,
+        lease_seconds: int = 120,
 ) -> list[int]:
     now = now or utcnow()
     lease_until = now + timedelta(seconds=lease_seconds)
@@ -134,15 +134,15 @@ async def claim_due_recurring_ids(
 # -------------------------
 
 async def advance_recurring_schedule(
-    session: AsyncSession,
-    *,
-    recurring_task_id: int,
-    last_run_at: datetime | None,
-    next_run_at: datetime,
-    run_count: int,
-    set_active: bool = True,
-    disable: bool = False,
-    error: str | None = None,
+        session: AsyncSession,
+        *,
+        recurring_task_id: int,
+        last_run_at: datetime | None,
+        next_run_at: datetime,
+        run_count: int,
+        set_active: bool = True,
+        disable: bool = False,
+        error: str | None = None,
 ) -> None:
     """
     Update schedule fields after producing BackgroundTask.
@@ -176,17 +176,17 @@ async def advance_recurring_schedule(
             run_count=run_count,
             last_error=error,
             lease_expires_at=None,
-            **({ "status": status } if status is not None else {}),
+            **({"status": status} if status is not None else {}),
         )
     )
 
 
 async def mark_recurring_error(
-    session: AsyncSession,
-    *,
-    recurring_task_id: int,
-    error: str,
-    keep_active: bool = True,
+        session: AsyncSession,
+        *,
+        recurring_task_id: int,
+        error: str,
+        keep_active: bool = True,
 ) -> None:
     """
     Persist last_error on a recurring row.
@@ -204,15 +204,15 @@ async def mark_recurring_error(
             updated_at=ts,
             last_error=error,
             lease_expires_at=None,
-            **({ "status": status } if status is not None else {}),
+            **({"status": status} if status is not None else {}),
         )
     )
 
 
 async def pause_recurring_task(
-    session: AsyncSession,
-    *,
-    recurring_task_id: int,
+        session: AsyncSession,
+        *,
+        recurring_task_id: int,
 ) -> None:
     """
     Pause recurring task.
@@ -226,9 +226,9 @@ async def pause_recurring_task(
 
 
 async def disable_recurring_task(
-    session: AsyncSession,
-    *,
-    recurring_task_id: int,
+        session: AsyncSession,
+        *,
+        recurring_task_id: int,
 ) -> None:
     """
     Disable a recurring task.
@@ -239,3 +239,33 @@ async def disable_recurring_task(
         .where(RecurringTask.id == recurring_task_id)
         .values(status=RecurringTaskStatus.DISABLED, updated_at=ts)
     )
+
+
+async def disable_recurring_not_in_keys(
+    session: AsyncSession,
+    *,
+    prefix: str,
+    desired_keys: set[str],
+    reason: str = "Not present in code registry",
+) -> int:
+    """
+    Disable recurring tasks whose key starts with prefix but not in desired_keys.
+    Returns affected rows count.
+    """
+    ts = utcnow()
+
+    stmt = (
+        update(RecurringTask)
+        .where(RecurringTask.key.like(f"{prefix}%"))
+        .where(RecurringTask.key.notin_(desired_keys) if desired_keys else True)
+        .where(RecurringTask.status != RecurringTaskStatus.DISABLED)
+        .values(
+            status=RecurringTaskStatus.DISABLED,
+            updated_at=ts,
+            lease_expires_at=None,
+            last_error=reason,
+        )
+    )
+
+    res = await session.execute(stmt)
+    return int(getattr(res, "rowcount", 0) or 0)

@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.services.background_task_service import enqueue_background_task
 from core.shared.utils.time_helpers import utcnow
 from core.db.repositories.background.recurring_task_repository import (
     claim_due_recurring_ids,
@@ -85,11 +86,14 @@ class RecurringSchedulerWorker:
                 else:
                     run_at = max(run_at, now)
 
-                await create_task(
+                payload = dict(rt.payload_template or {})
+
+                await enqueue_background_task(
                     session,
                     task_type=rt.task_type,
+                    payload=payload,
                     run_at=run_at,
-                    payload=rt.payload_template,
+                    source="recurring",
                     recurring_task_id=rt.id,
                 )
 

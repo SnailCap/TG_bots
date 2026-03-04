@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, TYPE_CHECKING
 
 from telegram import InlineKeyboardMarkup
 
+if TYPE_CHECKING:
+    from core.interaction.input.user_input import UserInput
 from core.interaction.contracts.input_reactive import InputReactive
-from core.interaction.input.user_input import UserInput
-from core.interaction.ui.builders.keyboard_builder import KeyboardBuilder
-from core.interaction.ui.components.process.effects import GoNext, GoPrev, StepResult
-from core.interaction.ui.components import UiComponent
+from ...keyboard import KeyboardBuilder
+from .effects import GoNext, GoPrev, StepResult, GoToStep
+from ..base import UiComponent
 
 
 class Step(UiComponent, InputReactive):
@@ -23,15 +24,16 @@ class Step(UiComponent, InputReactive):
 
     _PAYLOAD_TEXT_VARS = "text_variables"
     _PAYLOAD_KB_LAYOUT = "keyboard_layout"
+    _PAYLOAD_KB_VARS = "keyboard_variables"
 
     def __init__(
-        self,
-        text_template: str,
-        inline_keyboard_template: Optional[InlineKeyboardMarkup] = None,
-        *,
-        keyboard_builder: Optional[KeyboardBuilder] = None,
-        html_escape_variables: bool = False,
-        default_keyboard_layout: Optional[Sequence[Sequence[Any]]] = None,
+            self,
+            text_template: str,
+            inline_keyboard_template: Optional[InlineKeyboardMarkup] = None,
+            *,
+            keyboard_builder: Optional[KeyboardBuilder] = None,
+            html_escape_variables: bool = False,
+            default_keyboard_layout: Optional[Sequence[Sequence[Any]]] = None,
     ) -> None:
         super().__init__(
             text_template,
@@ -61,7 +63,6 @@ class Step(UiComponent, InputReactive):
             return await self.handle_message(user_input)
         return None
 
-
     async def handle_message(self, user_input: UserInput) -> StepResult:
         # Default behavior: no state changes, coordinator will re-render the current step.
         return None
@@ -81,6 +82,10 @@ class Step(UiComponent, InputReactive):
     @staticmethod
     def go_prev() -> GoPrev:
         return GoPrev()
+
+    @staticmethod
+    def go_to_step(step_name: str) -> GoToStep:
+        return GoToStep(step_name)
 
     # --- state helpers ---
     def _active_proc(self, user_input: UserInput) -> Optional[str]:
@@ -109,7 +114,7 @@ class Step(UiComponent, InputReactive):
 
     # --- layout ---
     def _get_keyboard_layout_effective(
-        self, user_input: UserInput
+            self, user_input: UserInput
     ) -> Optional[Sequence[Sequence[Any]]]:
         stored = self._get_keyboard_layout_storage(user_input)
         return stored if stored is not None else self._default_keyboard_layout
@@ -120,4 +125,7 @@ class Step(UiComponent, InputReactive):
 
     async def _build_keyboard_context(self, user_input: UserInput) -> Dict[str, Any]:
         layout = self._get_keyboard_layout_effective(user_input)
-        return {"layout": layout} if layout is not None else {}
+        kb_vars = dict(self._payload(user_input).get(self._PAYLOAD_KB_VARS, {}) or {})
+        if layout is not None:
+            kb_vars["layout"] = layout
+        return kb_vars

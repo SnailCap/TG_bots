@@ -10,7 +10,7 @@ from core.background.background_worker import BackgroundWorker
 from core.background.recurring_scheduler_worker import RecurringSchedulerWorker
 from core.runtime.app_config import AppConfig
 from core.runtime.plugins.background.background_service import BackgroundService
-from core.background.handler_registry import build_task_handlers
+from core.background.handler_registry import build_task_handlers, build_handler_entries
 from core.runtime.app_services import AppServices
 
 from pipubot.background.jobs.bootstrap import bootstrap_system_recurring
@@ -59,7 +59,7 @@ def build_background_services(app: Application, config: AppConfig) -> list[Backg
 
     # 2) Dispatcher (now needs services)
     dispatcher = DefaultTaskDispatcher(
-        handlers=build_task_handlers(),
+        handler_entries=build_handler_entries(),
         services=services,
     )
 

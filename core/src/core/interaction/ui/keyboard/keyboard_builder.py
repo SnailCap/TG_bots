@@ -5,7 +5,7 @@ from typing import Any, Sequence
 
 from telegram import InlineKeyboardMarkup
 
-from core.interaction.ui.builders.button_builder import ButtonBuilder, ButtonBuildError
+from core.interaction.ui.keyboard.button_builder import ButtonBuilder, ButtonBuildError
 from core.interaction.ui.keyboard.button_ref import ButtonRef  # ✅ новый импорт
 
 

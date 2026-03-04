@@ -2,7 +2,7 @@
 from __future__ import annotations
 from enum import Enum
 
-from core.interaction.types.callback_data import ServiceCallbackData
+from core.interaction.types import ServiceCallbackData
 
 
 class ProcessCommand(str, Enum):
