@@ -1,0 +1,16 @@
+{
+  "ask_student_add_info": {
+    "text": "add_student.txt",
+    "keyboard_layout": [
+      ["prc_prev"]
+    ]
+  },
+  "confirm_add_student": {
+    "text": "confirm_add_student.txt",
+    "keyboard_layout": [
+      ["confirm_add_student"],
+      ["edit_student_data"],
+      ["prc_prev"]
+    ]
+  }
+}

@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
-from core.shared.utils.time_helpers import utcnow
+from core.shared.utils.time import utc_now
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 
@@ -26,8 +26,8 @@ class TutoringCalendarWatchChannel(TutoringOwnedMixin, Base):
 
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
     __table_args__ = (
         UniqueConstraint(

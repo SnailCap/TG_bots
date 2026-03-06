@@ -51,10 +51,7 @@ class Page(UiComponent, InputReactive):
         await self.render(user_input)
 
     async def _build_keyboard_context(self, user_input: UserInput) -> Dict[str, Any]:
-        """
-        Пока у Page нет своего storage в user_data.
-        Поэтому просто отдаём дефолтный layout (если он есть).
-        """
-        if self._default_keyboard_layout is not None:
-            return {"layout": self._default_keyboard_layout}
-        return {}
+        ctx = await super()._build_keyboard_context(user_input)
+        if "layout" not in ctx and self._default_keyboard_layout is not None:
+            ctx["layout"] = self._default_keyboard_layout
+        return ctx

@@ -1,0 +1,6 @@
+{
+  "go_home": {
+    "text": "Home",
+    "callback_data": "svc:nav:home"
+  }
+}

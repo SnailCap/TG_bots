@@ -8,8 +8,8 @@ from sqlalchemy import JSON as SAJSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
-from core.enums.background_task_enums import BackgroundTaskType, RecurringTaskStatus
-from core.shared.utils.time_helpers import utcnow
+from core.background.enums import RecurringTaskStatus
+from core.shared.utils.time import utc_now
 
 
 class RecurringTask(Base):
@@ -19,7 +19,7 @@ class RecurringTask(Base):
 
     key: Mapped[str] = mapped_column(String(128), nullable=False, unique=True, index=True)
 
-    task_type: Mapped[BackgroundTaskType] = mapped_column(String(128), nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
 
     status: Mapped[RecurringTaskStatus] = mapped_column(
         SAEnum(RecurringTaskStatus, native_enum=False, validate_strings=True, length=32),
@@ -28,9 +28,9 @@ class RecurringTask(Base):
         index=True,
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
 
     first_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

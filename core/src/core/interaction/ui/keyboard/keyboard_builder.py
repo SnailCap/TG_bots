@@ -64,7 +64,7 @@ class KeyboardBuilder:
         """
         Accepts:
           - None -> skip
-          - str -> treated as button key
+          - str -> treated as a button key
           - ButtonRef -> rich reference (key + vars + visible)
         """
         if raw is None:

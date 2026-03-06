@@ -8,8 +8,8 @@ from sqlalchemy import JSON as SAJSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
-from core.enums.background_task_enums import BackgroundTaskStatus, BackgroundTaskType
-from core.shared.utils.time_helpers import utcnow
+from core.background.enums import BackgroundTaskStatus
+from core.shared.utils.time import utc_now
 
 
 class BackgroundTask(Base):
@@ -17,7 +17,7 @@ class BackgroundTask(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
-    task_type: Mapped[BackgroundTaskType] = mapped_column(String(128), nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
 
     status: Mapped[BackgroundTaskStatus] = mapped_column(
         SAEnum(BackgroundTaskStatus, native_enum=False, validate_strings=True, length=32),
@@ -26,9 +26,9 @@ class BackgroundTask(Base):
         index=True,
     )
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
 
     run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)

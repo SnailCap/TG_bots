@@ -17,26 +17,15 @@ from pipubot.domains.tutoring.integrations.google_calendar.calendar_client impor
 
 
 def _parse_rfc3339(dt: str) -> datetime:
-    """
-    Google returns RFC3339 strings, often with 'Z'.
-    datetime.fromisoformat doesn't accept 'Z', so we normalize.
-    """
     if dt.endswith("Z"):
         dt = dt[:-1] + "+00:00"
     return datetime.fromisoformat(dt)
 
 
-def _parse_event_time(obj: dict[str, Any], *, prefer_tz: str | None = None) -> datetime:
-    """
-    Google event time can be:
-    - {"dateTime": "...", "timeZone": "..."} (timed)
-    - {"date": "YYYY-MM-DD"} (all-day)
-    """
-    if "dateTime" in obj and obj["dateTime"]:
+def _parse_event_time(obj: dict[str, Any]) -> datetime:
+    if obj.get("dateTime"):
         return _parse_rfc3339(obj["dateTime"])
 
-    # all-day: treat as midnight in UTC (or could use prefer_tz later)
-    # If you want local timezone correctness for all-day events, we can refine.
     d = obj.get("date")
     if not d:
         raise CalendarClientError("Event time missing date/dateTime")
@@ -44,19 +33,62 @@ def _parse_event_time(obj: dict[str, Any], *, prefer_tz: str | None = None) -> d
 
 
 def _extract_meet_url(ev: dict[str, Any]) -> str | None:
-    # Most common: hangoutLink or conferenceData entryPoints
     hangout = ev.get("hangoutLink")
     if hangout:
         return hangout
 
     conf = ev.get("conferenceData") or {}
-    eps = conf.get("entryPoints") or []
-    for ep in eps:
+    for ep in (conf.get("entryPoints") or []):
         if ep.get("entryPointType") in ("video", "more"):
             uri = ep.get("uri")
             if uri:
                 return uri
     return None
+
+
+def _raise_for_google_calendar_response(resp: httpx.Response) -> None:
+    code = resp.status_code
+    if code == 410:
+        raise CalendarSyncTokenExpired("Google Calendar sync token expired (410 Gone)")
+    if code in (401, 403):
+        raise CalendarAuthError(f"Google Calendar auth error: {code} {resp.text}")
+    if code == 429:
+        raise CalendarRateLimitError(f"Google Calendar rate limited: {resp.text}")
+    if code >= 400:
+        raise CalendarClientError(f"Google Calendar error: {code} {resp.text}")
+
+
+def _try_parse_calendar_event(ev: dict[str, Any]) -> CalendarEventDTO | None:
+    """
+    Returns None for events we can't materialize (e.g., canceled with missing start/end).
+    """
+    try:
+        start_at = _parse_event_time(ev.get("start", {}))
+        end_at = _parse_event_time(ev.get("end", {}))
+    except Exception:
+        return None
+
+    return CalendarEventDTO(
+        google_event_id=ev["id"],
+        status=ev.get("status", "confirmed"),
+        summary=ev.get("summary"),
+        description=ev.get("description"),
+        start_at=start_at,
+        end_at=end_at,
+        updated_at=_parse_rfc3339(ev["updated"]) if ev.get("updated") else None,
+        ical_uid=ev.get("iCalUID"),
+        recurring_event_id=ev.get("recurringEventId"),
+        meeting_url=_extract_meet_url(ev),
+    )
+
+
+def _parse_items(data: dict[str, Any]) -> list[CalendarEventDTO]:
+    out: list[CalendarEventDTO] = []
+    for ev in data.get("items", []):
+        dto = _try_parse_calendar_event(ev)
+        if dto is not None:
+            out.append(dto)
+    return out
 
 
 @dataclass(frozen=True)
@@ -67,14 +99,6 @@ class GoogleCalendarClientConfig:
 
 
 class GoogleCalendarClient:
-    """
-    Minimal async client for Google Calendar API v3 (events.list).
-
-    Auth:
-        Pass an OAuth2 access token (Bearer).
-        Later you can replace it with refresh logic (see google_oauth.py skeleton).
-    """
-
     def __init__(self, config: GoogleCalendarClientConfig):
         self._cfg = config
 
@@ -92,7 +116,6 @@ class GoogleCalendarClient:
             "orderBy": "startTime",
             "timeMin": time_min.astimezone(timezone.utc).isoformat(),
             "timeMax": time_max.astimezone(timezone.utc).isoformat(),
-            # optional: "maxResults": 2500,
         }
         return await self._events_list(calendar_id=calendar_id, params=params)
 
@@ -109,59 +132,44 @@ class GoogleCalendarClient:
         }
         return await self._events_list(calendar_id=calendar_id, params=params)
 
+    async def _fetch_events_page(
+        self,
+        client: httpx.AsyncClient,
+        *,
+        url: str,
+        headers: dict[str, str],
+        base_params: dict[str, str],
+        page_token: str | None,
+    ) -> dict[str, Any]:
+        params = dict(base_params)
+        if page_token:
+            params["pageToken"] = page_token
+
+        resp = await client.get(url, headers=headers, params=params)
+        _raise_for_google_calendar_response(resp)
+        return resp.json()
+
     async def _events_list(self, *, calendar_id: str, params: dict[str, str]) -> CalendarEventsPage:
         url = f"{self._cfg.base_url}/calendars/{calendar_id}/events"
         headers = {"Authorization": f"Bearer {self._cfg.access_token}"}
 
         items: list[CalendarEventDTO] = []
         next_sync_token: str | None = None
+        page_token: str | None = None
 
         async with httpx.AsyncClient(timeout=self._cfg.timeout_s) as client:
-            page_token: str | None = None
-
             while True:
-                p = dict(params)
-                if page_token:
-                    p["pageToken"] = page_token
+                data = await self._fetch_events_page(
+                    client,
+                    url=url,
+                    headers=headers,
+                    base_params=params,
+                    page_token=page_token,
+                )
 
-                resp = await client.get(url, headers=headers, params=p)
-                if resp.status_code == 410:
-                    raise CalendarSyncTokenExpired("Google Calendar sync token expired (410 Gone)")
-                if resp.status_code in (401, 403):
-                    raise CalendarAuthError(f"Google Calendar auth error: {resp.status_code} {resp.text}")
-                if resp.status_code == 429:
-                    raise CalendarRateLimitError(f"Google Calendar rate limited: {resp.text}")
-                if resp.status_code >= 400:
-                    raise CalendarClientError(f"Google Calendar error: {resp.status_code} {resp.text}")
-
-                data = resp.json()
-
-                for ev in data.get("items", []):
-                    # If cancelled and showDeleted=true, Google may omit start/end sometimes.
-                    # We'll skip those we can't materialize.
-                    try:
-                        start_at = _parse_event_time(ev.get("start", {}))
-                        end_at = _parse_event_time(ev.get("end", {}))
-                    except Exception:
-                        continue
-
-                    items.append(
-                        CalendarEventDTO(
-                            google_event_id=ev["id"],
-                            status=ev.get("status", "confirmed"),
-                            summary=ev.get("summary"),
-                            description=ev.get("description"),
-                            start_at=start_at,
-                            end_at=end_at,
-                            updated_at=_parse_rfc3339(ev["updated"]) if ev.get("updated") else None,
-                            ical_uid=ev.get("iCalUID"),
-                            recurring_event_id=ev.get("recurringEventId"),
-                            meeting_url=_extract_meet_url(ev),
-                        )
-                    )
-
-                page_token = data.get("nextPageToken")
+                items.extend(_parse_items(data))
                 next_sync_token = data.get("nextSyncToken") or next_sync_token
+                page_token = data.get("nextPageToken")
 
                 if not page_token:
                     break

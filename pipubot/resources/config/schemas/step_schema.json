@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "Step configuration for UI builder",
+  "additionalProperties": {
+    "type": "object",
+    "required": ["text", "keyboard_layout"],
+    "additionalProperties": false,
+    "properties": {
+      "text": {
+        "type": "string",
+        "description": "Text displayed for the step"
+      },
+      "keyboard_layout": {
+        "type": "array",
+        "description": "Keyboard layout rows",
+        "items": {
+          "type": "array",
+          "description": "Single keyboard row",
+          "items": {
+            "type": "string",
+            "description": "Button key reference"
+          },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

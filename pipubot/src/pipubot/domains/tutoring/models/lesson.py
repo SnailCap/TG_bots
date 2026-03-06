@@ -19,8 +19,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
-from core.shared.utils.time_helpers import utcnow
-from pipubot.domains.tutoring.models.enums import (
+from core.shared.utils.time import utc_now
+from pipubot.domains.tutoring.enums.enums import (
     LessonConfirmationStatus,
     LessonExceptionCode,
     LessonStatus,
@@ -39,6 +39,8 @@ class TutoringLesson(TutoringOwnedMixin, Base):
         index=True,
         nullable=True,
     )
+
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- planned (from calendar) ---
     start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
@@ -91,9 +93,9 @@ class TutoringLesson(TutoringOwnedMixin, Base):
 
     meet_url: Mapped[str | None] = mapped_column(String(1024))
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
 
     student = relationship("TutoringStudent", back_populates="lessons")

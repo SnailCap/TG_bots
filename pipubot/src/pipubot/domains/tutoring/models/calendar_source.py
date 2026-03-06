@@ -6,7 +6,7 @@ from sqlalchemy import DateTime, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
-from core.shared.utils.time_helpers import utcnow
+from core.shared.utils.time import utc_now
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 
@@ -30,9 +30,9 @@ class TutoringCalendarSource(TutoringOwnedMixin, Base):
 
     window_days: Mapped[int] = mapped_column(Integer, default=60, nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
     )
 
     __table_args__ = (

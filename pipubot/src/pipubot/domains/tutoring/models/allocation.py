@@ -15,7 +15,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
-from core.shared.utils.time_helpers import utcnow
+from core.shared.utils.time import utc_now
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 
@@ -37,8 +37,8 @@ class TutoringPaymentAllocation(TutoringOwnedMixin, Base):
 
     amount_applied: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
     payment = relationship("TutoringPayment", back_populates="allocations")
     lesson = relationship("TutoringLesson", back_populates="allocations")

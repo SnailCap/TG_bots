@@ -1,0 +1,9 @@
+from typing import Protocol
+
+class SecretsService(Protocol):
+    def get(self, key: str) -> str: ...
+    def get_optional(self, key: str) -> str | None: ...
+
+class HasSecrets(Protocol):
+    @property
+    def secrets(self) -> SecretsService: ...

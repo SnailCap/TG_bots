@@ -1,0 +1,18 @@
+{
+  "prc_next": {
+    "text": "Дальше",
+    "callback_data": "svc:prc:cmd:next"
+  },
+  "prc_prev": {
+    "text": "Назад",
+    "callback_data": "svc:prc:cmd:prev"
+  },
+  "test_process": {
+    "text": "start test process",
+    "callback_data": "svc:prc:start:test_wizard"
+  },
+  "add_student_process": {
+    "text": "Добавить студента",
+    "callback_data": "svc:prc:start:add_student"
+  }
+}

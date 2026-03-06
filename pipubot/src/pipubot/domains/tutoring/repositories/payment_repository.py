@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from pipubot.domains.tutoring.models.enums import PaymentMethod
+from pipubot.domains.tutoring.enums.enums import PaymentMethod
 from pipubot.domains.tutoring.models.payment import TutoringPayment
 
 

@@ -77,15 +77,16 @@ class UserInputRouter:
                 await self._start_process(user_input, user_input.proc_key)
 
             case ServiceKind.PRC_CMD:
-                # process commands are handled only if a process is active
                 if user_input.state.has_active_process():
                     await self._handle_active_process(user_input)
                 else:
                     await self._open_start_page(user_input)
 
             case ServiceKind.NONE:
-                # Unknown/other service callback -> refresh current page
-                await self._open_current_or_start(user_input)
+                if user_input.state.has_active_process():
+                    await self._handle_active_process(user_input)
+                else:
+                    await self._open_current_or_start(user_input)
 
     async def _handle_nav_callback(self, user_input: UserInput) -> None:
         # We still use old flags for "special nav" because they are explicit in ServiceCallbackData.

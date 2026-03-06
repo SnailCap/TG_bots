@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union, Sequence
+from typing import Sequence, Union
 
 
 # -------------------------
@@ -28,7 +28,7 @@ ProcessEffect = Union[RenderStep, FinishProcess, CancelProcess]
 
 
 # -------------------------
-# Step-level directives (Variant A)
+# Step-level directives
 # -------------------------
 
 @dataclass(frozen=True, slots=True)
@@ -49,5 +49,17 @@ class GoToStep:
     step_name: str
 
 
-StepDirective = Union[GoNext, GoPrev, GoToStep]
+@dataclass(frozen=True, slots=True)
+class Finish:
+    """Step requests graceful completion of the active process."""
+    pass
+
+
+@dataclass(frozen=True, slots=True)
+class Cancel:
+    """Step requests graceful cancellation of the active process."""
+    pass
+
+
+StepDirective = Union[GoNext, GoPrev, GoToStep, Finish, Cancel]
 StepResult = Union[None, StepDirective, ProcessEffect, Sequence[ProcessEffect]]

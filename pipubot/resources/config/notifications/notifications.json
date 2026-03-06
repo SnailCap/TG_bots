@@ -1,5 +1,5 @@
 {
   "test_notification": {
-    "text": "Привет, {user}! Это уведомление тебе!"
+    "text": "test.txt"
   }
 }

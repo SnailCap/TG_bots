@@ -7,8 +7,8 @@ from sqlalchemy import select, update, or_, and_, CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import BackgroundTask
-from core.enums.background_task_enums import BackgroundTaskStatus, BackgroundTaskType
-from core.shared.utils.time_helpers import utcnow
+from core.background.enums import BackgroundTaskStatus
+from core.shared.utils.time import utc_now
 
 
 # -------------------------
@@ -18,7 +18,7 @@ from core.shared.utils.time_helpers import utcnow
 async def create_task(
         session: AsyncSession,
         *,
-        task_type: BackgroundTaskType,
+        task_type: str,
         payload: dict[str, Any],
         run_at: datetime | None = None,
         priority: int = 0,
@@ -32,7 +32,7 @@ async def create_task(
     task = BackgroundTask(
         task_type=task_type,
         status=status,
-        run_at=run_at or utcnow(),
+        run_at=run_at or utc_now(),
         payload=payload,
         priority=priority,
         max_retries=max_retries,
@@ -72,7 +72,7 @@ async def claim_due_task_ids(
         limit: int = 50,
         lease_seconds: int = 120,
 ) -> list[int]:
-    now = now or utcnow()
+    now = now or utc_now()
     lease_until = now + timedelta(seconds=lease_seconds)
 
     statement = (
@@ -131,7 +131,7 @@ async def mark_task_done(
     """
     Mark the task as DONE.
     """
-    ts = finished_at or utcnow()
+    ts = finished_at or utc_now()
     await session.execute(
         update(BackgroundTask)
         .where(BackgroundTask.id == task_id)
@@ -155,7 +155,7 @@ async def mark_task_failed(
     """
     Mark the task as FAILED (terminal).
     """
-    ts = finished_at or utcnow()
+    ts = finished_at or utc_now()
 
     await session.execute(
         update(BackgroundTask)
@@ -191,7 +191,7 @@ async def reschedule_task_for_retry(
             status=BackgroundTaskStatus.PENDING,
             run_at=run_at,
             retries=retries,
-            updated_at=utcnow(),
+            updated_at=utc_now(),
             started_at=None,
             finished_at=None,
             lease_expires_at=None,
@@ -207,7 +207,7 @@ async def renew_task_lease(
     lease_seconds: int,
     now: datetime | None = None,
 ) -> int:
-    now = now or utcnow()
+    now = now or utc_now()
     lease_until = now + timedelta(seconds=lease_seconds)
 
     stmt = (

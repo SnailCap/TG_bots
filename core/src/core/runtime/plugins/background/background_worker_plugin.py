@@ -25,7 +25,7 @@ class BackgroundServicesPlugin(AppPlugin):
       - stop()
 
     Optional:
-      - import handler modules/packages before starting services (side-effect registration).
+      - import handler modules/packages before starting services (side effect registration).
     """
 
     def __init__(

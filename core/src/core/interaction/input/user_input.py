@@ -59,13 +59,16 @@ class UserInput:
         self.chat_id: int = chat.id if chat else 0
         self.message_id: int = msg.message_id if msg else 0
 
-        # set by identity layer
         self.user_role: UserRole = UserRole.PUBLIC
 
         self._snapshot: InputSnapshot = InputSnapshot.from_update(update)
 
         self._service_parser = service_parser or ServiceCallbackParser()
-        self._responder = Responder(messenger=messenger, chat_id=self.chat_id, message_id=self.message_id)
+        self._responder = Responder(
+            messenger=messenger,
+            chat_id=self.chat_id,
+            message_id=self.message_id,
+        )
 
         self._service: Optional[ServiceCallback] = None
 
@@ -106,6 +109,29 @@ class UserInput:
         return self._snapshot.callback_data
 
     @property
+    def step_callback(self) -> Optional[str]:
+        """
+        Normalized callback payload for step-level business handlers.
+
+        Examples:
+        - "st:confirm_add_student:create" -> "confirm_add_student:create"
+        - "confirm_add_student:create" -> "confirm_add_student:create"
+        - None -> None
+        """
+        if not self.is_callback:
+            return None
+
+        raw = self.callback_data or self.callback
+        if not raw:
+            return None
+
+        prefix = ServiceCallbackData.ST.value
+        if raw.startswith(prefix):
+            return raw[len(prefix):]
+
+        return raw
+
+    @property
     def is_command(self) -> bool:
         return self._snapshot.is_command
 
@@ -140,6 +166,38 @@ class UserInput:
     @property
     def service_kind(self) -> ServiceKind:
         return self.service.kind
+
+    # --- step callback payload ---
+
+    @property
+    def step_callback_payload(self) -> Optional[str]:
+        """
+        Payload for step-level custom callbacks.
+
+        Examples:
+        - "st:confirm_add_student:create" -> "confirm_add_student:create"
+        - "svc:nav:home" (recognized service callback) -> returns raw callback unchanged
+        - plain callback without prefix -> returns raw callback unchanged
+        """
+        if not self.is_callback:
+            return None
+
+        raw = self.callback_data or self.callback
+        if not raw:
+            return None
+
+        svc_prefix = ServiceCallbackData.SVC.value
+
+        # For recognized framework callbacks keep raw value untouched.
+        if self.service_kind is not ServiceKind.NONE:
+            return raw
+
+        # For unknown/custom callbacks wrapped in the service namespace,
+        # strip the leading service prefix once.
+        if raw.startswith(svc_prefix):
+            return raw[len(svc_prefix):]
+
+        return raw
 
     # --- backwards-compatible flags ---
 

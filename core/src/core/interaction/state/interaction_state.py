@@ -19,7 +19,7 @@ from core.interaction.state.user_data_schema import (
     set_step_key as schema_set_step_key,
 )
 from core.interaction.types import UserDataPageKey, UserDataProcessKey
-from core.interaction.utils import normalize_key
+from core.interaction.utils.normalize_key import normalize_key
 
 
 class InteractionState:

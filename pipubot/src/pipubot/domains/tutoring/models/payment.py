@@ -17,8 +17,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
-from core.shared.utils.time_helpers import utcnow
-from pipubot.domains.tutoring.models.enums import PaymentMethod
+from core.shared.utils.time import utc_now
+from pipubot.domains.tutoring.enums.enums import PaymentMethod
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 
@@ -46,8 +46,8 @@ class TutoringPayment(TutoringOwnedMixin, Base):
     external_ref: Mapped[str | None] = mapped_column(String(256), index=True)
     note: Mapped[str | None] = mapped_column(Text)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False)
 
     student = relationship("TutoringStudent", back_populates="payments")
     allocations = relationship("TutoringPaymentAllocation", back_populates="payment")

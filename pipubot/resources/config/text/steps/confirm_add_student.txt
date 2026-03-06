@@ -1,0 +1,14 @@
+Новый ученик
+
+Имя: {full_name}
+Ставка: {default_rate} {default_currency}
+Длительность: {default_duration_min} мин
+
+Telegram username: {telegram_username}
+Telegram ссылка: {telegram_link}
+Email: {email}
+
+Заметки:
+{notes}
+
+Подтвердить создание?

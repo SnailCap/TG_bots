@@ -2,6 +2,7 @@ from enum import Enum
 
 class ServiceCallbackData(str, Enum):
     SVC = "svc:"
+    ST = "st:"
 
     NAV = "svc:nav:"
     NAV_TO = "svc:nav:to:"

@@ -1,4 +1,4 @@
-from core.interaction.ui.binding.decorators import process
+from core.interaction.ui.binding import process
 from core.interaction.ui import Process
 
 
@@ -9,3 +9,4 @@ class TestWizardProcess(Process):
         "test_step_2",
         "test_step_3",
     ]
+

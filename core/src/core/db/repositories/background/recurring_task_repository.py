@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select, update, or_, and_, delete
+from sqlalchemy import select, update, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import RecurringTask
-from core.enums.background_task_enums import RecurringTaskStatus, BackgroundTaskType
-from core.shared.utils.time_helpers import utcnow
+from core.background.enums import RecurringTaskStatus
+from core.shared.utils.time import utc_now
 
 
 # -------------------------
@@ -19,7 +19,7 @@ async def create_recurring_task(
         session: AsyncSession,
         *,
         key: str,
-        task_type: BackgroundTaskType,
+        task_type: str,
         payload_template: dict[str, Any] | None = None,
         first_run_at: datetime | None = None,
         interval_seconds: int,
@@ -33,7 +33,7 @@ async def create_recurring_task(
     - No transaction control here (no commit/rollback). Caller controls it.
     - next_run_at по умолчанию = first_run_at.
     """
-    first = first_run_at or utcnow()
+    first = first_run_at or utc_now()
     rt = RecurringTask(
         key=key,
         task_type=task_type,
@@ -88,7 +88,7 @@ async def claim_due_recurring_ids(
         limit: int = 50,
         lease_seconds: int = 120,
 ) -> list[int]:
-    now = now or utcnow()
+    now = now or utc_now()
     lease_until = now + timedelta(seconds=lease_seconds)
 
     stmt = (
@@ -155,7 +155,7 @@ async def advance_recurring_schedule(
     If disable=True: set the status to DISABLE.
     If set_active=True: ensure status becomes ACTIVE (useful after PROCESSING claim).
     """
-    ts = utcnow()
+    ts = utc_now()
 
     # status resolution in one place
     status: RecurringTaskStatus | None
@@ -194,7 +194,7 @@ async def mark_recurring_error(
     If the row was claimed as PROCESSING, you usually want to return it to ACTIVE;
     otherwise it could get stuck. Keep_active=True does that.
     """
-    ts = utcnow()
+    ts = utc_now()
     status: RecurringTaskStatus | None = RecurringTaskStatus.ACTIVE if keep_active else None
 
     await session.execute(
@@ -217,7 +217,7 @@ async def pause_recurring_task(
     """
     Pause recurring task.
     """
-    ts = utcnow()
+    ts = utc_now()
     await session.execute(
         update(RecurringTask)
         .where(RecurringTask.id == recurring_task_id)
@@ -233,7 +233,7 @@ async def disable_recurring_task(
     """
     Disable a recurring task.
     """
-    ts = utcnow()
+    ts = utc_now()
     await session.execute(
         update(RecurringTask)
         .where(RecurringTask.id == recurring_task_id)
@@ -252,7 +252,7 @@ async def disable_recurring_not_in_keys(
     Disable recurring tasks whose key starts with prefix but not in desired_keys.
     Returns affected rows count.
     """
-    ts = utcnow()
+    ts = utc_now()
 
     stmt = (
         update(RecurringTask)

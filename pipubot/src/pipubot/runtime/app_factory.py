@@ -21,13 +21,16 @@ from core.runtime.plugins.app_plugin import AppPlugin
 from core.runtime.plugins.background.background_worker_plugin import BackgroundServicesPlugin
 from core.runtime.plugins.ui_bindings_plugin import UiBindingsPlugin
 from core.services.identity.provider import DbIdentityProvider
-from core.services.notification_service import NotificationService
+from core.services.notifications.loggers.notification_log_db import DbNotificationLog
+from core.services.notifications.notification_service import NotificationService
 from core.shared.utils.session_helper import create_engine, create_session_maker
 
 from pipubot.background.binding.bindings import BG_HANDLER_TARGETS
-from pipubot.background.build.build_services import build_background_services
+from core.background.build_services import build_background_services
+from pipubot.domains.tutoring.services.gcal.google_oauth_service import GoogleOAuthService
 from pipubot.paths.main_paths import PipubotPaths
 from pipubot.runtime.runtime_services import DefaultAppServices, DefaultInteractionServices
+from pipubot.runtime.secrets import EnvSecretBackend, SecretsService
 from pipubot.ui.binding.bindings import UI_BINDINGS
 
 BOT_DATA_SESSION_MAKER: Final[str] = "session_maker"
@@ -105,26 +108,35 @@ class PipubotAppFactory:
         app.bot_data[BOT_DATA_SESSION_MAKER] = self._session_maker
 
         messenger = PtbMessenger(app.bot)
+
+        notification_log = DbNotificationLog()
         notification_service = NotificationService(
             ui=self._ui_builder,
-            messenger=messenger
+            messenger=messenger, # type: ignore
+            notification_log=notification_log, # type: ignore
+        )
+        secret_backend = EnvSecretBackend()
+        secrets = SecretsService.from_backend(secret_backend)
+        google_oauth = GoogleOAuthService()
+        interaction_services = DefaultInteractionServices(
+            ui=self._ui_builder,
+            messenger=messenger, # type: ignore
+            notification_service=notification_service,
         )
 
         services: DefaultAppServices = DefaultAppServices(
-            interaction=DefaultInteractionServices(
-                ui=self._ui_builder,
-                messenger=messenger,
-                notification_service=notification_service,
-            ),
+            interaction=interaction_services,
             identity=self._identity_provider,
+            secrets=secrets,
+            google_oauth=google_oauth,
         )
         app.bot_data[BOT_DATA_SERVICES] = services
 
         dispatcher = UpdateDispatcher(
             router=self._router,
-            session_provider=self._session_provider,
+            session_provider=self._session_provider, # type: ignore
             identity_provider=self._identity_provider,
-            messenger=messenger,
+            messenger=messenger, # type: ignore
         )
         dispatcher.register_handlers(app)
 
@@ -174,6 +186,7 @@ class PipubotAppFactory:
             database_url=os.environ.get("DATABASE_URL"),
             build_background_services=build_background_services,
             background_handler_modules=tuple(BG_HANDLER_TARGETS.packages),
+            recurring_prefix="system."
         )
 
         return cls(config=config).build()

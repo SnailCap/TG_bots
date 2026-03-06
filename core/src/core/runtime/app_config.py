@@ -21,6 +21,10 @@ class AppConfig:
         Callable[[Any, "AppConfig"], Sequence[BackgroundService]]
     ] = None
 
+    # Background recurring bootstrap
+    bootstrap_recurring: bool = True
+    recurring_prefix: str = "system."
+
     # Background task handlers (side effect imports)
     background_handler_modules: Sequence[str] = field(default_factory=tuple)
 

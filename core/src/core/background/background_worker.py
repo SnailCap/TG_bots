@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from core.background.errors import NonRetryableTaskError
 from core.db.models import BackgroundTask
 from core.db.transactional import transactional
-from core.enums.background_task_enums import BackgroundTaskStatus
+from core.background.enums import BackgroundTaskStatus
 from core.db.repositories.background.background_task_repository import (
     claim_due_task_ids,
     mark_task_done,
@@ -21,7 +21,7 @@ from core.db.repositories.background.background_task_repository import (
     get_task,
     renew_task_lease,
 )
-from core.shared.utils.time_helpers import utcnow
+from core.shared.utils.time import utc_now
 
 log = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class BackgroundWorker:
 
     @transactional
     async def _claim_batch_tx(self, session: AsyncSession) -> list[int]:
-        now = utcnow()
+        now = utc_now()
         ids = await claim_due_task_ids(
             session,
             now=now,
@@ -144,7 +144,7 @@ class BackgroundWorker:
 
         try:
             await self._dispatcher.dispatch(session, task)
-            await mark_task_done(session, task_id=task.id, finished_at=utcnow())
+            await mark_task_done(session, task_id=task.id, finished_at=utc_now())
             return True
 
         except Exception as exc:
@@ -193,7 +193,7 @@ class BackgroundWorker:
                 task_id=task.id,
                 error=str(exc),
                 retries=next_retries,
-                finished_at=utcnow(),
+                finished_at=utc_now(),
             )
             return
 
@@ -202,7 +202,7 @@ class BackgroundWorker:
             await reschedule_task_for_retry(
                 session,
                 task_id=task.id,
-                run_at=utcnow() + timedelta(seconds=delay),
+                run_at=utc_now() + timedelta(seconds=delay),
                 retries=next_retries,
                 error=str(exc),
             )
@@ -212,5 +212,5 @@ class BackgroundWorker:
                 task_id=task.id,
                 error=str(exc),
                 retries=next_retries,
-                finished_at=utcnow(),
+                finished_at=utc_now(),
             )

@@ -1,5 +1,5 @@
 from .calendar_source import TutoringCalendarSource
-from .enums import LessonStatus, PaymentMethod
+from pipubot.domains.tutoring.enums.enums import LessonStatus, PaymentMethod
 from .student import TutoringStudent
 from .lesson import TutoringLesson
 from .payment import TutoringPayment

@@ -3,22 +3,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from pipubot.domains.tutoring.models.allocation import TutoringPaymentAllocation
-from pipubot.domains.tutoring.models.enums import LessonConfirmationStatus, LessonStatus
+from pipubot.domains.tutoring.enums.enums import LessonConfirmationStatus, LessonStatus
 from pipubot.domains.tutoring.models.lesson import TutoringLesson
 
+
+# ============================================================
+# DTOs (optional, but keeps UI/service queries tidy)
+# ============================================================
 
 @dataclass(frozen=True)
 class LessonPaymentsSnapshotRow:
     """
-    Raw snapshot row for services/UI:
-    - planned/actual charges are returned as-is
-    - paid_amount is sum(allocations.amount_applied)
-    No business interpretation here.
+    Данные о платежах по уроку для UI/сервисов.
     """
     lesson_id: int
     student_id: int | None
@@ -27,248 +29,72 @@ class LessonPaymentsSnapshotRow:
     start_at: datetime
     end_at: datetime
     currency: str
-
     planned_charge_amount: Decimal | None
     actual_charge_amount: Decimal | None
     paid_amount: Decimal
 
+
+# ============================================================
+# Public queries
+# ============================================================
 
 async def get_lesson_by_id(
     session: AsyncSession,
     *,
     tutor_user_id: int,
     lesson_id: int,
+    load_student: bool = False,
 ) -> TutoringLesson | None:
     stmt = (
         select(TutoringLesson)
         .where(TutoringLesson.tutor_user_id == tutor_user_id)
         .where(TutoringLesson.id == lesson_id)
     )
+    if load_student:
+        stmt = stmt.options(selectinload(TutoringLesson.student))
     return await session.scalar(stmt)
 
 
-async def list_lessons_for_student(
+async def list_lessons(
     session: AsyncSession,
     *,
     tutor_user_id: int,
-    student_id: int,
+    limit: int = 200,
+    offset: int = 0,
+    load_student: bool = False,
+    # filters:
+    student_id: int | None = None,
     start_from: datetime | None = None,
     start_to: datetime | None = None,
     statuses: list[LessonStatus] | None = None,
-    limit: int = 200,
-    offset: int = 0,
+    confirmation_status: LessonConfirmationStatus | None = None,
 ) -> list[TutoringLesson]:
-    stmt = (
-        select(TutoringLesson)
-        .where(TutoringLesson.tutor_user_id == tutor_user_id)
-        .where(TutoringLesson.student_id == student_id)
+    """
+    Универсальный листинг уроков с поддержкой фильтров.
+    """
+    stmt: Select[tuple[TutoringLesson]] = select(TutoringLesson)
+    stmt = _apply_lesson_filters(
+        stmt,
+        tutor_user_id=tutor_user_id,
+        student_id=student_id,
+        start_from=start_from,
+        start_to=start_to,
+        statuses=statuses,
+        confirmation_status=confirmation_status,
     )
 
-    if start_from is not None:
-        stmt = stmt.where(TutoringLesson.start_at >= start_from)
-    if start_to is not None:
-        stmt = stmt.where(TutoringLesson.start_at < start_to)
-    if statuses:
-        stmt = stmt.where(TutoringLesson.status.in_(statuses))
+    stmt = stmt.order_by(TutoringLesson.start_at.asc(), TutoringLesson.id.asc()).limit(limit).offset(offset)
 
-    stmt = (
-        stmt.order_by(TutoringLesson.start_at.asc(), TutoringLesson.id.asc())
-        .limit(limit)
-        .offset(offset)
-    )
+    if load_student:
+        stmt = stmt.options(selectinload(TutoringLesson.student))
 
     res = await session.scalars(stmt)
     return list(res)
 
 
-async def list_lessons_pending_confirmation(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    start_from: datetime | None = None,
-    start_to: datetime | None = None,
-    statuses: list[LessonStatus] | None = None,
-    limit: int = 200,
-    offset: int = 0,
-) -> list[TutoringLesson]:
-    """
-    Pure data query: returns lessons where confirmation is pending.
-    Which statuses mean "should be confirmed" is up to the service (pass statuses if needed).
-    """
-    stmt = (
-        select(TutoringLesson)
-        .where(TutoringLesson.tutor_user_id == tutor_user_id)
-        .where(TutoringLesson.confirmation_status == LessonConfirmationStatus.PENDING)
-    )
-
-    if start_from is not None:
-        stmt = stmt.where(TutoringLesson.start_at >= start_from)
-    if start_to is not None:
-        stmt = stmt.where(TutoringLesson.start_at < start_to)
-    if statuses:
-        stmt = stmt.where(TutoringLesson.status.in_(statuses))
-
-    stmt = (
-        stmt.order_by(TutoringLesson.start_at.asc(), TutoringLesson.id.asc())
-        .limit(limit)
-        .offset(offset)
-    )
-
-    res = await session.scalars(stmt)
-    return list(res)
-
-
-async def list_lessons_with_paid_amount_for_student(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    student_id: int,
-    start_from: datetime | None = None,
-    start_to: datetime | None = None,
-    statuses: list[LessonStatus] | None = None,
-    limit: int = 500,
-) -> list[LessonPaymentsSnapshotRow]:
-    """
-    Raw financial snapshot rows for a student's lessons.
-    - includes planned_charge_amount, actual_charge_amount, confirmation_status
-    - includes paid_amount = sum(allocations)
-    """
-    alloc_sum = func.coalesce(func.sum(TutoringPaymentAllocation.amount_applied), 0)
-
-    stmt = (
-        select(
-            TutoringLesson.id,
-            TutoringLesson.student_id,
-            TutoringLesson.status,
-            TutoringLesson.confirmation_status,
-            TutoringLesson.start_at,
-            TutoringLesson.end_at,
-            TutoringLesson.currency,
-            TutoringLesson.planned_charge_amount,
-            TutoringLesson.actual_charge_amount,
-            alloc_sum.label("paid_amount"),
-        )
-        .outerjoin(
-            TutoringPaymentAllocation,
-            (TutoringPaymentAllocation.lesson_id == TutoringLesson.id)
-            & (TutoringPaymentAllocation.tutor_user_id == tutor_user_id),
-        )
-        .where(TutoringLesson.tutor_user_id == tutor_user_id)
-        .where(TutoringLesson.student_id == student_id)
-        .group_by(
-            TutoringLesson.id,
-            TutoringLesson.student_id,
-            TutoringLesson.status,
-            TutoringLesson.confirmation_status,
-            TutoringLesson.start_at,
-            TutoringLesson.end_at,
-            TutoringLesson.currency,
-            TutoringLesson.planned_charge_amount,
-            TutoringLesson.actual_charge_amount,
-        )
-        .order_by(TutoringLesson.start_at.asc(), TutoringLesson.id.asc())
-        .limit(limit)
-    )
-
-    if start_from is not None:
-        stmt = stmt.where(TutoringLesson.start_at >= start_from)
-    if start_to is not None:
-        stmt = stmt.where(TutoringLesson.start_at < start_to)
-    if statuses:
-        stmt = stmt.where(TutoringLesson.status.in_(statuses))
-
-    rows = (await session.execute(stmt)).all()
-    return [
-        LessonPaymentsSnapshotRow(
-            lesson_id=int(lesson_id),
-            student_id=student_id,
-            status=status,
-            confirmation_status=confirmation_status,
-            start_at=start_at,
-            end_at=end_at,
-            currency=currency,
-            planned_charge_amount=planned_charge_amount,
-            actual_charge_amount=actual_charge_amount,
-            paid_amount=paid_amount,
-        )
-        for (
-            lesson_id,
-            student_id,
-            status,
-            confirmation_status,
-            start_at,
-            end_at,
-            currency,
-            planned_charge_amount,
-            actual_charge_amount,
-            paid_amount,
-        ) in rows
-    ]
-
-
-async def get_lesson_paid_amount(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    lesson_id: int,
-) -> Decimal:
-    stmt = (
-        select(func.coalesce(func.sum(TutoringPaymentAllocation.amount_applied), 0))
-        .where(TutoringPaymentAllocation.tutor_user_id == tutor_user_id)
-        .where(TutoringPaymentAllocation.lesson_id == lesson_id)
-    )
-    val = await session.scalar(stmt)
-    return val  # type: ignore[return-value]
-
-
-async def sum_student_planned_charges(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    student_id: int,
-) -> Decimal:
-    stmt = (
-        select(func.coalesce(func.sum(TutoringLesson.planned_charge_amount), 0))
-        .where(TutoringLesson.tutor_user_id == tutor_user_id)
-        .where(TutoringLesson.student_id == student_id)
-        .where(TutoringLesson.planned_charge_amount.is_not(None))
-    )
-    val = await session.scalar(stmt)
-    return val  # type: ignore[return-value]
-
-
-async def sum_student_actual_charges(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    student_id: int,
-) -> Decimal:
-    stmt = (
-        select(func.coalesce(func.sum(TutoringLesson.actual_charge_amount), 0))
-        .where(TutoringLesson.tutor_user_id == tutor_user_id)
-        .where(TutoringLesson.student_id == student_id)
-        .where(TutoringLesson.actual_charge_amount.is_not(None))
-    )
-    val = await session.scalar(stmt)
-    return val  # type: ignore[return-value]
-
-
-async def sum_student_paid_allocations(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    student_id: int,
-) -> Decimal:
-    stmt = (
-        select(func.coalesce(func.sum(TutoringPaymentAllocation.amount_applied), 0))
-        .join(TutoringLesson, TutoringLesson.id == TutoringPaymentAllocation.lesson_id)
-        .where(TutoringPaymentAllocation.tutor_user_id == tutor_user_id)
-        .where(TutoringLesson.tutor_user_id == tutor_user_id)
-        .where(TutoringLesson.student_id == student_id)
-    )
-    val = await session.scalar(stmt)
-    return val  # type: ignore[return-value]
-
+# ============================================================
+# Google Calendar integration
+# ============================================================
 
 async def get_lesson_by_google_instance(
     session: AsyncSession,
@@ -292,24 +118,11 @@ async def upsert_lesson_from_gcal_event(
     tutor_user_id: int,
     google_calendar_id: str,
     google_event_id: str,
-    start_at: datetime,
-    end_at: datetime,
-    status: LessonStatus,
-    google_updated_at: datetime | None = None,
-    google_ical_uid: str | None = None,
-    google_recurring_event_id: str | None = None,
-    title: str | None = None,
-    description: str | None = None,
-    meet_url: str | None = None,
-    student_id: int | None = None,
+    **fields: Any,
 ) -> TutoringLesson:
     """
-    Idempotent upsert for a Google Calendar *instance* (singleEvents=true).
-
-    Repository rule:
-    - updates ONLY calendar/planned fields
-    - does NOT touch actual_* / confirmation_* / exception_* / money snapshots
-    - if google_updated_at is present, prevents stale overwrites
+    Идемпотентный апсерт lesson из gcal instance (singleEvents=true).
+    Guard-clause: если google_updated_at не новее — не трогаем запись.
     """
     lesson = await get_lesson_by_google_instance(
         session,
@@ -319,45 +132,118 @@ async def upsert_lesson_from_gcal_event(
     )
 
     if lesson is None:
-        lesson = TutoringLesson(
+        return await _create_new_lesson(
+            session,
             tutor_user_id=tutor_user_id,
-            student_id=student_id,
-            status=status,
-            start_at=start_at,
-            end_at=end_at,
             google_calendar_id=google_calendar_id,
             google_event_id=google_event_id,
-            google_updated_at=google_updated_at,
-            google_ical_uid=google_ical_uid,
-            google_recurring_event_id=google_recurring_event_id,
-            title=title,
-            notes=description,
-            meet_url=meet_url,
+            fields=fields,
         )
-        session.add(lesson)
-        await session.flush()
+
+    new_updated = fields.get("google_updated_at")
+    if new_updated and lesson.google_updated_at and new_updated <= lesson.google_updated_at:
         return lesson
 
-    if google_updated_at and lesson.google_updated_at and google_updated_at <= lesson.google_updated_at:
-        return lesson
-
-    lesson.start_at = start_at
-    lesson.end_at = end_at
-    lesson.status = status
-
-    lesson.google_updated_at = google_updated_at
-    lesson.google_ical_uid = google_ical_uid
-    lesson.google_recurring_event_id = google_recurring_event_id
-
-    if title is not None:
-        lesson.title = title
-    if description is not None:
-        lesson.notes = description
-    if meet_url is not None:
-        lesson.meet_url = meet_url
-
-    # only set student if you resolved it (avoid wiping)
-    if student_id is not None and lesson.student_id is None:
-        lesson.student_id = student_id
-
+    _update_lesson_attributes(lesson, fields)
+    await session.flush()
     return lesson
+
+
+async def list_upcoming_lessons(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    start_from: datetime,
+    start_to: datetime,
+    limit: int = 200,
+    load_student: bool = True,
+) -> list[TutoringLesson]:
+    """
+    Upcoming lessons within [start_from, start_to).
+    По умолчанию подгружаем student через deselection, чтобы не словить MissingGreenlet
+    в сервисах/хендлерах, которые читают lesson.student.
+    """
+    stmt = (
+        select(TutoringLesson)
+        .where(TutoringLesson.tutor_user_id == tutor_user_id)
+        .where(TutoringLesson.start_at >= start_from)
+        .where(TutoringLesson.start_at < start_to)
+        .order_by(TutoringLesson.start_at.asc(), TutoringLesson.id.asc())
+        .limit(limit)
+    )
+
+    if load_student:
+        stmt = stmt.options(selectinload(TutoringLesson.student))
+
+    res = await session.scalars(stmt)
+    return list(res)
+
+
+# ============================================================
+# Internal helpers
+# ============================================================
+
+def _apply_lesson_filters(
+    stmt: Select[tuple[TutoringLesson]],
+    *,
+    tutor_user_id: int,
+    student_id: int | None,
+    start_from: datetime | None,
+    start_to: datetime | None,
+    statuses: list[LessonStatus] | None,
+    confirmation_status: LessonConfirmationStatus | None,
+) -> Select[tuple[TutoringLesson]]:
+    stmt = stmt.where(TutoringLesson.tutor_user_id == tutor_user_id)
+
+    if student_id is not None:
+        stmt = stmt.where(TutoringLesson.student_id == student_id)
+    if start_from is not None:
+        stmt = stmt.where(TutoringLesson.start_at >= start_from)
+    if start_to is not None:
+        stmt = stmt.where(TutoringLesson.start_at < start_to)
+    if statuses:
+        stmt = stmt.where(TutoringLesson.status.in_(statuses))
+    if confirmation_status is not None:
+        stmt = stmt.where(TutoringLesson.confirmation_status == confirmation_status)
+
+    return stmt
+
+
+async def _create_new_lesson(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    google_calendar_id: str,
+    google_event_id: str,
+    fields: dict[str, Any],
+) -> TutoringLesson:
+    lesson = TutoringLesson(
+        tutor_user_id=tutor_user_id,
+        google_calendar_id=google_calendar_id,
+        google_event_id=google_event_id,
+        **fields,
+    )
+    session.add(lesson)
+    await session.flush()
+    return lesson
+
+
+def _update_lesson_attributes(lesson: TutoringLesson, fields: dict[str, Any]) -> None:
+    """
+    Обновление полей с простыми правилами:
+    - не затираем student_id, если уже привязан
+    - None не пишем, кроме "всегда обновляемых"
+    - description -> notes (если вы именно так мапите)
+    """
+    always_updated: set[str] = {"start_at", "end_at", "status"}
+
+    for key, value in fields.items():
+        if value is None and key not in always_updated:
+            continue
+
+        if key == "student_id" and lesson.student_id is not None:
+            continue
+
+        attr_name = "notes" if key == "description" else key
+        if hasattr(lesson, attr_name):
+            setattr(lesson, attr_name, value)

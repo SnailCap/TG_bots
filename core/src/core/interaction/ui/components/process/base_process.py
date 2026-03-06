@@ -16,11 +16,6 @@ from .effects import (
 class Process(ABC):
     """
     Process base class.
-
-    LoD improvements:
-    - Do not parse callback_data here.
-      Use UserInput intent-level helpers: is_proc_next / is_proc_prev.
-    - Minimize deep knowledge of state structure by using InteractionState façade.
     """
 
     step_names: list[str] = []

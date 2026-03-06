@@ -6,9 +6,17 @@ from telegram import InlineKeyboardMarkup
 
 if TYPE_CHECKING:
     from core.interaction.input.user_input import UserInput
+
 from core.interaction.contracts.input_reactive import InputReactive
 from ...keyboard import KeyboardBuilder
-from .effects import GoNext, GoPrev, StepResult, GoToStep
+from .effects import (
+    Cancel,
+    Finish,
+    GoNext,
+    GoPrev,
+    GoToStep,
+    StepResult,
+)
 from ..base import UiComponent
 
 
@@ -27,13 +35,13 @@ class Step(UiComponent, InputReactive):
     _PAYLOAD_KB_VARS = "keyboard_variables"
 
     def __init__(
-            self,
-            text_template: str,
-            inline_keyboard_template: Optional[InlineKeyboardMarkup] = None,
-            *,
-            keyboard_builder: Optional[KeyboardBuilder] = None,
-            html_escape_variables: bool = False,
-            default_keyboard_layout: Optional[Sequence[Sequence[Any]]] = None,
+        self,
+        text_template: str,
+        inline_keyboard_template: Optional[InlineKeyboardMarkup] = None,
+        *,
+        keyboard_builder: Optional[KeyboardBuilder] = None,
+        html_escape_variables: bool = False,
+        default_keyboard_layout: Optional[Sequence[Sequence[Any]]] = None,
     ) -> None:
         super().__init__(
             text_template,
@@ -48,15 +56,9 @@ class Step(UiComponent, InputReactive):
         await super().render(user_input, with_send=with_send)
 
     async def _on_start(self, user_input: UserInput) -> None:
-        # hook for subclasses (no-op by default)
         return
 
     async def handle_input(self, user_input: UserInput) -> StepResult:
-        """Dispatch input to message/callback handlers and return a StepResult.
-
-        Variant A: Steps do NOT transition via InteractionState meta.
-        Instead, they return a directive (GoNext/GoPrev) or effects.
-        """
         if user_input.is_callback:
             return await self.handle_callback(user_input)
         if user_input.is_message:
@@ -64,11 +66,9 @@ class Step(UiComponent, InputReactive):
         return None
 
     async def handle_message(self, user_input: UserInput) -> StepResult:
-        # Default behavior: no state changes, coordinator will re-render the current step.
         return None
 
     async def handle_callback(self, user_input: UserInput) -> StepResult:
-        # Default behavior: no state changes, coordinator will re-render the current step.
         return None
 
     async def is_input_valid(self, user_input: UserInput) -> bool:
@@ -86,6 +86,14 @@ class Step(UiComponent, InputReactive):
     @staticmethod
     def go_to_step(step_name: str) -> GoToStep:
         return GoToStep(step_name)
+
+    @staticmethod
+    def finish() -> Finish:
+        return Finish()
+
+    @staticmethod
+    def cancel() -> Cancel:
+        return Cancel()
 
     # --- state helpers ---
     def _active_proc(self, user_input: UserInput) -> Optional[str]:
@@ -105,27 +113,32 @@ class Step(UiComponent, InputReactive):
         if name:
             user_input.state.update_process_payload(name, **kwargs)
 
-    # --- UiComponent hooks: where to store keyboard layout (optional runtime override) ---
     def _get_keyboard_layout_storage(self, user_input: UserInput) -> Any:
         return self._payload(user_input).get(self._PAYLOAD_KB_LAYOUT)
 
     def _set_keyboard_layout_storage(self, user_input: UserInput, value: Any) -> None:
         self._patch_payload(user_input, **{self._PAYLOAD_KB_LAYOUT: value})
 
-    # --- layout ---
     def _get_keyboard_layout_effective(
-            self, user_input: UserInput
+        self, user_input: UserInput
     ) -> Optional[Sequence[Sequence[Any]]]:
         stored = self._get_keyboard_layout_storage(user_input)
         return stored if stored is not None else self._default_keyboard_layout
 
-    # --- contexts ---
     async def _build_text_context(self, user_input: UserInput) -> Dict[str, Any]:
-        return dict(self._payload(user_input).get(self._PAYLOAD_TEXT_VARS, {}) or {})
+        ctx = await super()._build_text_context(user_input)
+        payload_vars = dict(self._payload(user_input).get(self._PAYLOAD_TEXT_VARS, {}) or {})
+        ctx.update(payload_vars)
+        return ctx
 
     async def _build_keyboard_context(self, user_input: UserInput) -> Dict[str, Any]:
+        ctx = await super()._build_keyboard_context(user_input)
+
+        payload_kb_vars = dict(self._payload(user_input).get(self._PAYLOAD_KB_VARS, {}) or {})
+        ctx.update(payload_kb_vars)
+
         layout = self._get_keyboard_layout_effective(user_input)
-        kb_vars = dict(self._payload(user_input).get(self._PAYLOAD_KB_VARS, {}) or {})
         if layout is not None:
-            kb_vars["layout"] = layout
-        return kb_vars
+            ctx["layout"] = layout
+
+        return ctx

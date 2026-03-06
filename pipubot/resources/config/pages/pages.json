@@ -1,15 +1,8 @@
 {
   "public_home": {
-    "text": "test",
+    "text": "<b>Домашняя страница</b>",
     "keyboard_layout": [
-      ["test_button"],
-      ["start_test_process"]
-    ]
-  },
-  "home_page": {
-    "text": "hi",
-    "keyboard_layout": [
-      ["test_button"]
+      ["add_student_process"]
     ]
   }
 }
