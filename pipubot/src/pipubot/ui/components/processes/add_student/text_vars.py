@@ -16,3 +16,10 @@ def student_draft_to_text_variables(draft: StudentDraftDTO) -> dict[str, str]:
         variables[spec.field_name] = spec.formatter(value)
 
     return variables
+
+def format_error_block(errors: list[str]) -> str:
+    if not errors:
+        return ""
+
+    formatted_lines = "\n".join(f"• {error}" for error in errors)
+    return f"⚠ Ошибка:\n{formatted_lines}\n"

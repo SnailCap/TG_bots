@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.transactional import transactional
 from core.shared.utils.time import utc_now
-from pipubot.domains.tutoring.enums.enums import BillingChargeModel, LessonStatus
-from pipubot.domains.tutoring.integrations.google_calendar.calendar_client import (
-    CalendarClient,
+from pipubot.domains.tutoring.enums.enums import (
+    BillingChargeModel,
+    CalendarSourceStatus,
+    LessonStatus,
+)
+from pipubot.domains.tutoring.integrations.google_calendar.dto import (
     CalendarEventsPage,
+)
+from pipubot.domains.tutoring.integrations.google_calendar.errors import (
     CalendarSyncTokenExpired,
+)
+from pipubot.domains.tutoring.integrations.google_calendar.protocols import (
+    CalendarClient,
 )
 from pipubot.domains.tutoring.repositories.calendar_source_repository import (
     get_calendar_source,
@@ -19,7 +27,9 @@ from pipubot.domains.tutoring.repositories.calendar_source_repository import (
     set_sync_token,
     upsert_calendar_source,
 )
-from pipubot.domains.tutoring.repositories.lesson_repository import upsert_lesson_from_gcal_event
+from pipubot.domains.tutoring.repositories.lesson_repository import (
+    upsert_lesson_from_gcal_event,
+)
 from pipubot.domains.tutoring.repositories.student_repository import get_student_by_id
 from pipubot.domains.tutoring.services.gcal.student_title_match import (
     StudentResolveResult,
@@ -41,15 +51,15 @@ def _duration_minutes_floor(start: datetime, end: datetime) -> int:
 
 
 def _calc_planned_charge_simple(
-    *,
-    charge_model: BillingChargeModel,
-    duration_min: int,
-    rate: Decimal,
+        *,
+        charge_model: BillingChargeModel,
+        duration_min: int,
+        rate: Decimal,
 ) -> Decimal:
     """
-    Planned pricing used during GCAL sync as a "snapshot":
+    Planned pricing used during GCAL sync as a snapshot:
     - FIXED -> charge == rate
-    - otherwise -> PER_HOUR by duration (simple, predictable)
+    - otherwise -> PER_HOUR by duration
     """
     if charge_model == BillingChargeModel.FIXED:
         return _money(rate)
@@ -63,13 +73,13 @@ def _safe_event_text(value: str | None, *, is_cancelled: bool) -> str | None:
 
 
 async def _resolve_student_snapshot(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    title: str | None,
-    start_at: datetime,
-    end_at: datetime,
-    is_cancelled: bool,
+        session: AsyncSession,
+        *,
+        tutor_user_id: int,
+        title: str | None,
+        start_at: datetime,
+        end_at: datetime,
+        is_cancelled: bool,
 ) -> tuple[int | None, str, Decimal | None, Decimal | None]:
     """
     Resolve student and planned financial snapshot for the lesson.
@@ -114,11 +124,11 @@ async def _resolve_student_snapshot(
 
 
 async def _apply_events(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    calendar_id: str,
-    page: CalendarEventsPage,
+        session: AsyncSession,
+        *,
+        tutor_user_id: int,
+        calendar_id: str,
+        page: CalendarEventsPage,
 ) -> None:
     for ev in page.items:
         is_cancelled = ev.status == "cancelled"
@@ -145,6 +155,7 @@ async def _apply_events(
             google_recurring_event_id=ev.recurring_event_id,
             title=_safe_event_text(ev.summary, is_cancelled=is_cancelled),
             description=_safe_event_text(ev.description, is_cancelled=is_cancelled),
+            meet_url=_safe_event_text(ev.meet_url, is_cancelled=is_cancelled),
             student_id=student_id,
             currency=currency,
             planned_rate_snapshot=planned_rate_snapshot,
@@ -154,20 +165,24 @@ async def _apply_events(
 
 @transactional
 async def sync_calendar_window(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    calendar_id: str,
-    client: CalendarClient,
-    horizon_days: int = 60,
-    backfill_days: int = 7,
-    now: datetime | None = None,
+        session: AsyncSession,
+        *,
+        tutor_user_id: int,
+        calendar_id: str,
+        client: CalendarClient,
+        horizon_days: int = 60,
+        backfill_days: int = 7,
+        now: datetime | None = None,
 ) -> None:
     now = now or utc_now()
     time_min = now - timedelta(days=backfill_days)
     time_max = now + timedelta(days=horizon_days)
 
-    source = await upsert_calendar_source(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id)
+    source = await upsert_calendar_source(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+    )
     source.window_days = horizon_days
 
     page = await client.list_events_window(
@@ -177,23 +192,42 @@ async def sync_calendar_window(
         show_deleted=True,
     )
 
-    await _apply_events(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id, page=page)
-    await set_sync_token(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id, sync_token=page.next_sync_token)
-    await set_last_synced_at(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id, last_synced_at=now)
+    await _apply_events(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+        page=page,
+    )
+    await set_sync_token(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+        sync_token=page.next_sync_token,
+    )
+    await set_last_synced_at(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+        last_synced_at=now,
+    )
 
 
 @transactional
 async def sync_calendar_delta(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    calendar_id: str,
-    client: CalendarClient,
-    now: datetime | None = None,
+        session: AsyncSession,
+        *,
+        tutor_user_id: int,
+        calendar_id: str,
+        client: CalendarClient,
+        now: datetime | None = None,
 ) -> None:
     now = now or utc_now()
 
-    source = await get_calendar_source(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id)
+    source = await get_calendar_source(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+    )
     if not source or not source.sync_token:
         return
 
@@ -203,33 +237,48 @@ async def sync_calendar_delta(
         show_deleted=True,
     )
 
-    await _apply_events(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id, page=page)
+    await _apply_events(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+        page=page,
+    )
 
-    await set_sync_token(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id, sync_token=page.next_sync_token)
-    await set_last_synced_at(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id, last_synced_at=now)
+    await set_sync_token(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+        sync_token=page.next_sync_token,
+    )
+    await set_last_synced_at(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+        last_synced_at=now,
+    )
 
 
 @transactional
 async def sync_calendar(
-    session: AsyncSession,
-    *,
-    tutor_user_id: int,
-    calendar_id: str,
-    client: CalendarClient,
-    horizon_days: int = 60,
-    backfill_days: int = 7,
-    now: datetime | None = None,
+        session: AsyncSession,
+        *,
+        tutor_user_id: int,
+        calendar_id: str,
+        client: CalendarClient,
+        horizon_days: int = 60,
+        backfill_days: int = 7,
+        now: datetime | None = None,
 ) -> None:
-    """
-    Periodic sync entrypoint:
-
-    - no sync_token -> window sync
-    - has sync_token -> delta sync
-    - token expired (410 Gone) -> window sync again
-    """
     now = now or utc_now()
 
-    source = await get_calendar_source(session, tutor_user_id=tutor_user_id, calendar_id=calendar_id)
+    source = await get_calendar_source(
+        session,
+        tutor_user_id=tutor_user_id,
+        calendar_id=calendar_id,
+    )
+    if source and source.status != CalendarSourceStatus.ACTIVE:
+        return
+
     if not source or not source.sync_token:
         await sync_calendar_window(
             session,

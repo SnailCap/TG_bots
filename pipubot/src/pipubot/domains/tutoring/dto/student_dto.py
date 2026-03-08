@@ -22,8 +22,6 @@ class StudentDraftDTO:
 
     full_name: str | None = None
 
-    user_telegram_id: int | None = None
-    telegram_username: str | None = None
     telegram_link: str | None = None
 
     email: str | None = None
@@ -43,7 +41,6 @@ class StudentDraftDTO:
     default_duration_min: int | None = 60
 
     planned_hours_per_week: Decimal | None = None
-    payment_account: PaymentAccount | None = None
 
     student_state: StudentState | None = StudentState.ACTIVE
 
@@ -57,7 +54,6 @@ class CreateStudentDTO:
     tutor_user_id: int
     full_name: str
 
-    user_telegram_id: int | None
     telegram_username: str | None
     telegram_link: str | None
 

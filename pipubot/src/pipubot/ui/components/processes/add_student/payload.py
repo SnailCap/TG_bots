@@ -48,3 +48,22 @@ def save_student_draft(
         PROCESS_KEY,
         student_draft=student_draft_to_payload_dict(draft),
     )
+
+
+def merge_student_drafts(
+    *,
+    base: StudentDraftDTO,
+    patch: StudentDraftDTO,
+) -> StudentDraftDTO:
+    merged = StudentDraftDTO()
+
+    for spec in STUDENT_FIELD_SPECS:
+        field_name = spec.field_name
+        patch_value = getattr(patch, field_name)
+
+        if patch_value is not None:
+            setattr(merged, field_name, patch_value)
+        else:
+            setattr(merged, field_name, getattr(base, field_name))
+
+    return merged

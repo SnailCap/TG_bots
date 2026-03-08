@@ -50,7 +50,6 @@ class LessonReminderCandidate:
 
 
 def _duration_minutes_floor(start: datetime, end: datetime) -> int:
-    # безопасно, без pendulum: ваши DateTime(tz=True), значит tz-aware
     seconds = (end - start).total_seconds()
     if seconds <= 0:
         return 0
@@ -66,8 +65,6 @@ async def build_upcoming_lesson_reminder_candidates(
 ) -> list[LessonReminderCandidate]:
     window = upcoming_window_utc(before_minutes)
 
-    # ВАЖНО: load_student=True → deselection(student) внутри репозитория,
-    # чтобы в фоне не словить MissingGreenlet на lesson.student
     lessons = await list_upcoming_lessons(
         session,
         tutor_user_id=tutor_user_id,
@@ -86,7 +83,6 @@ async def build_upcoming_lesson_reminder_candidates(
         end_hm = format_time_hm(lesson.end_at)
         duration_min = _duration_minutes_floor(lesson.start_at, lesson.end_at)
 
-        # student (без lazy-load, потому что deselection уже сделал работу)
         student_id: int | None = lesson.student_id
         student_name: str | None = None
         if lesson.student is not None:
@@ -112,7 +108,7 @@ async def build_upcoming_lesson_reminder_candidates(
                 end_hm=end_hm,
                 duration_min=duration_min,
                 title=title,
-                meet_url=getattr(lesson, "meet_url", None),
+                meet_url=lesson.meet_url,
                 currency=lesson.currency,
                 planned_rate_snapshot=lesson.planned_rate_snapshot,
                 planned_charge_amount=lesson.planned_charge_amount,

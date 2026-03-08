@@ -1,8 +1,13 @@
 # pipubot/domains/tutoring/models/enums.py
 from __future__ import annotations
 
-from enum import Enum
+from enum import Enum, StrEnum
 
+
+class CalendarSourceStatus(StrEnum):
+    ACTIVE = "active"
+    DISABLED = "disabled"
+    REAUTH_REQUIRED = "reauth_required"
 
 class LessonStatus(str, Enum):
     """

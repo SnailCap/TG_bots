@@ -17,16 +17,22 @@ class AskInfoStep(Step):
     async def handle_message(self, user_input: UserInput) -> StepResult:
         message = (user_input.text or "").strip()
 
-        draft = parse_student_draft_from_text(message)
-        errors = validate_student_draft_for_create(
-            tutor_user_id=user_input.telegram_id,
-            draft=draft,
-        )
+        parse_result = parse_student_draft_from_text(message)
+        draft = parse_result.draft
+
+        errors = [
+            *parse_result.errors,
+            *validate_student_draft_for_create(
+                tutor_user_id=user_input.telegram_id,
+                draft=draft,
+            ),
+        ]
 
         if errors:
             self._patch_payload(
                 user_input,
                 text_variables={
+                    **student_draft_to_text_variables(draft),
                     "error": "\n".join(errors),
                 },
             )

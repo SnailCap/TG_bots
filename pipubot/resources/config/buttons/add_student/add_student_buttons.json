@@ -4,7 +4,7 @@
     "callback_data": "st:confirm_add_student:create"
   },
   "edit_student_data": {
-    "text": "Изменить",
+    "text": "⋮",
     "callback_data": "st:confirm_add_student:edit"
   }
 }

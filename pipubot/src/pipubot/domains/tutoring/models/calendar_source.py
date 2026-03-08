@@ -2,28 +2,28 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from core.db.base import Base
 from core.shared.utils.time import utc_now
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
+from sqlalchemy import DateTime, Enum, Index, Integer, String, UniqueConstraint
+from pipubot.domains.tutoring.enums.enums import CalendarSourceStatus
+
 
 class TutoringCalendarSource(TutoringOwnedMixin, Base):
-    """
-    Per-tutor calendar sync state.
-
-    - sync_token is used for incremental sync (events.list with syncToken)
-    - last_synced_at is your own bookkeeping (observability)
-    - window_days stores the horizon you materialize locally (optional)
-    """
-
     __tablename__ = "tutoring_calendar_sources"
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
     calendar_id: Mapped[str] = mapped_column(String(256), nullable=False)
+
+    status: Mapped[CalendarSourceStatus] = mapped_column(
+        Enum(CalendarSourceStatus),
+        default=CalendarSourceStatus.ACTIVE,
+        nullable=False,
+    )
 
     sync_token: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -32,7 +32,10 @@ class TutoringCalendarSource(TutoringOwnedMixin, Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
     )
 
     __table_args__ = (

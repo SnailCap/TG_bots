@@ -1,4 +1,3 @@
-# pipubot/domains/tutoring/models/lesson.py
 from __future__ import annotations
 
 from datetime import datetime
@@ -33,7 +32,6 @@ class TutoringLesson(TutoringOwnedMixin, Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
 
-    # Can be NULL until you implement matching event -> student
     student_id: Mapped[int | None] = mapped_column(
         ForeignKey("tutoring_students.id", ondelete="RESTRICT"),
         index=True,
@@ -91,7 +89,8 @@ class TutoringLesson(TutoringOwnedMixin, Base):
     google_ical_uid: Mapped[str | None] = mapped_column(String(256))
     google_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
-    meet_url: Mapped[str | None] = mapped_column(String(1024))
+    meet_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    miro_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(

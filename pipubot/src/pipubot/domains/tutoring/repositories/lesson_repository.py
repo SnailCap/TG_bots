@@ -3,12 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
 
 from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from core.shared.utils.time import utc_now
 from pipubot.domains.tutoring.enums.enums import LessonConfirmationStatus, LessonStatus
 from pipubot.domains.tutoring.models.lesson import TutoringLesson
 
@@ -62,7 +62,6 @@ async def list_lessons(
     limit: int = 200,
     offset: int = 0,
     load_student: bool = False,
-    # filters:
     student_id: int | None = None,
     start_from: datetime | None = None,
     start_to: datetime | None = None,
@@ -118,33 +117,95 @@ async def upsert_lesson_from_gcal_event(
     tutor_user_id: int,
     google_calendar_id: str,
     google_event_id: str,
-    **fields: Any,
+    start_at: datetime,
+    end_at: datetime,
+    status: LessonStatus,
+    google_updated_at: datetime | None,
+    google_ical_uid: str | None,
+    google_recurring_event_id: str | None,
+    title: str | None,
+    description: str | None,
+    meet_url: str | None,
+    student_id: int | None,
+    currency: str,
+    planned_rate_snapshot: Decimal | None,
+    planned_charge_amount: Decimal | None,
 ) -> TutoringLesson:
-    """
-    Идемпотентный апсерт lesson из gcal instance (singleEvents=true).
-    Guard-clause: если google_updated_at не новее — не трогаем запись.
-    """
-    lesson = await get_lesson_by_google_instance(
-        session,
-        tutor_user_id=tutor_user_id,
-        google_calendar_id=google_calendar_id,
-        google_event_id=google_event_id,
+    stmt = (
+        select(TutoringLesson)
+        .where(TutoringLesson.tutor_user_id == tutor_user_id)
+        .where(TutoringLesson.google_calendar_id == google_calendar_id)
+        .where(TutoringLesson.google_event_id == google_event_id)
+        .limit(1)
     )
+    lesson = await session.scalar(stmt)
 
     if lesson is None:
-        return await _create_new_lesson(
-            session,
+        lesson = TutoringLesson(
             tutor_user_id=tutor_user_id,
+            student_id=student_id,
             google_calendar_id=google_calendar_id,
             google_event_id=google_event_id,
-            fields=fields,
+            google_recurring_event_id=google_recurring_event_id,
+            google_ical_uid=google_ical_uid,
+            google_updated_at=google_updated_at,
+            start_at=start_at,
+            end_at=end_at,
+            status=status,
+            title=title,
+            description=description,
+            meet_url=meet_url,
+            currency=currency,
+            planned_rate_snapshot=planned_rate_snapshot,
+            planned_charge_amount=planned_charge_amount,
         )
-
-    new_updated = fields.get("google_updated_at")
-    if new_updated and lesson.google_updated_at and new_updated <= lesson.google_updated_at:
+        session.add(lesson)
+        await session.flush()
         return lesson
 
-    _update_lesson_attributes(lesson, fields)
+    lesson.student_id = student_id
+    lesson.start_at = start_at
+    lesson.end_at = end_at
+    lesson.status = status
+    lesson.google_updated_at = google_updated_at
+    lesson.google_ical_uid = google_ical_uid
+    lesson.google_recurring_event_id = google_recurring_event_id
+    lesson.title = title
+    lesson.description = description
+
+    # ВАЖНО:
+    # sync не должен затирать локально созданный meet_url значением None,
+    # потому что Google conferenceData может появиться не мгновенно.
+    if meet_url is not None:
+        lesson.meet_url = meet_url
+
+    lesson.currency = currency
+    lesson.planned_rate_snapshot = planned_rate_snapshot
+    lesson.planned_charge_amount = planned_charge_amount
+    lesson.updated_at = utc_now()
+
+    await session.flush()
+    return lesson
+
+
+async def update_lesson_meet_url(
+    session: AsyncSession,
+    *,
+    tutor_user_id: int,
+    lesson_id: int,
+    meet_url: str,
+) -> TutoringLesson | None:
+    lesson = await get_lesson_by_id(
+        session,
+        tutor_user_id=tutor_user_id,
+        lesson_id=lesson_id,
+        load_student=False,
+    )
+    if lesson is None:
+        return None
+
+    lesson.meet_url = meet_url
+    lesson.updated_at = utc_now()
     await session.flush()
     return lesson
 
@@ -160,8 +221,9 @@ async def list_upcoming_lessons(
 ) -> list[TutoringLesson]:
     """
     Upcoming lessons within [start_from, start_to).
-    По умолчанию подгружаем student через deselection, чтобы не словить MissingGreenlet
-    в сервисах/хендлерах, которые читают lesson.student.
+    По умолчанию подгружаем student через selectinload,
+    чтобы не словить MissingGreenlet в сервисах/хендлерах,
+    которые читают lesson.student.
     """
     stmt = (
         select(TutoringLesson)
@@ -208,42 +270,23 @@ def _apply_lesson_filters(
 
     return stmt
 
-
-async def _create_new_lesson(
+async def update_lesson_miro_url(
     session: AsyncSession,
     *,
     tutor_user_id: int,
-    google_calendar_id: str,
-    google_event_id: str,
-    fields: dict[str, Any],
-) -> TutoringLesson:
-    lesson = TutoringLesson(
+    lesson_id: int,
+    miro_url: str,
+) -> TutoringLesson | None:
+    lesson = await get_lesson_by_id(
+        session,
         tutor_user_id=tutor_user_id,
-        google_calendar_id=google_calendar_id,
-        google_event_id=google_event_id,
-        **fields,
+        lesson_id=lesson_id,
+        load_student=False,
     )
-    session.add(lesson)
+    if lesson is None:
+        return None
+
+    lesson.miro_url = miro_url
+    lesson.updated_at = utc_now()
     await session.flush()
     return lesson
-
-
-def _update_lesson_attributes(lesson: TutoringLesson, fields: dict[str, Any]) -> None:
-    """
-    Обновление полей с простыми правилами:
-    - не затираем student_id, если уже привязан
-    - None не пишем, кроме "всегда обновляемых"
-    - description -> notes (если вы именно так мапите)
-    """
-    always_updated: set[str] = {"start_at", "end_at", "status"}
-
-    for key, value in fields.items():
-        if value is None and key not in always_updated:
-            continue
-
-        if key == "student_id" and lesson.student_id is not None:
-            continue
-
-        attr_name = "notes" if key == "description" else key
-        if hasattr(lesson, attr_name):
-            setattr(lesson, attr_name, value)

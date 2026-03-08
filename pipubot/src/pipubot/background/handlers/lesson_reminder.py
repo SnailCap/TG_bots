@@ -21,7 +21,7 @@ class LessonReminderPayload(TaskPayload):
     recurring_interval_seconds=30,
     recurring_payload_template={
         "tutor_user_id": int(os.environ["KONSTANTIN_USER_ID"]),
-        "notify_before_minutes": 10,
+        "notify_before_minutes": 15,
     },
 )
 async def send_upcoming_lesson_reminder(

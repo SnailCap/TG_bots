@@ -5,3 +5,4 @@ EDIT_CALLBACK = "confirm_add_student:edit"
 
 ASK_INFO_STEP = "ask_student_add_info"
 CONFIRM_STEP = "confirm_add_student"
+EDIT_INFO_STEP = "edit_student_info"
