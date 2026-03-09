@@ -6,8 +6,8 @@ from typing import List, Type, cast, TYPE_CHECKING
 if TYPE_CHECKING:
     from core.interaction.input.user_input import UserInput
 
-from ...build import UiBuilder
-from ...binding import get_default_ui_registry
+from core.interaction.ui.build import UiBuilder
+from core.interaction.ui.binding import get_default_ui_registry
 from .base_process import Process
 from .effects import (
     Cancel,

@@ -6,10 +6,10 @@ from .build.ui_builder import UiBuilder
 from .components.base import UiComponent
 from core.interaction.ui.components.page.base_page import Page
 from .components.notification.base_notification import Notification
-from .components.process.base_process import Process
-from .components.process.base_step import Step
-from .components.process.effects import ProcessEffect
-from .components.process.process_coordinator import ProcessCoordinator
+from core.interaction.ui.components.process.base.base_process import Process
+from core.interaction.ui.components.process.base.base_step import Step
+from core.interaction.ui.components.process.base.effects import ProcessEffect
+from core.interaction.ui.components.process.base.process_coordinator import ProcessCoordinator
 
 __all__ = [
     "UiBuilder",

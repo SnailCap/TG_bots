@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from core.interaction.input.user_input import UserInput
 
 from core.interaction.contracts.input_reactive import InputReactive
-from ...keyboard import KeyboardBuilder
+from core.interaction.ui.keyboard import KeyboardBuilder
 from .effects import (
     Cancel,
     Finish,
@@ -17,7 +17,7 @@ from .effects import (
     GoToStep,
     StepResult,
 )
-from ..base import UiComponent
+from core.interaction.ui.components.base import UiComponent
 
 
 class Step(UiComponent, InputReactive):

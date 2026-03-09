@@ -92,10 +92,6 @@ def make_enum_parser(
     return parser
 
 
-def format_default(value: Any) -> str:
-    return "—" if value is None else str(value)
-
-
 def format_enum(value: Enum | None) -> str:
     if value is None:
         return "—"
@@ -104,14 +100,6 @@ def format_enum(value: Enum | None) -> str:
         return value.value
 
     return value.name
-
-
-def serialize_identity(value: Any) -> Any:
-    return value
-
-
-def deserialize_identity(value: Any) -> Any:
-    return value
 
 
 def serialize_decimal(value: Decimal | None) -> str | None:
@@ -148,13 +136,13 @@ def make_enum_deserializer(
     return deserializer
 
 
-def validate_positive_decimal(value: Decimal | None) -> str | None:
+def positive_decimal_validator(_: Any, value: Decimal | None) -> list[str]:
     if value is not None and value <= 0:
-        return "Значение должно быть больше 0."
-    return None
+        return ["должно быть больше 0"]
+    return []
 
 
-def validate_positive_int(value: int | None) -> str | None:
+def positive_int_validator(_: Any, value: int | None) -> list[str]:
     if value is not None and value <= 0:
-        return "Значение должно быть больше 0."
-    return None
+        return ["должно быть больше 0"]
+    return []

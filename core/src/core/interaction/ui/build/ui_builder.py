@@ -13,7 +13,7 @@ from ..keyboard import ButtonBuilder
 from ..keyboard import KeyboardBuilder
 
 from ..components.page.base_page import Page
-from ..components.process.base_step import Step
+from core.interaction.ui.components.process.base.base_step import Step
 from ..components.notification.base_notification import Notification
 
 

@@ -1,25 +1,25 @@
-﹌﹌﹌﹌﹌꧁⎝ ༺✧༻ ⎠꧂﹌﹌﹌﹌﹌﹌
+﹌﹌﹌﹌﹌꧁⎝ ༺✧༻ ⎠꧂﹌﹌﹌﹌﹌
 
 
- ✦   <b><i>Напоминание об уроке с</i> {student_name}</b>   ✦︎
+ ✦   <b><i>Напоминание об уроке с {student_name}</i></b>   ✦︎
 
-    ⬩  <b>Через: <i>{before_minutes} минут</i>
+    ⬩  <b>Через</b>:  <i>{before_minutes} минут</i>
 
-    ⬩  <b>Начало:</b> <i>{start_hm}</i>
-    ⬩  <b>Конец:</b> <i>{end_hm}</i>
-    ⬩  <b>Длительность:</b> <i>{duration_min} минут</i>
+    ⬩  <b>Начало:  </b><i>{start_hm}</i>
+    ⬩  <b>Конец:  </b><i>{end_hm}</i>
+    ⬩  <b>Длительность:  </b><i>{duration_min} минут</i>
 
-    ⬩  <b>Сумма урока:</b> <i>{planned_charge} {currency}</i>
+    ⬩  <b>Сумма урока:  </b><i>{planned_charge} {currency}</i>
 
     ⬩  <b>Google meet:</b>
-     ∘  <i>{meet_url}</i>
+      ∘  <i>{meet_url}</i>
 
     ⬩  <b>Miro:</b>
-     ∘  <i>miro_url</i>
+      ∘  <i>miro_url</i>
 
  ✦︎︎   <i><b>Хорошего урока!</b></i>   ✦︎
 
 
-﹌﹌﹌﹌﹌°❀⋆.ೃ࿔*:･°❀⋆.ೃ࿔*:･﹌﹌﹌﹌﹌
+﹌﹌﹌﹌﹌°❀⋆.ೃ࿔* ･°❀⋆.࿔* ･﹌﹌﹌﹌﹌
 ️
 ️

@@ -42,6 +42,7 @@ class UiBindingsPlugin(AppPlugin):
                 imported.extend(self._import_target(target))
             except Exception as e:
                 raise UiBindingImportError(
+                    f"{e}"
                     f"Failed to import UI bindings target '{target}'. "
                     f"Check your bindings list and project structure."
                 ) from e

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from core.interaction.ui.components.process.patterns.draft_create_process import FieldSpec
+from pipubot.domains.tutoring.dto.student_dto import StudentDraftDTO
 from pipubot.domains.tutoring.enums.enums import (
     ExamTrack,
     SchoolGrade,
@@ -13,7 +15,6 @@ from .enum_aliases import (
     STUDY_FORMAT_ALIASES,
     STUDY_LANGUAGE_ALIASES,
 )
-from .field_spec import StudentFieldSpec
 from .parsers import (
     deserialize_date,
     deserialize_decimal,
@@ -25,35 +26,34 @@ from .parsers import (
     parse_decimal,
     parse_int,
     parse_text,
+    positive_decimal_validator,
+    positive_int_validator,
     serialize_date,
     serialize_decimal,
-    validate_positive_decimal,
-    validate_positive_int,
 )
 
-
-STUDENT_FIELD_SPECS: tuple[StudentFieldSpec, ...] = (
-    StudentFieldSpec(
-        field_name="full_name",
+STUDENT_FIELD_SPECS: tuple[FieldSpec[StudentDraftDTO, object], ...] = (
+    FieldSpec.build(
+        name="full_name",
         label="Имя",
-        aliases=("имя", "name", "фио", "full_name"),
+        aliases=("имя", "name", "фио"),
         parser=parse_text,
         required=True,
-        allow_positional=True,
+        positional=True,
     ),
-    StudentFieldSpec(
-        field_name="default_rate",
+    FieldSpec.build(
+        name="default_rate",
         label="Ставка",
-        aliases=("ставка", "rate", "цена", "default_rate"),
+        aliases=("ставка", "rate", "цена"),
         parser=parse_decimal,
         required=True,
-        allow_positional=True,
+        positional=True,
         serializer=serialize_decimal,
         deserializer=deserialize_decimal,
-        validator=validate_positive_decimal,
+        validator=positive_decimal_validator,
     ),
-    StudentFieldSpec(
-        field_name="default_duration_min",
+    FieldSpec.build(
+        name="default_duration_min",
         label="Длительность урока (в минутах)",
         aliases=(
             "длительность",
@@ -61,14 +61,13 @@ STUDENT_FIELD_SPECS: tuple[StudentFieldSpec, ...] = (
             "длительность урока (в минутах)",
             "duration",
             "minutes",
-            "default_duration_min",
         ),
         parser=parse_int,
-        allow_positional=True,
-        validator=validate_positive_int,
+        positional=True,
+        validator=positive_int_validator,
     ),
-    StudentFieldSpec(
-        field_name="telegram_link",
+    FieldSpec.build(
+        name="telegram_link",
         label="Telegram ссылка",
         aliases=(
             "телеграм ссылка",
@@ -76,63 +75,61 @@ STUDENT_FIELD_SPECS: tuple[StudentFieldSpec, ...] = (
             "телеграм",
             "telegram",
             "telegram link",
-            "telegram_link",
         ),
         parser=parse_text,
-        allow_positional=True,
+        positional=True,
     ),
-    StudentFieldSpec(
-        field_name="email",
+    FieldSpec.build(
+        name="email",
         label="Email",
-        aliases=("почта", "email"),
+        aliases=("почта",),
         parser=parse_text,
-        allow_positional=True,
+        positional=True,
     ),
-    StudentFieldSpec(
-        field_name="google_drive_link",
+    FieldSpec.build(
+        name="google_drive_link",
         label="Google Drive ссылка",
         aliases=(
             "гугл диск",
             "гугл диск ссылка",
             "google drive",
             "google drive link",
-            "google_drive_link",
         ),
         parser=parse_text,
-        allow_positional=True,
+        positional=True,
     ),
-    StudentFieldSpec(
-        field_name="school_grade",
+    FieldSpec.build(
+        name="school_grade",
         label="Класс",
-        aliases=("класс", "grade", "school_grade"),
+        aliases=("класс", "grade"),
         parser=make_enum_parser(
             SchoolGrade,
             field_label="Класс",
             aliases=SCHOOL_GRADE_ALIASES,
         ),
-        allow_positional=True,
+        positional=True,
         formatter=format_enum,
         serializer=make_enum_serializer(),
         deserializer=make_enum_deserializer(SchoolGrade),
     ),
-    StudentFieldSpec(
-        field_name="exam_track",
+    FieldSpec.build(
+        name="exam_track",
         label="Направление экзамена",
-        aliases=("направление экзамена", "экзамен", "exam_track"),
+        aliases=("направление экзамена", "экзамен"),
         parser=make_enum_parser(
             ExamTrack,
             field_label="Направление экзамена",
             aliases=EXAM_TRACK_ALIASES,
         ),
-        allow_positional=True,
+        positional=True,
         formatter=format_enum,
         serializer=make_enum_serializer(),
         deserializer=make_enum_deserializer(ExamTrack),
     ),
-    StudentFieldSpec(
-        field_name="study_language",
+    FieldSpec.build(
+        name="study_language",
         label="Язык обучения",
-        aliases=("язык обучения", "язык", "study_language"),
+        aliases=("язык обучения", "язык"),
         parser=make_enum_parser(
             StudyLanguage,
             field_label="Язык обучения",
@@ -142,10 +139,10 @@ STUDENT_FIELD_SPECS: tuple[StudentFieldSpec, ...] = (
         serializer=make_enum_serializer(),
         deserializer=make_enum_deserializer(StudyLanguage),
     ),
-    StudentFieldSpec(
-        field_name="study_format",
+    FieldSpec.build(
+        name="study_format",
         label="Формат занятий",
-        aliases=("формат занятий", "формат", "study_format"),
+        aliases=("формат занятий", "формат"),
         parser=make_enum_parser(
             StudyFormat,
             field_label="Формат занятий",
@@ -155,31 +152,39 @@ STUDENT_FIELD_SPECS: tuple[StudentFieldSpec, ...] = (
         serializer=make_enum_serializer(),
         deserializer=make_enum_deserializer(StudyFormat),
     ),
-    StudentFieldSpec(
-        field_name="planned_hours_per_week",
+    FieldSpec.build(
+        name="planned_hours_per_week",
         label="План часов в неделю",
-        aliases=(
-            "план часов в неделю",
-            "часы в неделю",
-            "planned_hours_per_week",
-        ),
+        aliases=("план часов в неделю", "часы в неделю"),
         parser=parse_decimal,
         serializer=serialize_decimal,
         deserializer=deserialize_decimal,
-        validator=validate_positive_decimal,
+        validator=positive_decimal_validator,
     ),
-    StudentFieldSpec(
-        field_name="started_on",
+    FieldSpec.build(
+        name="started_on",
         label="Дата начала",
-        aliases=("дата начала", "started_on", "start date"),
+        aliases=("дата начала", "start date"),
         parser=parse_date_iso,
         serializer=serialize_date,
         deserializer=deserialize_date,
+        positional=False,
     ),
-    StudentFieldSpec(
-        field_name="notes",
+    FieldSpec.build(
+        name="notes",
         label="Заметки",
-        aliases=("заметки", "notes"),
+        aliases=("заметки",),
         parser=parse_text,
+        positional=False,
+    ),
+    FieldSpec.build(
+        name="default_currency",
+        label="Валюта",
+        aliases=(
+            "валюта",
+            "currency",
+        ),
+        parser=parse_text,
+        positional=False,
     ),
 )

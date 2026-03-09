@@ -1,10 +1,10 @@
 {
   "confirm_add_student": {
     "text": "Подтвердить",
-    "callback_data": "st:confirm_add_student:create"
+    "callback_data": "st:confirm"
   },
   "edit_student_data": {
-    "text": "⋮",
-    "callback_data": "st:confirm_add_student:edit"
+    "text": "Изменить",
+    "callback_data": "st:edit"
   }
 }

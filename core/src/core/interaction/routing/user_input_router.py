@@ -58,7 +58,7 @@ class UserInputRouter:
     async def _handle_active_process(self, user_input: UserInput) -> None:
         ended = await self._process_coordinator.handle(user_input)
         if ended:
-            await self._open_current_or_start(user_input)
+            await self._open_current_or_start_page(user_input)
 
     # -----------------------------
     # Service callbacks
@@ -86,7 +86,7 @@ class UserInputRouter:
                 if user_input.state.has_active_process():
                     await self._handle_active_process(user_input)
                 else:
-                    await self._open_current_or_start(user_input)
+                    await self._open_current_or_start_page(user_input)
 
     async def _handle_nav_callback(self, user_input: UserInput) -> None:
         # We still use old flags for "special nav" because they are explicit in ServiceCallbackData.
@@ -95,7 +95,7 @@ class UserInputRouter:
             return
 
         if user_input.is_nav_current:
-            await self._open_current_or_start(user_input)
+            await self._open_current_or_start_page(user_input)
             return
 
         if user_input.is_nav_home:
@@ -108,7 +108,7 @@ class UserInputRouter:
                 await self._open_page(user_input, target, push_history=True)
                 return
 
-        await self._open_current_or_start(user_input)
+        await self._open_current_or_start_page(user_input)
 
     # -----------------------------
     # Processes
@@ -137,7 +137,7 @@ class UserInputRouter:
         # but start() can also produce FinishProcess/CancelProcess effects.
         # So we refresh the UI after applying effects if the process is no longer active.
         if not user_input.state.has_active_process():
-            await self._open_current_or_start(user_input)
+            await self._open_current_or_start_page(user_input)
 
     def _resolve_process(self, key: str):
         cls = get_default_ui_registry().get("process", key)
@@ -162,7 +162,7 @@ class UserInputRouter:
         page: Page = self._ui.build_page(current_page_name)
         await page.handle_input(user_input)
 
-    async def _open_current_or_start(self, user_input: UserInput) -> None:
+    async def _open_current_or_start_page(self, user_input: UserInput) -> None:
         current = user_input.state.get_current_page()
         if current:
             await self._open_page(user_input, current, with_send=user_input.with_send_default, push_history=False)

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-from time import perf_counter
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +17,6 @@ from pipubot.domains.tutoring.services.gcal.google_oauth_service import (
     GoogleOAuthReauthRequiredError,
 )
 from pipubot.domains.tutoring.services.lesson.lesson_preparation_service import (
-    LessonPreparationStats,
     prepare_upcoming_lessons_for_delivery,
 )
 from pipubot.runtime.runtime_services import DefaultAppServices
@@ -66,11 +64,8 @@ async def prepare_lessons(
     2. Refresh Google access token
     3. Create GoogleCalendarClient
     4. Prepare upcoming lessons:
-       - Meet links in broad lookahead window
-       - Miro boards in short pre-lesson window
+       - Meet links in the broad lookahead window-Miro boards in a short pre-lesson window
     """
-
-    started_at = perf_counter()
 
     timeout_s = float(payload.get("http_timeout_s", 20.0))
     profile = payload["oauth_profile"]
@@ -111,7 +106,7 @@ async def prepare_lessons(
         )
     )
 
-    stats: LessonPreparationStats = await prepare_upcoming_lessons_for_delivery(
+    await prepare_upcoming_lessons_for_delivery(
         session=session,
         tutor_user_id=tutor_user_id,
         client=client,
@@ -119,5 +114,3 @@ async def prepare_lessons(
         miro_lookahead_minutes=miro_lookahead_minutes,
         limit=limit,
     )
-
-    elapsed_ms = int((perf_counter() - started_at) * 1000)

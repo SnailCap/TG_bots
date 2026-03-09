@@ -39,7 +39,7 @@ class SyncGcalPayload(TaskPayload):
 
 @background_task_handler(
     recurring_key="system.sync_gcal.konstantin",
-    recurring_interval_seconds=30,
+    recurring_interval_seconds=60,
     recurring_payload_template={
         "tutor_user_id": int(os.environ["KONSTANTIN_USER_ID"]),
         "oauth_profile": "KONSTANTIN",
