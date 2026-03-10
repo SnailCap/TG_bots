@@ -22,16 +22,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
 from core.shared.utils.time import utc_now
-from pipubot.domains.tutoring.enums.enums import (
-    BillingChargeModel,
-    ExamTrack,
-    PaymentAccount,
-    RoundingMode,
-    SchoolGrade,
-    StudentState,
-    StudyFormat,
-    StudyLanguage,
-)
+from pipubot.domains.tutoring.enums.payment import BillingChargeModel, RoundingMode
+from pipubot.domains.tutoring.enums.student import StudentState, SchoolGrade, PaymentAccount, ExamTrack, StudyLanguage, \
+    StudyFormat
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 

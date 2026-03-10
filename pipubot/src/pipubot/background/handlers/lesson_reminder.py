@@ -5,7 +5,7 @@ import os
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.background.handler_registry import background_task_handler, TaskPayload
-from pipubot.domains.tutoring.services.lesson.lesson_reminder_service import (
+from pipubot.domains.tutoring.lessons.services.reminder_service import (
     build_upcoming_lesson_reminder_candidates,
 )
 from pipubot.runtime.runtime_services import DefaultAppServices

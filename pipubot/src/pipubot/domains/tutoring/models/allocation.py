@@ -1,4 +1,3 @@
-# pipubot/domains/tutoring/models/allocation.py
 from __future__ import annotations
 
 from datetime import datetime

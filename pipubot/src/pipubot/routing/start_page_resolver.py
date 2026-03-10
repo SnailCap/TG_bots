@@ -1,5 +1,5 @@
 from core.interaction.input.user_input import UserInput
-from core.interaction import DefaultPageKey
+from core.interaction.types import DefaultPageKey
 
 
 class StartPageResolver:

@@ -6,17 +6,17 @@ import os
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.background.handler_registry import TaskPayload, background_task_handler
-from pipubot.domains.tutoring.integrations.google_calendar.google_calendar_client import (
+from pipubot.domains.tutoring.integrations.google_calendar.client import (
     GoogleCalendarClient,
     GoogleCalendarClientConfig,
 )
-from pipubot.domains.tutoring.repositories.calendar_source_repository import (
+from pipubot.domains.tutoring.calendar.source_repository import (
     mark_reauth_required,
 )
-from pipubot.domains.tutoring.services.gcal.google_oauth_service import (
+from pipubot.domains.tutoring.calendar.oauth_service import (
     GoogleOAuthReauthRequiredError,
 )
-from pipubot.domains.tutoring.services.lesson.lesson_preparation_service import (
+from pipubot.domains.tutoring.lessons.services.preparation_service import (
     prepare_upcoming_lessons_for_delivery,
 )
 from pipubot.runtime.runtime_services import DefaultAppServices

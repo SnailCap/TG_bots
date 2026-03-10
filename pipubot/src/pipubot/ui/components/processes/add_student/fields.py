@@ -1,13 +1,8 @@
 from __future__ import annotations
 
 from core.interaction.ui.components.process.patterns.draft_create_process import FieldSpec
-from pipubot.domains.tutoring.dto.student_dto import StudentDraftDTO
-from pipubot.domains.tutoring.enums.enums import (
-    ExamTrack,
-    SchoolGrade,
-    StudyFormat,
-    StudyLanguage,
-)
+from pipubot.domains.tutoring.students.results import StudentDraft
+from pipubot.domains.tutoring.enums.student import SchoolGrade, ExamTrack, StudyLanguage, StudyFormat
 
 from .enum_aliases import (
     EXAM_TRACK_ALIASES,
@@ -32,7 +27,7 @@ from .parsers import (
     serialize_decimal,
 )
 
-STUDENT_FIELD_SPECS: tuple[FieldSpec[StudentDraftDTO, object], ...] = (
+STUDENT_FIELD_SPECS: tuple[FieldSpec[StudentDraft, object], ...] = (
     FieldSpec.build(
         name="full_name",
         label="Имя",

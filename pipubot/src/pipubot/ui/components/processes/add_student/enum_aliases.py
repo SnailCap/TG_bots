@@ -3,12 +3,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import TypeVar
 
-from pipubot.domains.tutoring.enums.enums import (
-    ExamTrack,
-    SchoolGrade,
-    StudyFormat,
-    StudyLanguage,
-)
+from pipubot.domains.tutoring.enums.student import SchoolGrade, ExamTrack, StudyLanguage, StudyFormat
 
 EnumT = TypeVar("EnumT", bound=Enum)
 
@@ -71,7 +66,7 @@ EXAM_TRACK_ALIASES = build_enum_aliases(
 STUDY_LANGUAGE_ALIASES = build_enum_aliases(
     StudyLanguage,
     {
-        "ESTONIAN": ("эстонский", "estonian", "eesti"),
+        "ESTONIAN": ("эстонский", "estonian", "", "eesti"),
         "RUSSIAN": ("русский", "russian", "vene"),
         "ENGLISH": ("английский", "english", "inglise"),
         "GERMAN": ("немецкий", "german", "saksa"),

@@ -19,11 +19,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
 from core.shared.utils.time import utc_now
-from pipubot.domains.tutoring.enums.enums import (
-    LessonConfirmationStatus,
-    LessonExceptionCode,
-    LessonStatus,
-)
+from pipubot.domains.tutoring.enums.lesson import LessonStatus, LessonConfirmationStatus, LessonExceptionCode
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 

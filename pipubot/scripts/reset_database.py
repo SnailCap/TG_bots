@@ -17,7 +17,7 @@ import pipubot.domains.tutoring.models  # noqa: F401
 from core.db.repositories.user_repository import create_or_update_user
 from core.interaction.types import UserRole
 
-from pipubot.domains.tutoring.enums.enums import BillingChargeModel, RoundingMode
+from pipubot.domains.tutoring.enums.payment import BillingChargeModel, RoundingMode
 from pipubot.domains.tutoring.models.student import TutoringStudent
 
 

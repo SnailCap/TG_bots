@@ -18,7 +18,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db.base import Base
 from core.shared.utils.time import utc_now
-from pipubot.domains.tutoring.enums.enums import PaymentMethod
+from pipubot.domains.tutoring.enums.payment import PaymentMethod
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 

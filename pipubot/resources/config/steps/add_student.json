@@ -12,5 +12,12 @@
       ["edit_student_data"],
       ["prc_prev"]
     ]
+  },
+  "edit_student_info": {
+    "text": "add_student/edit_student.txt",
+    "keyboard_layout": [
+      ["confirm_add_student"],
+      ["prc_prev"]
+    ]
   }
 }

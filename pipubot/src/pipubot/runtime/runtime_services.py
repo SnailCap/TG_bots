@@ -4,7 +4,7 @@ from core.interaction.contracts.messenger import Messenger
 from core.interaction.contracts.ui_builder import UiBuilder
 from core.services.identity.contracts import IdentityProvider
 from core.services.notifications.notification_service import NotificationService
-from pipubot.domains.tutoring.services.gcal.google_oauth_service import GoogleOAuthService
+from pipubot.domains.tutoring.calendar.oauth_service import GoogleOAuthService
 from pipubot.runtime.secrets import SecretsService
 
 

@@ -4,12 +4,12 @@ from core.interaction.ui.binding import process
 from core.interaction.ui.components.process.patterns.draft_create_process import DraftCreateProcess, \
     ConfirmStepCallbacks
 
-from pipubot.domains.tutoring.dto.student_dto import StudentDraftDTO
-from pipubot.domains.tutoring.mappers.student_mapper import (
+from pipubot.domains.tutoring.students.results import StudentDraft
+from pipubot.domains.tutoring.students.mapper import (
     draft_to_create_student_dto,
 )
-from pipubot.domains.tutoring.services.student.errors import CreateStudentError
-from pipubot.domains.tutoring.services.student.student_service import (
+from pipubot.domains.tutoring.students.errors import CreateStudentError
+from pipubot.domains.tutoring.students.create_service import (
     create_student_service,
 )
 
@@ -17,7 +17,7 @@ from .schema import STUDENT_CREATE_SCHEMA
 
 
 @process("add_student")
-class AddStudentProcess(DraftCreateProcess[StudentDraftDTO]):
+class AddStudentProcess(DraftCreateProcess[StudentDraft]):
     collect_step_name = "ask_student_add_info"
     edit_step_name = "edit_student_info"
     confirm_step_name = "confirm_add_student"
@@ -28,7 +28,7 @@ class AddStudentProcess(DraftCreateProcess[StudentDraftDTO]):
 
     @classmethod
     def draft_factory(cls):
-        return StudentDraftDTO
+        return StudentDraft
 
     def confirm_callbacks(self) -> ConfirmStepCallbacks:
         return ConfirmStepCallbacks(
@@ -39,7 +39,7 @@ class AddStudentProcess(DraftCreateProcess[StudentDraftDTO]):
     def validate_draft(
             self,
             user_input,
-            draft: StudentDraftDTO,
+            draft: StudentDraft,
     ) -> list[str]:
         errors: list[str] = []
 
@@ -56,7 +56,7 @@ class AddStudentProcess(DraftCreateProcess[StudentDraftDTO]):
     async def submit_draft(
             self,
             user_input,
-            draft: StudentDraftDTO,
+            draft: StudentDraft,
     ) -> None:
         dto = draft_to_create_student_dto(
             tutor_user_id=user_input.telegram_id,
@@ -77,7 +77,7 @@ class AddStudentProcess(DraftCreateProcess[StudentDraftDTO]):
             self,
             user_input,
             *,
-            draft: StudentDraftDTO,
+            draft: StudentDraft,
             error: Exception,
     ) -> list[str]:
         if isinstance(error, CreateStudentError):

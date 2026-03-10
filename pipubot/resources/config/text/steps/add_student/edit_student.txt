@@ -7,11 +7,11 @@
 
 Текущие данные:
 
-имя: {full_name}
-ставка: {default_rate}
-длительность урока (в минутах): {default_duration_min}
-телеграм ссылка: {telegram_link}
-телеграм юзер: {telegram_username}
-email: {email}
-заметки: {notes}
-валюта: {default_currency}
+Имя: {full_name}
+Ставка: {default_rate} {default_currency}
+Длительность: {default_duration_min} мин
+Telegram ссылка: {telegram_link}
+Email: {email}
+
+Заметки:
+{notes}

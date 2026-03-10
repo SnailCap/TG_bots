@@ -9,7 +9,7 @@ from core.shared.utils.time import utc_now
 from pipubot.domains.tutoring.models.mixins import TutoringOwnedMixin
 
 from sqlalchemy import DateTime, Enum, Index, Integer, String, UniqueConstraint
-from pipubot.domains.tutoring.enums.enums import CalendarSourceStatus
+from pipubot.domains.tutoring.enums.calendar import CalendarSourceStatus
 
 
 class TutoringCalendarSource(TutoringOwnedMixin, Base):

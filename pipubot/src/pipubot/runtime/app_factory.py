@@ -27,7 +27,7 @@ from core.shared.utils.session_helper import create_engine, create_session_maker
 
 from pipubot.background.binding.bindings import BG_HANDLER_TARGETS
 from core.background.build_services import build_background_services
-from pipubot.domains.tutoring.services.gcal.google_oauth_service import GoogleOAuthService
+from pipubot.domains.tutoring.calendar.oauth_service import GoogleOAuthService
 from pipubot.paths.main_paths import PipubotPaths
 from pipubot.runtime.runtime_services import DefaultAppServices, DefaultInteractionServices
 from pipubot.runtime.secrets import EnvSecretBackend, SecretsService
