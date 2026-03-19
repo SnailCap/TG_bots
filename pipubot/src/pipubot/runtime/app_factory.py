@@ -29,6 +29,7 @@ from pipubot.background.binding.bindings import BG_HANDLER_TARGETS
 from core.background.build_services import build_background_services
 from pipubot.domains.tutoring.calendar.oauth_service import GoogleOAuthService
 from pipubot.paths.main_paths import PipubotPaths
+from pipubot.runtime.google_calendar_runtime import GoogleCalendarRuntime
 from pipubot.runtime.runtime_services import DefaultAppServices, DefaultInteractionServices
 from pipubot.runtime.secrets import EnvSecretBackend, SecretsService
 from pipubot.ui.binding.bindings import UI_BINDINGS
@@ -70,8 +71,8 @@ class PipubotAppFactory:
     """
     Project-specific assembly point.
 
-    - __init__: build-time wiring (DB, UI builder, router, identity)
-    - register_handlers: runtime wiring (messenger and services)
+    - __init__: build-time wiring (DB, UI builder, router, identity, long-lived services)
+    - register_handlers: runtime wiring (messenger, notification service, dispatcher)
     - build_plugins: plugin assembly
     """
 
@@ -81,21 +82,49 @@ class PipubotAppFactory:
         if not self._config.database_url:
             raise RuntimeError("DATABASE_URL is not set. Please set env var DATABASE_URL.")
 
-        # --- DB ---
+        # ------------------------------------------------------------------
+        # DB
+        # ------------------------------------------------------------------
+
         self._engine = create_engine(self._config.database_url, echo=self._config.database_echo)
         self._session_maker = create_session_maker(self._engine)
         self._session_provider = SqlAlchemySessionProvider(session_maker=self._session_maker)
 
-        # --- UI/config ---
+        # ------------------------------------------------------------------
+        # UI / config
+        # ------------------------------------------------------------------
+
         paths = ResourcePaths.from_root(self._config.config_root).normalized()
         loader = build_config_loader(self._config.config_root)
 
         renderable_builder = RenderableBuilder(loader=loader)
-        self._ui_builder = UiBuilder(paths=paths, loader=loader, renderable_builder=renderable_builder)
+
+        self._ui_builder = UiBuilder(
+            paths=paths,
+            loader=loader,
+            renderable_builder=renderable_builder,
+        )
+
         self._router = UserInputRouter(ui=self._ui_builder)
 
-        # --- Identity ---
+        # ------------------------------------------------------------------
+        # Identity
+        # ------------------------------------------------------------------
+
         self._identity_provider = DbIdentityProvider()
+
+        # ------------------------------------------------------------------
+        # Google runtime services (long-lived)
+        # ------------------------------------------------------------------
+
+        self._secrets = SecretsService.from_backend(EnvSecretBackend())
+        self._google_oauth = GoogleOAuthService()
+
+        self._google_calendar = GoogleCalendarRuntime(
+            secrets=self._secrets,
+            google_oauth=self._google_oauth,
+            default_timeout_s=20.0,
+        )
 
     # ------------------------------------------------------------------
     # Application lifecycle
@@ -105,39 +134,65 @@ class PipubotAppFactory:
         return Application.builder().token(config.bot_token).build()
 
     def register_handlers(self, app: Application) -> None:
+        """
+        Runtime wiring that requires a Telegram Application instance.
+        """
+
         app.bot_data[BOT_DATA_SESSION_MAKER] = self._session_maker
+
+        # ------------------------------------------------------------------
+        # Messenger
+        # ------------------------------------------------------------------
 
         messenger = PtbMessenger(app.bot)
 
+        # ------------------------------------------------------------------
+        # Notification service
+        # ------------------------------------------------------------------
+
         notification_log = DbNotificationLog()
+
         notification_service = NotificationService(
             ui=self._ui_builder,
-            messenger=messenger, # type: ignore
-            notification_log=notification_log, # type: ignore
+            messenger=messenger,  # type: ignore
+            notification_log=notification_log,  # type: ignore
         )
-        secret_backend = EnvSecretBackend()
-        secrets = SecretsService.from_backend(secret_backend)
-        google_oauth = GoogleOAuthService()
+
+        # ------------------------------------------------------------------
+        # Interaction services
+        # ------------------------------------------------------------------
+
         interaction_services = DefaultInteractionServices(
             ui=self._ui_builder,
-            messenger=messenger, # type: ignore
+            messenger=messenger,  # type: ignore
             notification_service=notification_service,
         )
+
+        # ------------------------------------------------------------------
+        # App services container
+        # ------------------------------------------------------------------
 
         services: DefaultAppServices = DefaultAppServices(
             interaction=interaction_services,
             identity=self._identity_provider,
-            secrets=secrets,
-            google_oauth=google_oauth,
+            secrets=self._secrets,
+            google_oauth=self._google_oauth,
+            google_calendar=self._google_calendar,
         )
+
         app.bot_data[BOT_DATA_SERVICES] = services
+
+        # ------------------------------------------------------------------
+        # Dispatcher
+        # ------------------------------------------------------------------
 
         dispatcher = UpdateDispatcher(
             router=self._router,
-            session_provider=self._session_provider, # type: ignore
+            session_provider=self._session_provider,  # type: ignore
             identity_provider=self._identity_provider,
-            messenger=messenger, # type: ignore
+            messenger=messenger,  # type: ignore
         )
+
         dispatcher.register_handlers(app)
 
     # ------------------------------------------------------------------
@@ -186,7 +241,7 @@ class PipubotAppFactory:
             database_url=os.environ.get("DATABASE_URL"),
             build_background_services=build_background_services,
             background_handler_modules=tuple(BG_HANDLER_TARGETS.packages),
-            recurring_prefix="system."
+            recurring_prefix="system.",
         )
 
         return cls(config=config).build()

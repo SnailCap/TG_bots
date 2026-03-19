@@ -5,6 +5,7 @@ from core.interaction.contracts.ui_builder import UiBuilder
 from core.services.identity.contracts import IdentityProvider
 from core.services.notifications.notification_service import NotificationService
 from pipubot.domains.tutoring.calendar.oauth_service import GoogleOAuthService
+from pipubot.runtime.google_calendar_runtime import GoogleCalendarRuntime
 from pipubot.runtime.secrets import SecretsService
 
 
@@ -21,3 +22,4 @@ class DefaultAppServices:
     identity: IdentityProvider
     secrets: SecretsService
     google_oauth: GoogleOAuthService
+    google_calendar: GoogleCalendarRuntime

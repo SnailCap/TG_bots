@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Sequence, TYPE_CHECKING
 from telegram import InlineKeyboardMarkup
 
 if TYPE_CHECKING:
-    from core.interaction.input.user_input import UserInput
+    from core.interaction.runtime.user_input import UserInput
 
 from core.interaction.contracts.input_reactive import InputReactive
 from core.interaction.ui.keyboard import KeyboardBuilder

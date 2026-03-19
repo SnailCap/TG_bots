@@ -12,10 +12,10 @@
     ⬩  <b>Сумма урока:  </b><i>{planned_charge} {currency}</i>
 
     ⬩  <b>Google meet:</b>
-      ∘  <i>{meet_url}</i>
+        ∘  <i>{meet_url}</i>
 
     ⬩  <b>Miro:</b>
-      ∘  <i>miro_url</i>
+        ∘  <i>miro_url</i>
 
  ✦︎︎   <i><b>Хорошего урока!</b></i>   ✦︎
 

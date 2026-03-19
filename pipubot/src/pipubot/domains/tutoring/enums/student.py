@@ -49,4 +49,8 @@ class StudyLanguage(str, Enum):
 class StudyFormat(str, Enum):
     ONLINE = "ONLINE"
     OFFLINE = "OFFLINE"
-    HYBRID = "HYBRID"
+    MIXED = "MIXED"
+
+class Currency(str, Enum):
+    EUR = "EUR"
+    USD = "USD"

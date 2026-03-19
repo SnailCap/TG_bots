@@ -4,7 +4,7 @@ from abc import ABC
 from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.interaction.input.user_input import UserInput
+    from core.interaction.runtime.user_input import UserInput
 from .effects import (
     ProcessEffect,
     RenderStep,

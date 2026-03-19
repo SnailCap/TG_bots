@@ -2,32 +2,30 @@ from __future__ import annotations
 
 from typing import Generic, TypeVar, TYPE_CHECKING
 
-from .codec import DraftCodec
-from .constants import DRAFT_KEY, ERRORS_KEY
+from core.interaction.input import InputCodec
+
+from .constants import ERRORS_KEY, OBJECT_DATA_KEY
 
 if TYPE_CHECKING:
-    from core.interaction.input.user_input import UserInput
-
-DraftT = TypeVar("DraftT")
+    from core.interaction.runtime.user_input import UserInput
 
 
-class DraftPayloadStore(Generic[DraftT]):
-    def __init__(self, *, codec: DraftCodec[DraftT]) -> None:
+ObjectT = TypeVar("ObjectT")
+
+
+class ObjectInputPayloadStore(Generic[ObjectT]):
+    def __init__(self, *, codec: InputCodec[ObjectT]) -> None:
         self._codec = codec
 
-    def load_draft(self, user_input: UserInput) -> DraftT:
+    def load_object(self, user_input: UserInput) -> ObjectT:
         payload = self._get_payload(user_input)
-        return self._codec.load(payload.get(DRAFT_KEY))
+        return self._codec.load(payload.get(OBJECT_DATA_KEY))
 
-    def save_draft(self, user_input: UserInput, draft: DraftT) -> None:
+    def save_object(self, user_input: UserInput, obj: ObjectT) -> None:
         self._patch_payload(
             user_input,
-            **{DRAFT_KEY: self._codec.dump(draft)},
+            **{OBJECT_DATA_KEY: self._codec.dump(obj)},
         )
-
-    def merge_with_saved(self, user_input: UserInput, patch: DraftT) -> DraftT:
-        base = self.load_draft(user_input)
-        return self._codec.merge(base=base, patch=patch)
 
     def get_errors(self, user_input: UserInput) -> list[str]:
         payload = self._get_payload(user_input)

@@ -12,7 +12,7 @@ from core.shared.utils.time import round_minutes_to_step
 from pipubot.domains.tutoring.enums.payment import BillingChargeModel
 from pipubot.domains.tutoring.enums.lesson import LessonStatus, LessonConfirmationStatus
 from pipubot.domains.tutoring.lessons.contracts.commands import ConfirmLesson
-from pipubot.domains.tutoring.lessons.dto import ConfirmLessonResult
+from pipubot.domains.tutoring.lessons.contracts.results import ConfirmLessonResult
 from pipubot.domains.tutoring.shared.errors import (
     InvalidConfirmPayloadError,
     LessonAlreadyConfirmedError,
@@ -128,7 +128,6 @@ def _resolve_duration_min(command: ConfirmLesson, lesson: TutoringLesson) -> int
     try:
         return _duration_minutes_floor(lesson.start_at, lesson.end_at)
     except Exception as e:
-        # Это уже “битые данные” в БД, но лучше вернуть стабильную ошибку
         raise InvalidConfirmPayloadError("lesson.end_at must be > lesson.start_at") from e
 
 

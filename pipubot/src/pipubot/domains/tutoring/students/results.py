@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 
 from pipubot.domains.tutoring.enums.student import StudentState, SchoolGrade, PaymentAccount, ExamTrack, StudyLanguage, \
-    StudyFormat
+    StudyFormat, Currency
 
 
 @dataclass(slots=True)
@@ -32,7 +32,7 @@ class StudentDraft:
     started_on: date | None = None
     notes: str | None = None
 
-    default_currency: str | None = "EUR"
+    default_currency: Currency | None = Currency.EUR
     default_rate: Decimal | None = None
     default_duration_min: int | None = 60
 

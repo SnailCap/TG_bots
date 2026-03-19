@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import List, Type, cast, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.interaction.input.user_input import UserInput
+    from core.interaction.runtime.user_input import UserInput
 
 from core.interaction.ui.build import UiBuilder
 from core.interaction.ui.binding import get_default_ui_registry

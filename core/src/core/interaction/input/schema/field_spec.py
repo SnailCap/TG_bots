@@ -1,36 +1,42 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Generic, Iterable, TypeVar
+from typing import Any, Callable, Generic, TypeVar
 
-DraftT = TypeVar("DraftT")
+ObjectT = TypeVar("ObjectT")
 ValueT = TypeVar("ValueT")
 
 ParseFn = Callable[[str], ValueT]
 FormatFn = Callable[[ValueT], str]
 SerializeFn = Callable[[ValueT], Any]
 DeserializeFn = Callable[[Any], ValueT]
-ValidateFn = Callable[[DraftT, ValueT | None], list[str]]
+ValidateFn = Callable[[ObjectT, ValueT | None], list[str]]
 
 
 @dataclass(frozen=True, slots=True)
-class FieldSpec(Generic[DraftT, ValueT]):
+class FieldSpec(Generic[ObjectT, ValueT]):
     """
-    Declarative field definition for schema-driven draft creation.
+    Pure object field definition.
+
+    This class intentionally knows nothing about:
+    - positional order
+    - aliases
+    - bulk text
+    - JSON keys
+    - confirm/presentation policies
+
+    These concerns belong to input scenarios or presentation specs.
     """
     name: str
     label: str
 
-    aliases: tuple[str, ...] = ()
     required: bool = False
-    positional: bool = True
-    include_in_confirm: bool = True
 
     parser: ParseFn[ValueT] | None = None
     formatter: FormatFn[ValueT] | None = None
     serializer: SerializeFn[ValueT] | None = None
-    deserializer: DeserializeFn[ValueT] | None = None
-    validator: ValidateFn[DraftT, ValueT] | None = None
+    deserializer: DeserializeFn[Any] | None = None
+    validator: ValidateFn[ObjectT, ValueT] | None = None
 
     @classmethod
     def build(
@@ -38,23 +44,17 @@ class FieldSpec(Generic[DraftT, ValueT]):
         *,
         name: str,
         label: str,
-        aliases: Iterable[str] = (),
         required: bool = False,
-        positional: bool = True,
-        include_in_confirm: bool = True,
         parser: ParseFn[ValueT] | None = None,
         formatter: FormatFn[ValueT] | None = None,
         serializer: SerializeFn[ValueT] | None = None,
-        deserializer: DeserializeFn[ValueT] | None = None,
-        validator: ValidateFn[DraftT, ValueT] | None = None,
-    ) -> "FieldSpec[DraftT, ValueT]":
+        deserializer: DeserializeFn[Any] | None = None,
+        validator: ValidateFn[ObjectT, ValueT] | None = None,
+    ) -> "FieldSpec[ObjectT, ValueT]":
         return cls(
             name=name,
             label=label,
-            aliases=tuple(aliases),
             required=required,
-            positional=positional,
-            include_in_confirm=include_in_confirm,
             parser=parser,
             formatter=formatter,
             serializer=serializer,

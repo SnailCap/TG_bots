@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Optional
 
 from core.interaction.types import ProcessCommand, ServiceCallbackData
-from core.interaction.input.snapshot import InputSnapshot
+from core.interaction.intent.snapshot import InputSnapshot
 
 
 class ServiceKind(str, Enum):

@@ -11,7 +11,7 @@ from core.interaction.ui.keyboard.keyboard_builder import KeyboardBuilder
 from core.interaction.ui.templating.keyboard import format_inline_keyboard
 
 if TYPE_CHECKING:
-    from core.interaction.input.user_input import UserInput
+    from core.interaction.runtime.user_input import UserInput
 
 
 class UiComponent:

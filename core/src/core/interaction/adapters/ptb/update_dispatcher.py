@@ -10,7 +10,7 @@ from core.interaction.adapters.ptb.state_store import PtbUserDataStateStore
 from core.interaction.contracts.messenger import Messenger
 from core.interaction.contracts.session_provider import SessionProvider
 from core.interaction.contracts.state_store import StateStore
-from core.interaction.input.user_input import UserInput
+from core.interaction.runtime.user_input import UserInput
 from core.interaction.routing.user_input_router import UserInputRouter
 from core.interaction.state import InteractionState
 from core.interaction.types import UserRole

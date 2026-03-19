@@ -1,7 +1,7 @@
 import json
 from contextlib import AbstractAsyncContextManager
 
-from core.interaction.input.user_input import UserInput
+from core.interaction.runtime.user_input import UserInput
 from core.interaction.logging.logging_flags import LoggingFlag
 
 

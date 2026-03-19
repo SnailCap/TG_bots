@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 from typing import Any, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.interaction.input.user_input import UserInput
+    from core.interaction.runtime.user_input import UserInput
 from core.interaction.types import UserInputType
 
 

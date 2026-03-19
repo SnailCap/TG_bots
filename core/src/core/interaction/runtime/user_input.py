@@ -7,12 +7,12 @@ from telegram import Update
 from telegram.ext import ContextTypes
 
 from core.interaction.contracts.messenger import Messenger
-from core.interaction.input.intents import (
+from core.interaction.intent.service_intent import (
     ServiceCallback,
     ServiceCallbackParser,
     ServiceKind,
 )
-from core.interaction.input.snapshot import InputSnapshot
+from core.interaction.intent.snapshot import InputSnapshot
 from core.interaction.messaging import Responder
 from core.interaction.state import InteractionState
 from core.interaction.types import ProcessCommand, ServiceCallbackData
@@ -114,8 +114,8 @@ class UserInput:
         Normalized callback payload for step-level business handlers.
 
         Examples:
-        - "st:confirm_add_student:create" -> "confirm_add_student:create"
-        - "confirm_add_student:create" -> "confirm_add_student:create"
+        - "St:confirm_add_student:create" -> "confirm_add_student:create"
+        - "Confirm_add_student:create" -> "confirm_add_student:create"
         - None -> None
         """
         if not self.is_callback:
@@ -175,9 +175,9 @@ class UserInput:
         Payload for step-level custom callbacks.
 
         Examples:
-        - "st:confirm_add_student:create" -> "confirm_add_student:create"
-        - "svc:nav:home" (recognized service callback) -> returns raw callback unchanged
-        - plain callback without prefix -> returns raw callback unchanged
+        - "St:confirm_add_student:create" -> "confirm_add_student:create"
+        - "Svc:nav:home" (recognized service callback) -> returns raw callback unchanged
+        - Plain callback without prefix -> returns raw callback unchanged
         """
         if not self.is_callback:
             return None
@@ -193,7 +193,7 @@ class UserInput:
             return raw
 
         # For unknown/custom callbacks wrapped in the service namespace,
-        # strip the leading service prefix once.
+        # strip the leading service prefix at once.
         if raw.startswith(svc_prefix):
             return raw[len(svc_prefix):]
 

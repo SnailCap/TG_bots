@@ -2,28 +2,28 @@ from __future__ import annotations
 
 from typing import Generic, TypeVar
 
-from .codec import DraftCodec
-from .schema import DraftSchema
+from .codec import InputCodec
+from .object_schema import ObjectSchema
 
-DraftT = TypeVar("DraftT")
+ObjectT = TypeVar("ObjectT")
 
 
-class DraftValidator(Generic[DraftT]):
+class InputValidator(Generic[ObjectT]):
     """
-    Core-level validation:
-    - required fields
-    - field-level validators from FieldSpec
+    Object-level validation:
+    - required fields from schema
+    - field-level validators
     """
 
-    def __init__(self, *, schema: DraftSchema[DraftT]) -> None:
+    def __init__(self, *, schema: ObjectSchema[ObjectT]) -> None:
         self._schema = schema
 
-    def validate(self, draft: DraftT) -> list[str]:
-        raw = DraftCodec.as_mapping(draft)
+    def validate(self, obj: ObjectT) -> list[str]:
+        raw = InputCodec.as_mapping(obj)
         errors: list[str] = []
 
         errors.extend(self._validate_required(raw))
-        errors.extend(self._validate_fields(draft, raw))
+        errors.extend(self._validate_fields(obj, raw))
 
         return errors
 
@@ -39,7 +39,7 @@ class DraftValidator(Generic[DraftT]):
 
     def _validate_fields(
         self,
-        draft: DraftT,
+        obj: ObjectT,
         raw: dict[str, object],
     ) -> list[str]:
         errors: list[str] = []
@@ -50,7 +50,7 @@ class DraftValidator(Generic[DraftT]):
 
             value = raw.get(field_spec.name)
             try:
-                field_errors = field_spec.validator(draft, value)
+                field_errors = field_spec.validator(obj, value)
             except Exception as e:
                 errors.append(f"{field_spec.label}: {e}")
                 continue

@@ -1,21 +1,23 @@
-from core.interaction.ui.components.process.patterns.draft_create_process import CollectDraftStep
-from core.interaction.ui.components.process.patterns.draft_create_process import ConfirmDraftStep
+from __future__ import annotations
+
 from core.interaction.ui.binding import step
-from core.interaction.ui.components.process.patterns.draft_create_process import (
-    EditDraftStep,
+from core.interaction.ui.components.process.patterns.object_input import (
+    ConfirmObjectStep,
+    EditObjectStep,
+    InputObjectStep,
 )
 
 
 @step("ask_student_add_info")
-class AskStudentAddInfoStep(CollectDraftStep):
+class AskStudentAddInfoStep(InputObjectStep):
     pass
 
 
 @step("confirm_add_student")
-class ConfirmAddStudentStep(ConfirmDraftStep):
+class ConfirmAddStudentStep(ConfirmObjectStep):
     pass
 
 
 @step("edit_student_info")
-class EditStudentInfoStep(EditDraftStep):
+class EditStudentInfoStep(EditObjectStep):
     pass
