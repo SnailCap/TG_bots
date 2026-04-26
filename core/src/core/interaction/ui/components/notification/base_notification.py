@@ -5,6 +5,7 @@ from telegram import InlineKeyboardMarkup
 
 from core.interaction.ui.components.base import UiComponent
 from core.interaction.ui.keyboard.keyboard_builder import KeyboardBuilder
+from core.interaction.ui.templating.text_renderer import TextRenderer
 
 
 class Notification(UiComponent):
@@ -14,6 +15,7 @@ class Notification(UiComponent):
         inline_keyboard_template: Optional[InlineKeyboardMarkup] = None,
         *,
         keyboard_builder: Optional[KeyboardBuilder] = None,
+        text_renderer: TextRenderer,
         default_keyboard_layout: Optional[Any] = None,
         html_escape_variables: bool = False,
         parse_mode: Optional[str] = "HTML",
@@ -22,6 +24,7 @@ class Notification(UiComponent):
             text_template=text_template,
             inline_keyboard_template=inline_keyboard_template,
             keyboard_builder=keyboard_builder,
+            text_renderer=text_renderer,
             html_escape_variables=html_escape_variables,
         )
         self._parse_mode = parse_mode
@@ -36,8 +39,6 @@ class Notification(UiComponent):
         text_vars: Optional[Dict[str, Any]] = None,
         kb_vars: Optional[Dict[str, Any]] = None,
     ):
-        # Если kb_vars не передали, но в конфиге есть default layout —
-        # используем его, чтобы detached-рендер (background) тоже строил клавиатуру.
         if kb_vars is None and self._default_keyboard_layout is not None:
             kb_vars = {self._LAYOUT_KEY: self._default_keyboard_layout}
 

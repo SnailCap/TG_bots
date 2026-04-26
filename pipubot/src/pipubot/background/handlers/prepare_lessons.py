@@ -15,8 +15,7 @@ from pipubot.domains.tutoring.calendar.oauth_service import (
 from pipubot.domains.tutoring.lessons.services.preparation_service import (
     prepare_upcoming_lessons_for_delivery,
 )
-from pipubot.runtime.runtime_services import DefaultAppServices
-
+from pipubot.runtime.pipubot_services import PipubotServices
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +49,7 @@ class PrepareLessonsPayload(TaskPayload):
 async def prepare_lessons(
     session: AsyncSession,
     payload: PrepareLessonsPayload,
-    services: DefaultAppServices,
+    services: PipubotServices,
 ) -> None:
     """
     Prepare runtime resources for upcoming lessons.

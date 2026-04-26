@@ -6,10 +6,10 @@ from core.interaction.ui.binding import get_default_ui_registry
 from core.interaction.ui.components.process.base.base_step import Step
 
 from .base import ObjectInputProcess
-from .constants import DEFAULT_ERROR_TEXT_KEY, InputFlowMode
+from .constants import DEFAULT_ERROR_TEXT_KEY
 
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
     from core.interaction.ui.components.process.base.effects import StepResult
 
 
@@ -275,11 +275,7 @@ class ConfirmObjectStep(ObjectInputStepBase[ObjectT], Generic[ObjectT]):
                 obj=obj,
                 errors=validation_errors,
             )
-
-            if proc.flow_mode() == InputFlowMode.INPUT_CONFIRM:
-                return self.go_to_step(proc.input_step_name)
-
-            return self.go_to_step(proc.edit_step_name)
+            return self.go_to_step(proc.confirm_validation_error_step_name())
 
         return await self._submit_or_show_errors(
             user_input,

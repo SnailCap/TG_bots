@@ -1,0 +1,4 @@
+Введите нижнюю компенсацию.
+(текущее: {{ current_value | default('') }})
+
+{{ error_text | default('') }}

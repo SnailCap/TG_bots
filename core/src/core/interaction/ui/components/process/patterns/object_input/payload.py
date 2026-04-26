@@ -7,7 +7,7 @@ from core.interaction.input import InputCodec
 from .constants import ERRORS_KEY, OBJECT_DATA_KEY
 
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
 
 
 ObjectT = TypeVar("ObjectT")

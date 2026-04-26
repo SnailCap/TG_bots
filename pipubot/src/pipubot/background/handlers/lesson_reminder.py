@@ -16,7 +16,7 @@ from pipubot.domains.tutoring.lessons.services.meet_link_service import (
 from pipubot.domains.tutoring.lessons.services.reminder_service import (
     build_upcoming_lesson_reminder_candidates,
 )
-from pipubot.runtime.runtime_services import DefaultAppServices
+from pipubot.runtime.pipubot_services import PipubotServices
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def _build_notification_text_vars(
 
 async def _build_google_calendar_client_if_needed(
     *,
-    services: DefaultAppServices,
+    services: PipubotServices,
     tutor_user_id: int,
     candidates: list[LessonReminderCandidate],
 ):
@@ -115,7 +115,7 @@ async def _resolve_meet_url(
 async def _send_single_lesson_reminder(
     *,
     session: AsyncSession,
-    services: DefaultAppServices,
+    services: PipubotServices,
     tutor_user_id: int,
     lesson: LessonReminderCandidate,
     client: object | None,
@@ -147,7 +147,7 @@ async def _send_single_lesson_reminder(
 async def send_upcoming_lesson_reminder(
     session: AsyncSession,
     payload: LessonReminderPayload,
-    services: DefaultAppServices,
+    services: PipubotServices,
 ) -> None:
     tutor_user_id = int(payload["tutor_user_id"])
     notify_before_minutes = int(payload.get("notify_before_minutes", 10))

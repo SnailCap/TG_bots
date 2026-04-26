@@ -2,6 +2,12 @@
   "public_home": {
     "text": "<b>Домашняя страница</b>",
     "keyboard_layout": [
+      ["go_tutoring_page"]
+    ]
+  },
+  "tutoring": {
+    "text": "<b>Страница репетиторства</b>",
+    "keyboard_layout": [
       ["add_student_process"]
     ]
   }

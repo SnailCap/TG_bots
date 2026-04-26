@@ -4,8 +4,10 @@ from typing import Any, Dict, Optional, Sequence, TYPE_CHECKING
 
 from telegram import InlineKeyboardMarkup
 
+from core.interaction.ui.templating.text_renderer import TextRenderer
+
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
 
 from core.interaction.contracts.input_reactive import InputReactive
 from core.interaction.ui.keyboard import KeyboardBuilder
@@ -21,15 +23,6 @@ from core.interaction.ui.components.base import UiComponent
 
 
 class Step(UiComponent, InputReactive):
-    """
-    Stateless Step.
-
-    - Text variables and keyboard layout overrides are stored in the active process payload.
-    - Effective keyboard layout:
-        1) payload override ("keyboard_layout") if present and not None
-        2) default_keyboard_layout provided at construction time (usually from config)
-    """
-
     _PAYLOAD_TEXT_VARS = "text_variables"
     _PAYLOAD_KB_LAYOUT = "keyboard_layout"
     _PAYLOAD_KB_VARS = "keyboard_variables"
@@ -40,6 +33,7 @@ class Step(UiComponent, InputReactive):
         inline_keyboard_template: Optional[InlineKeyboardMarkup] = None,
         *,
         keyboard_builder: Optional[KeyboardBuilder] = None,
+        text_renderer: TextRenderer,
         html_escape_variables: bool = False,
         default_keyboard_layout: Optional[Sequence[Sequence[Any]]] = None,
     ) -> None:
@@ -47,6 +41,7 @@ class Step(UiComponent, InputReactive):
             text_template,
             inline_keyboard_template,
             keyboard_builder=keyboard_builder,
+            text_renderer=text_renderer,
             html_escape_variables=html_escape_variables,
         )
         self._default_keyboard_layout = default_keyboard_layout
@@ -74,7 +69,6 @@ class Step(UiComponent, InputReactive):
     async def is_input_valid(self, user_input: UserInput) -> bool:
         return True
 
-    # --- navigation helpers ---
     @staticmethod
     def go_next() -> GoNext:
         return GoNext()
@@ -95,7 +89,6 @@ class Step(UiComponent, InputReactive):
     def cancel() -> Cancel:
         return Cancel()
 
-    # --- state helpers ---
     def _active_proc(self, user_input: UserInput) -> Optional[str]:
         if not user_input.state.has_active_process():
             return None

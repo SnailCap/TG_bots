@@ -4,23 +4,28 @@ from abc import ABC
 from typing import List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
+
 from .effects import (
+    CancelProcess,
+    FinishProcess,
     ProcessEffect,
     RenderStep,
-    FinishProcess,
-    CancelProcess,
 )
 
 
 class Process(ABC):
     """
-    Process base class.
+    step_names:
+        Линейный основной flow процесса.
+        Используется только для next/prev.
+
+    allowed_step_names:
+        Все допустимые шаги процесса, включая branch / auxiliary steps.
+        Используется для явных переходов go_to_step() и для резолва активного шага.
     """
 
     step_names: list[str] = []
-
-    # === internal ===
 
     @classmethod
     def _get_registered_key(cls) -> str:
@@ -32,7 +37,9 @@ class Process(ABC):
     def _key(self) -> str:
         return self._get_registered_key()
 
-    # === lifecycle ===
+    @property
+    def allowed_step_names(self) -> list[str]:
+        return self.step_names
 
     async def start(self, user_input: UserInput) -> List[ProcessEffect]:
         key = self._key()
@@ -44,11 +51,9 @@ class Process(ABC):
             raise RuntimeError(f"Process '{key}' has no step_names.")
 
         state.set_step_key(key, self.step_names[0])
-
         return [self._render_current_effect(user_input)]
 
     async def handle_input(self, user_input: UserInput) -> List[ProcessEffect]:
-        # Prefer intent-level flags over callback parsing here (LoD).
         if user_input.is_proc_next:
             return await self.go_to_next_step(user_input)
 
@@ -65,9 +70,7 @@ class Process(ABC):
         if idx >= (len(self.step_names) - 1):
             return await self.finish(user_input)
 
-        new_idx = idx + 1
-        state.set_step_key(key, self.step_names[new_idx])
-
+        state.set_step_key(key, self.step_names[idx + 1])
         return [self._render_current_effect(user_input)]
 
     async def go_to_previous_step(self, user_input: UserInput) -> List[ProcessEffect]:
@@ -78,26 +81,23 @@ class Process(ABC):
         if idx <= 0:
             return await self.cancel(user_input)
 
-        new_idx = idx - 1
-        state.set_step_key(key, self.step_names[new_idx])
-
+        state.set_step_key(key, self.step_names[idx - 1])
         return [self._render_current_effect(user_input)]
 
     def go_to_step(self, user_input: UserInput, step_name: str) -> List[ProcessEffect]:
         key = self._key()
         state = user_input.state
 
-        # validate
-        if step_name not in self.step_names:
+        if step_name not in self.allowed_step_names:
             raise KeyError(
                 f"Unknown step_name '{step_name}' for process '{self._get_registered_key()}'. "
-                f"Known: {self.step_names}"
+                f"Allowed: {self.allowed_step_names}"
             )
 
         state.set_step_key(key, step_name)
         return [self._render_current_effect(user_input)]
 
-    async def finish(self, user_input: UserInput) -> List[ProcessEffect]:  # NOSONAR
+    async def finish(self, user_input: UserInput) -> List[ProcessEffect]:
         key = self._key()
         state = user_input.state
 
@@ -106,7 +106,7 @@ class Process(ABC):
 
         return [FinishProcess(key)]
 
-    async def cancel(self, user_input: UserInput) -> List[ProcessEffect]:  # NOSONAR
+    async def cancel(self, user_input: UserInput) -> List[ProcessEffect]:
         key = self._key()
         state = user_input.state
 
@@ -115,19 +115,24 @@ class Process(ABC):
 
         return [CancelProcess(key)]
 
-    # === helpers ===
-
     def _render_current_effect(self, user_input: UserInput) -> RenderStep:
         key = self._key()
-        idx = self._get_current_step_index(user_input)
+        state = user_input.state
 
-        if idx < 0 or idx >= len(self.step_names):
-            raise IndexError(f"Step index out of range: {idx} for process '{key}'")
+        step_key = state.get_step_key(key)
+        if step_key is None:
+            if not self.step_names:
+                raise RuntimeError(f"Process '{key}' has no step_names.")
+            step_key = self.step_names[0]
+            state.set_step_key(key, step_key)
 
-        return RenderStep(step_name=self.step_names[idx], with_send=False)
+        if step_key not in self.allowed_step_names:
+            raise KeyError(
+                f"Unknown step_key '{step_key}' for process '{key}'. "
+                f"Allowed: {self.allowed_step_names}"
+            )
 
-    def _is_last_step_index(self, user_input: UserInput) -> bool:
-        return self._get_current_step_index(user_input) >= (len(self.step_names) - 1)
+        return RenderStep(step_name=step_key, with_send=False)
 
     def _get_current_step_index(self, user_input: UserInput) -> int:
         key = self._key()
@@ -135,14 +140,15 @@ class Process(ABC):
 
         step_key = state.get_step_key(key)
         if step_key is None:
-            # если по какой-то причине пусто — считаем, что это старт
+            if not self.step_names:
+                raise RuntimeError(f"Process '{key}' has no step_names.")
             state.set_step_key(key, self.step_names[0])
             return 0
 
         if step_key not in self.step_names:
             raise KeyError(
-                f"Unknown step_key '{step_key}' for process '{key}'. "
-                f"Known: {self.step_names}"
+                f"Step '{step_key}' is not in linear flow of process '{key}'. "
+                f"Linear flow: {self.step_names}"
             )
 
         return self.step_names.index(step_key)
@@ -155,12 +161,3 @@ class Process(ABC):
             state.clear_active_process()
 
         state.clear_process_state(key)
-
-    def _index_of_step_name(self, step_name: str) -> int:
-        try:
-            return self.step_names.index(step_name)
-        except ValueError as e:
-            raise KeyError(
-                f"Unknown step_name '{step_name}' for process '{self._get_registered_key()}'. "
-                f"Known: {self.step_names}"
-            ) from e

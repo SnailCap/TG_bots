@@ -2,14 +2,13 @@ from __future__ import annotations
 
 from core.interaction.contracts.start_page_resolver import StartPageResolver
 from core.interaction.contracts.ui_builder import UiBuilder
-from core.interaction.intent.service_intent import ServiceKind
-from core.interaction.routing.start_page_resolver import DefaultStartPageResolver
-from core.interaction.runtime.user_input import UserInput
 from core.interaction.logging.user_data_logger import UserDataLogger
-from core.interaction.ui import get_default_ui_registry
+from core.interaction.routing.start_page_resolver import DefaultStartPageResolver
+from core.interaction.runtime.context import NavKind, ServiceKind, UserInput
 from core.interaction.ui import Page
-from core.interaction.ui import ProcessEffect
 from core.interaction.ui import ProcessCoordinator
+from core.interaction.ui import ProcessEffect
+from core.interaction.ui import get_default_ui_registry
 
 
 class UnknownProcessKey(RuntimeError):
@@ -25,12 +24,12 @@ class UserInputRouter:
     async def handle_input(self, user_input: UserInput) -> None:
         async with UserDataLogger(user_input):
             # 1) Commands: reset the flow and open the start page
-            if user_input.is_command:
+            if user_input.message.is_command:
                 await self._handle_command(user_input)
                 return
 
             # 2) Service callbacks: NAV / PRC control
-            if user_input.is_service_callback:
+            if user_input.callback_input.is_service:
                 await self._handle_service_callback(user_input)
                 return
 
@@ -48,7 +47,6 @@ class UserInputRouter:
 
     async def _handle_command(self, user_input: UserInput) -> None:
         user_input.state.cancel_current_process()
-        # command is a user message -> must SEND, not EDIT
         await self._open_start_page(user_input, with_send=True)
 
     # -----------------------------
@@ -65,16 +63,17 @@ class UserInputRouter:
     # -----------------------------
 
     async def _handle_service_callback(self, user_input: UserInput) -> None:
-        # NAV cancels any running process (framework rule)
-        if user_input.service_kind in (ServiceKind.NAV, ServiceKind.NAV_TO) and user_input.state.has_active_process():
+        service_kind = user_input.callback_input.service_kind
+
+        if service_kind == ServiceKind.NAV and user_input.state.has_active_process():
             user_input.state.cancel_current_process()
 
-        match user_input.service_kind:
-            case ServiceKind.NAV | ServiceKind.NAV_TO:
+        match service_kind:
+            case ServiceKind.NAV:
                 await self._handle_nav_callback(user_input)
 
             case ServiceKind.PRC_START:
-                await self._start_process(user_input, user_input.proc_key)
+                await self._start_process(user_input, user_input.callback_input.process.key)
 
             case ServiceKind.PRC_CMD:
                 if user_input.state.has_active_process():
@@ -89,24 +88,25 @@ class UserInputRouter:
                     await self._open_current_or_start_page(user_input)
 
     async def _handle_nav_callback(self, user_input: UserInput) -> None:
-        # We still use old flags for "special nav" because they are explicit in ServiceCallbackData.
-        if user_input.is_nav_previous:
-            await self._open_previous_page(user_input)
-            return
+        nav = user_input.callback_input.nav
 
-        if user_input.is_nav_current:
-            await self._open_current_or_start_page(user_input)
-            return
-
-        if user_input.is_nav_home:
-            await self._open_start_page(user_input)
-            return
-
-        if user_input.is_nav_to:
-            target = user_input.nav_target
-            if target:
-                await self._open_page(user_input, target, push_history=True)
+        match nav.kind:
+            case NavKind.PREVIOUS:
+                await self._open_previous_page(user_input)
                 return
+
+            case NavKind.CURRENT:
+                await self._open_current_or_start_page(user_input)
+                return
+
+            case NavKind.HOME:
+                await self._open_start_page(user_input)
+                return
+
+            case NavKind.TARGET:
+                if nav.target:
+                    await self._open_page(user_input, nav.target, push_history=True)
+                    return
 
         await self._open_current_or_start_page(user_input)
 
@@ -115,7 +115,6 @@ class UserInputRouter:
     # -----------------------------
 
     async def _start_process(self, user_input: UserInput, proc_key: str | None) -> None:
-        # Fail-soft: stale button / malformed callback -> go home
         if not proc_key:
             await self._open_start_page(user_input)
             return
@@ -126,16 +125,12 @@ class UserInputRouter:
         try:
             proc = self._resolve_process(proc_key)
         except UnknownProcessKey:
-            # Fail-soft: config changed, the old callback still exists in chat history
             await self._open_start_page(user_input)
             return
 
         effects = await proc.start(user_input)
         await self._apply_process_effects(user_input, effects)
 
-        # If start() finished immediately -> coordinator marks ended only on handle(),
-        # but start() can also produce FinishProcess/CancelProcess effects.
-        # So we refresh the UI after applying effects if the process is no longer active.
         if not user_input.state.has_active_process():
             await self._open_current_or_start_page(user_input)
 
@@ -156,7 +151,7 @@ class UserInputRouter:
     async def _route_input_to_current_page(self, user_input: UserInput) -> None:
         current_page_name = user_input.state.get_current_page()
         if not current_page_name:
-            await self._open_start_page(user_input, with_send=user_input.with_send_default)
+            await self._open_start_page(user_input, with_send=user_input.message.with_send_default)
             return
 
         page: Page = self._ui.build_page(current_page_name)
@@ -165,7 +160,12 @@ class UserInputRouter:
     async def _open_current_or_start_page(self, user_input: UserInput) -> None:
         current = user_input.state.get_current_page()
         if current:
-            await self._open_page(user_input, current, with_send=user_input.with_send_default, push_history=False)
+            await self._open_page(
+                user_input,
+                current,
+                with_send=user_input.message.with_send_default,
+                push_history=False,
+            )
         else:
             await self._open_start_page(user_input)
 
@@ -178,7 +178,7 @@ class UserInputRouter:
         push_history: bool = True,
     ) -> bool:
         if with_send is None:
-            with_send = user_input.with_send_default
+            with_send = user_input.message.with_send_default
 
         page: Page = self._ui.build_page(page_name)
 
@@ -204,7 +204,6 @@ class UserInputRouter:
             return
 
         target = history[-1]
-        # NAV is callback -> edit
         await self._open_page(user_input, target, with_send=False, push_history=False)
 
     async def _open_start_page(self, user_input: UserInput, *, with_send: bool | None = None) -> None:

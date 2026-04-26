@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from typing import List, Type, cast, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
 
-from core.interaction.ui.build import UiBuilder
 from core.interaction.ui.binding import get_default_ui_registry
+from core.interaction.ui.build.ui_builder import UiBuilder
+
 from .base_process import Process
 from .effects import (
     Cancel,
@@ -50,10 +51,14 @@ class ProcessCoordinator:
         if not effects:
             effects = [RenderStep(step_name)]
 
-        ended = await self._apply_effects(user_input, effects)
-        return ended
+        return await self._apply_effects(user_input, effects)
 
-    def _resolve_active_step_name(self, user_input: UserInput, proc_key: str, proc: Process) -> str:
+    def _resolve_active_step_name(
+        self,
+        user_input: UserInput,
+        proc_key: str,
+        proc: Process,
+    ) -> str:
         state = user_input.state
 
         step_key = state.get_step_key(proc_key)
@@ -63,10 +68,10 @@ class ProcessCoordinator:
             step_key = proc.step_names[0]
             state.set_step_key(proc_key, step_key)
 
-        if step_key not in proc.step_names:
+        if step_key not in proc.allowed_step_names:
             raise KeyError(
                 f"Unknown step_key '{step_key}' for process '{proc_key}'. "
-                f"Known: {proc.step_names}"
+                f"Allowed: {proc.allowed_step_names}"
             )
 
         return step_key
@@ -110,7 +115,11 @@ class ProcessCoordinator:
         proc_cls = cast(Type[Process], cls)
         return proc_cls()
 
-    async def _apply_effects(self, user_input: UserInput, effects: List[ProcessEffect]) -> bool:
+    async def _apply_effects(
+        self,
+        user_input: UserInput,
+        effects: List[ProcessEffect],
+    ) -> bool:
         ended = False
 
         for eff in effects:
@@ -123,5 +132,9 @@ class ProcessCoordinator:
 
         return ended
 
-    async def apply_effects(self, user_input: UserInput, effects: list[ProcessEffect]) -> bool:
+    async def apply_effects(
+        self,
+        user_input: UserInput,
+        effects: list[ProcessEffect],
+    ) -> bool:
         return await self._apply_effects(user_input, effects)

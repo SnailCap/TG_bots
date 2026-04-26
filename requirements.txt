@@ -13,3 +13,4 @@ starlette~=0.52.1
 psycopg[binary]~=3.3.3
 httpx
 pendulum
+jinja2

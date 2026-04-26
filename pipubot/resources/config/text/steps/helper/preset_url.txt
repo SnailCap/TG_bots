@@ -1,0 +1,4 @@
+Вставьте ссылку для пресета:
+<b>{{ selected_text | default('') }}</b>
+
+{{ error_text | default('') }}

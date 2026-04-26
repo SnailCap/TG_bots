@@ -1,0 +1,4 @@
+Введите базовый верхний запас.
+(текущее: {{ current_value | default('') }})
+
+{{ error_text | default('') }}

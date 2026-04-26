@@ -12,6 +12,7 @@ from core.db import Base
 
 import core.db.models  # noqa: F401
 import core.db.models.sent_notification  # noqa: F401
+import pipubot.domains.helper.models  # noqa: F401
 import pipubot.domains.tutoring.models  # noqa: F401
 
 from core.db.repositories.user_repository import create_or_update_user

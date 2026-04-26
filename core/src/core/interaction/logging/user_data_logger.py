@@ -1,7 +1,7 @@
 import json
 from contextlib import AbstractAsyncContextManager
 
-from core.interaction.runtime.user_input import UserInput
+from core.interaction.runtime.context.user_input import UserInput
 from core.interaction.logging.logging_flags import LoggingFlag
 
 
@@ -25,5 +25,11 @@ class UserDataLogger(AbstractAsyncContextManager):
 
     def _print_data(self):
         data = self.user_input.state.dump()
-        print(json.dumps(data, indent=2, ensure_ascii=False))
+        print(json.dumps(data, indent=2, ensure_ascii=False, default=self._json_default))
+
+    @staticmethod
+    def _json_default(value):
+        if hasattr(value, "__dict__"):
+            return dict(value.__dict__)
+        return str(value)
 

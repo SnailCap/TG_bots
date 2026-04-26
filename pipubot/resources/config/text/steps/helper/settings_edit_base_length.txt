@@ -1,0 +1,4 @@
+Введите базовую длину.
+(текущее: {{ current_value | default('') }})
+
+{{ error_text | default('') }}

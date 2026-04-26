@@ -2,5 +2,9 @@
   "go_home": {
     "text": "Home",
     "callback_data": "svc:nav:home"
+  },
+  "go_tutoring_page": {
+    "text": "репетиторство",
+    "callback_data": "svc:nav:tutoring"
   }
 }

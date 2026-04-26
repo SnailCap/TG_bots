@@ -1,0 +1,7 @@
+Отправьте 2 или 3 строки одним сообщением:
+
+Текст
+https://example.com
+Длина (базовая {{ base_length }})
+
+{{ error_text | default('') }}

@@ -10,10 +10,8 @@ from core.interaction.adapters.ptb.state_store import PtbUserDataStateStore
 from core.interaction.contracts.messenger import Messenger
 from core.interaction.contracts.session_provider import SessionProvider
 from core.interaction.contracts.state_store import StateStore
-from core.interaction.runtime.user_input import UserInput
+from core.interaction.runtime.context import InteractionState, UserInput, UserRole
 from core.interaction.routing.user_input_router import UserInputRouter
-from core.interaction.state import InteractionState
-from core.interaction.types import UserRole
 from core.services.identity.contracts import IdentityProvider
 
 
@@ -46,22 +44,23 @@ class UpdateDispatcher:
             store: StateStore = PtbUserDataStateStore(context.user_data)
             state = InteractionState(store)
 
+            tg_user = update.effective_user
+
+            user = await self._identity_provider.ensure_user(
+                session=session,
+                telegram_id=tg_user.id if tg_user else 0,
+                username=tg_user.username if tg_user else None,
+                first_name=tg_user.first_name if tg_user else None,
+                last_name=tg_user.last_name if tg_user else None,
+            )
+
             user_input = UserInput(
                 update,
                 context,
                 session=session,
                 messenger=self._messenger,
                 state=state,
+                user_role=UserRole(user.role),
             )
-
-            user = await self._identity_provider.ensure_user(
-                session=session,
-                telegram_id=user_input.telegram_id,
-                username=user_input.username,
-                first_name=user_input.first_name,
-                last_name=user_input.last_name,
-            )
-
-            user_input.user_role = UserRole(user.role)
 
             await self._router.handle_input(user_input)

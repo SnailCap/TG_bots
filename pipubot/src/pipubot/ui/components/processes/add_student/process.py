@@ -12,8 +12,7 @@ from core.interaction.input import (
 )
 from core.interaction.ui.binding import process
 from core.interaction.ui.components.process.patterns.object_input import (
-    ConfirmStepCallbacks,
-    InputFlowMode,
+    ConfirmStepCallbacks, InputFlowMode,
 )
 from core.interaction.ui.components.process.patterns.object_input.simple import (
     SimpleObjectProcess,
@@ -39,6 +38,7 @@ class AddStudentProcess(SimpleObjectProcess[StudentDraft]):
     confirm_step_name = "confirm_add_student"
 
     model = StudentDraft
+
     flow_mode_value = InputFlowMode.INPUT_CONFIRM
 
     fields = [
@@ -237,12 +237,6 @@ class AddStudentProcess(SimpleObjectProcess[StudentDraft]):
         "валюта": "default_currency",
         "currency": "default_currency",
     }
-
-    def confirm_callbacks(self) -> ConfirmStepCallbacks:
-        return ConfirmStepCallbacks(
-            edit="edit",
-            confirm="confirm",
-        )
 
     def validate_object(self, user_input, obj: StudentDraft) -> list[str]:
         errors: list[str] = []

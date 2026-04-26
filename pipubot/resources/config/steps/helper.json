@@ -1,0 +1,67 @@
+{
+  "helper_ask_bundle": {
+    "text": "helper/ask_bundle.txt",
+    "keyboard_layout": [
+      ["helper_presets"],
+      ["helper_ask_back"]
+    ]
+  },
+  "helper_presets": {
+    "text": "helper/presets.txt",
+    "keyboard_layout": null
+  },
+  "helper_preset_url": {
+    "text": "helper/preset_url.txt",
+    "keyboard_layout": [
+      ["helper_preset_url_back"]
+    ]
+  },
+  "helper_preset_create": {
+    "text": "helper/preset_create.txt",
+    "keyboard_layout": [
+      ["helper_preset_create_back"]
+    ]
+  },
+  "helper_preset_edit_select": {
+    "text": "helper/preset_edit_select.txt",
+    "keyboard_layout": null
+  },
+  "helper_preset_delete_select": {
+    "text": "helper/preset_delete_select.txt",
+    "keyboard_layout": null
+  },
+  "helper_preset_edit": {
+    "text": "helper/preset_edit.txt",
+    "keyboard_layout": null
+  },
+  "helper_preset_edit_text": {
+    "text": "helper/preset_edit_text.txt",
+    "keyboard_layout": [
+      ["helper_preset_edit_text_back"]
+    ]
+  },
+  "helper_result": {
+    "text": "helper/result.txt",
+    "keyboard_layout": [
+      ["helper_edit_text", "helper_edit_url", "helper_edit_width"],
+      ["helper_restart_with_preset"],
+      ["helper_restart"]
+    ]
+  },
+  "helper_edit_text": {
+    "text": "helper/edit_text.txt",
+    "keyboard_layout": [
+      ["helper_edit_back"]
+    ]
+  },
+  "helper_edit_url": {
+    "text": "helper/edit_url.txt",
+    "keyboard_layout": [
+      ["helper_edit_back"]
+    ]
+  },
+  "helper_edit_width": {
+    "text": "helper/edit_width.txt",
+    "keyboard_layout": null
+  }
+}

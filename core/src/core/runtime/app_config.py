@@ -10,7 +10,10 @@ class AppConfig:
     bot_token: str
     config_root: str
 
-    # UI bindings (side effect imports)
+    # Project root package for convention-based discovery, e.g. "pipubot"
+    root_package: Optional[str] = None
+
+    # Explicit UI bindings (advanced / fallback)
     ui_binding_modules: Sequence[str] = field(default_factory=tuple)
 
     database_url: Optional[str] = None
@@ -25,7 +28,7 @@ class AppConfig:
     bootstrap_recurring: bool = True
     recurring_prefix: str = "system."
 
-    # Background task handlers (side effect imports)
+    # Explicit background task handlers (advanced / fallback)
     background_handler_modules: Sequence[str] = field(default_factory=tuple)
 
     # Optional: validate that all expected handlers are registered at startup

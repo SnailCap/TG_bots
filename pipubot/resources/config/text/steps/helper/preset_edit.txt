@@ -1,0 +1,7 @@
+Редактирование пресета
+
+Текущий текст: <b>{{ selected_text | default('') }}</b>
+Текущая длина: <b>{{ base_length | default('') }}</b>
+Текущая нижняя компенсация: <b>{{ bottom_extra_symbols | default('') }}</b>
+
+{{ preset_preview_text | default('') }}

@@ -1,0 +1,170 @@
+{
+  "helper_start": {
+    "text": "helper",
+    "callback_data": "svc:prc:start:helper"
+  },
+  "helper_edit_text": {
+    "text": "поменять текст",
+    "callback_data": "helper:edit:text"
+  },
+  "helper_edit_url": {
+    "text": "поменять ссылку",
+    "callback_data": "helper:edit:url"
+  },
+  "helper_edit_width": {
+    "text": "поменять длину",
+    "callback_data": "helper:edit:width"
+  },
+  "helper_presets": {
+    "text": "пресеты",
+    "callback_data": "helper:presets"
+  },
+  "helper_presets_add": {
+    "text": "добавить пресет",
+    "callback_data": "helper:presets:add"
+  },
+  "helper_presets_edit": {
+    "text": "изменить пресет",
+    "callback_data": "helper:presets:edit"
+  },
+  "helper_presets_delete": {
+    "text": "удалить пресет",
+    "callback_data": "helper:presets:delete"
+  },
+  "helper_presets_item": {
+    "text": "{mark}{text}",
+    "callback_data": "helper:presets:use:{preset_id}"
+  },
+  "helper_presets_back": {
+    "text": "назад",
+    "callback_data": "helper:presets:back"
+  },
+  "helper_preset_url_back": {
+    "text": "назад",
+    "callback_data": "helper:preset:url:back"
+  },
+  "helper_preset_create_back": {
+    "text": "назад",
+    "callback_data": "helper:preset:create:back"
+  },
+  "helper_preset_edit_select_item": {
+    "text": "{mark}{text}",
+    "callback_data": "helper:preset:edit:select:{preset_id}"
+  },
+  "helper_preset_edit_select_back": {
+    "text": "назад",
+    "callback_data": "helper:preset:edit:select:back"
+  },
+  "helper_preset_delete_select_item": {
+    "text": "{text}",
+    "callback_data": "helper:preset:delete:select:{preset_id}"
+  },
+  "helper_preset_delete_select_back": {
+    "text": "назад",
+    "callback_data": "helper:preset:delete:select:back"
+  },
+  "helper_preset_edit_text": {
+    "text": "поменять текст",
+    "callback_data": "helper:preset:edit:text"
+  },
+  "helper_preset_edit_save_exit": {
+    "text": "сохранить и выйти",
+    "callback_data": "helper:preset:edit:back"
+  },
+  "helper_preset_edit_text_back": {
+    "text": "назад",
+    "callback_data": "helper:preset:edit:text:back"
+  },
+  "helper_preset_edit_mode_length": {
+    "text": "{mark} длина",
+    "callback_data": "helper:preset:edit:mode:length"
+  },
+  "helper_preset_edit_mode_bottom": {
+    "text": "{mark} нижний",
+    "callback_data": "helper:preset:edit:mode:bottom"
+  },
+  "helper_preset_edit_back": {
+    "text": "назад",
+    "callback_data": "helper:preset:edit:back"
+  },
+  "helper_ask_back": {
+    "text": "назад",
+    "callback_data": "svc:nav:home"
+  },
+  "helper_edit_back": {
+    "text": "назад",
+    "callback_data": "helper:edit:back"
+  },
+  "helper_restart": {
+    "text": "начать заново",
+    "callback_data": "helper:restart"
+  },
+  "helper_restart_with_preset": {
+    "text": "начать заново с пресета",
+    "callback_data": "helper:restart:with_preset"
+  },
+  "helper_width_mode_both": {
+    "text": "{mark} оба",
+    "callback_data": "helper:width:mode:both"
+  },
+  "helper_width_mode_top": {
+    "text": "{mark} верхний",
+    "callback_data": "helper:width:mode:top"
+  },
+  "helper_width_mode_bottom": {
+    "text": "{mark} нижний",
+    "callback_data": "helper:width:mode:bottom"
+  },
+  "helper_width_delta_-3": {
+    "text": "-3",
+    "callback_data": "helper:width:delta:-3"
+  },
+  "helper_width_delta_-2": {
+    "text": "-2",
+    "callback_data": "helper:width:delta:-2"
+  },
+  "helper_width_delta_-1": {
+    "text": "-1",
+    "callback_data": "helper:width:delta:-1"
+  },
+  "helper_width_delta_+1": {
+    "text": "+1",
+    "callback_data": "helper:width:delta:1"
+  },
+  "helper_width_delta_+2": {
+    "text": "+2",
+    "callback_data": "helper:width:delta:2"
+  },
+  "helper_width_delta_+3": {
+    "text": "+3",
+    "callback_data": "helper:width:delta:3"
+  },
+  "helper_width_delta_-5": {
+    "text": "-5",
+    "callback_data": "helper:width:delta:-5"
+  },
+  "helper_width_delta_-10": {
+    "text": "-10",
+    "callback_data": "helper:width:delta:-10"
+  },
+  "helper_width_delta_-15": {
+    "text": "-15",
+    "callback_data": "helper:width:delta:-15"
+  },
+  "helper_width_delta_+5": {
+    "text": "+5",
+    "callback_data": "helper:width:delta:5"
+  },
+  "helper_width_delta_+10": {
+    "text": "+10",
+    "callback_data": "helper:width:delta:10"
+  },
+  "helper_width_delta_+15": {
+    "text": "+15",
+    "callback_data": "helper:width:delta:15"
+  },
+  "helper_width_back": {
+    "text": "назад",
+    "callback_data": "helper:width:back"
+  }
+}

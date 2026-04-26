@@ -160,6 +160,7 @@ def enum_field(
             lookup,
             field_label=label,
         ),
+        formatter=lambda v: v.value,
         serializer=serialize_enum,
         deserializer=make_enum_deserializer(enum_cls),
         validator=validator,

@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-from html import escape as html_escape
 from typing import TYPE_CHECKING, Optional, Dict, Any, Tuple, Final
 
 from telegram import InlineKeyboardMarkup
 
-from core.interaction.exceptions.template_errors import PlaceholderFormatError
 from core.interaction.types import TemplateContext
 from core.interaction.ui.keyboard.keyboard_builder import KeyboardBuilder
 from core.interaction.ui.templating.keyboard import format_inline_keyboard
+from core.interaction.ui.templating.text_renderer import TextRenderer
 
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
 
 
 class UiComponent:
@@ -31,11 +30,13 @@ class UiComponent:
         inline_keyboard_template: Optional[InlineKeyboardMarkup],
         *,
         keyboard_builder: Optional[KeyboardBuilder] = None,
+        text_renderer: TextRenderer,
         html_escape_variables: bool = False,
     ) -> None:
         self._text_template: Final[str] = text_template
         self._inline_keyboard_template: Final[Optional[InlineKeyboardMarkup]] = inline_keyboard_template
         self._keyboard_builder: Final[Optional[KeyboardBuilder]] = keyboard_builder
+        self._text_renderer: Final[TextRenderer] = text_renderer
         self._html_escape: Final[bool] = html_escape_variables
 
     async def render(self, user_input: "UserInput", with_send: bool = False) -> None:
@@ -55,7 +56,8 @@ class UiComponent:
             vars_ = await self._build_text_context(user_input)
         else:
             vars_ = {}
-        return self.__insert_text_variables(vars_)
+
+        return self._render_text(vars_)
 
     async def get_inline_keyboard(
         self,
@@ -70,7 +72,6 @@ class UiComponent:
         else:
             kb_ctx = {}
 
-        # New path: layout-based keyboard (keys / ButtonRef / dicts)
         layout = None
         if isinstance(kb_ctx, dict):
             layout = kb_ctx.get(self._LAYOUT_KEY)
@@ -83,7 +84,6 @@ class UiComponent:
                 )
             return self._keyboard_builder.build_optional(layout)
 
-        # Legacy path: InlineKeyboardMarkup template + format vars
         return format_inline_keyboard(
             self._inline_keyboard_template,
             kb_ctx,
@@ -109,15 +109,12 @@ class UiComponent:
         await self._provide_context(user_input, ctx)
         return ctx.keyboard
 
-    def __insert_text_variables(self, variables: Dict[str, Any]) -> str:
-        try:
-            if self._html_escape and variables:
-                safe_vars = {k: (html_escape(v) if isinstance(v, str) else v) for k, v in variables.items()}
-                return self._text_template.format(**safe_vars)
-
-            return self._text_template.format(**variables) if variables else self._text_template
-        except Exception as e:
-            raise PlaceholderFormatError(self._text_template, variables, e)
+    def _render_text(self, variables: Dict[str, Any]) -> str:
+        return self._text_renderer.render(
+            self._text_template,
+            variables,
+            html_escape_variables=self._html_escape,
+        )
 
     async def render_detached(
         self,

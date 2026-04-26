@@ -18,8 +18,7 @@ from pipubot.domains.tutoring.calendar.sync_service import sync_calendar
 from pipubot.domains.tutoring.calendar.oauth_service import (
     GoogleOAuthReauthRequiredError,
 )
-from pipubot.runtime.runtime_services import DefaultAppServices
-
+from pipubot.runtime.pipubot_services import PipubotServices
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +50,7 @@ class SyncGcalPayload(TaskPayload):
 async def sync_gcal(
         session: AsyncSession,
         payload: SyncGcalPayload,
-        services: DefaultAppServices,
+        services: PipubotServices,
 ) -> None:
     """
     Synchronize lessons with Google Calendar.

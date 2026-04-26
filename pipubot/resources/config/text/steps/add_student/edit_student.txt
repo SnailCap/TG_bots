@@ -1,17 +1,19 @@
 <b>РЕДАКТИРОВАТЬ ДАННЫЕ УЧЕНИКА</b>
 
-{error}
+{% if error is defined and error %}
+<b>🚨 {{ error }} 🚨</b>
 
+{% endif %}
 Измените только нужные строки и отправьте сообщением.
 Используйте формат ключ: значение.
 
 Текущие данные:
 
-Имя: {full_name}
-Ставка: {default_rate} {default_currency}
-Длительность: {default_duration_min} мин
-Telegram ссылка: {telegram_link}
-Email: {email}
+Имя: {{ full_name }}
+Ставка: {{ default_rate }} {{ default_currency }}
+Длительность: {{ default_duration_min }} мин
+Telegram ссылка: {{ telegram_link }}
+Email: {{ email }}
 
 Заметки:
-{notes}
+{{ notes }}

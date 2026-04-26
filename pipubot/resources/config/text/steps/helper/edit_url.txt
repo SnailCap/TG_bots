@@ -1,0 +1,4 @@
+Отправьте новую ссылку.
+(текущее: {{ current_value | default('') }})
+
+{{ error_text | default('') }}

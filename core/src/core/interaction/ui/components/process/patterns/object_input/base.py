@@ -14,7 +14,7 @@ from .flow import ObjectInputFlowSpec
 from .payload import ObjectInputPayloadStore
 
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
 
 
 ObjectT = TypeVar("ObjectT")
@@ -69,7 +69,7 @@ class ObjectInputProcess(Process, ABC, Generic[ObjectT]):
         if mode == InputFlowMode.INPUT_ONLY:
             return ObjectInputFlowSpec(
                 start_step=self.input_step_name,
-                step_names=[self.input_step_name],
+                linear_step_names=[self.input_step_name],
                 next_after_input=None,
                 next_after_edit=None,
             )
@@ -77,15 +77,15 @@ class ObjectInputProcess(Process, ABC, Generic[ObjectT]):
         if mode == InputFlowMode.INPUT_CONFIRM:
             return ObjectInputFlowSpec(
                 start_step=self.input_step_name,
-                step_names=[self.input_step_name, self.confirm_step_name],
+                linear_step_names=[self.input_step_name, self.confirm_step_name],
                 next_after_input=self.confirm_step_name,
-                next_after_edit=None,
+                next_after_edit=self.confirm_step_name,
             )
 
         if mode == InputFlowMode.EDIT_ONLY:
             return ObjectInputFlowSpec(
                 start_step=self.edit_step_name,
-                step_names=[self.edit_step_name],
+                linear_step_names=[self.edit_step_name],
                 next_after_input=None,
                 next_after_edit=None,
             )
@@ -93,7 +93,7 @@ class ObjectInputProcess(Process, ABC, Generic[ObjectT]):
         if mode == InputFlowMode.EDIT_CONFIRM:
             return ObjectInputFlowSpec(
                 start_step=self.edit_step_name,
-                step_names=[self.edit_step_name, self.confirm_step_name],
+                linear_step_names=[self.edit_step_name, self.confirm_step_name],
                 next_after_input=None,
                 next_after_edit=self.confirm_step_name,
             )
@@ -102,13 +102,28 @@ class ObjectInputProcess(Process, ABC, Generic[ObjectT]):
 
     @property
     def step_names(self) -> list[str]:
-        return self.flow.step_names
+        return self.flow.linear_step_names
+
+    @property
+    def allowed_step_names(self) -> list[str]:
+        names: list[str] = []
+        for step_name in (
+            self.input_step_name,
+            self.confirm_step_name,
+            self.edit_step_name,
+        ):
+            if step_name and step_name not in names:
+                names.append(step_name)
+        return names
 
     def get_start_step_name(self) -> str:
         return self.flow.start_step
 
     def validate_object(self, user_input: UserInput, obj: ObjectT) -> list[str]:
         return []
+
+    def confirm_validation_error_step_name(self) -> str:
+        return self.edit_step_name
 
     @abstractmethod
     async def submit_object(self, user_input: UserInput, obj: ObjectT) -> None:

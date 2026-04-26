@@ -12,12 +12,12 @@ class PipubotPaths:
 
     @classmethod
     def from_file(cls, file: str) -> "PipubotPaths":
-        # app_factory.py currently uses parents[3] to reach repo root
-        return cls(repo_root=parent(file_path(file), 3))
+        # src/pipubot/... -> repo root is 4 levels above the module file
+        return cls(repo_root=parent(file_path(file), 4))
 
     @property
     def resources_root(self) -> Path:
-        return self.repo_root.parent / "resources"
+        return self.repo_root / "resources"
 
     @property
     def config_root(self) -> str:

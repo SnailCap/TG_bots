@@ -6,6 +6,8 @@ from typing import Optional
 
 from core.interaction.config import ConfigLoader
 from core.interaction.config import ResourcePaths
+from core.interaction.ui.templating.jinja_text_renderer import JinjaTextRenderer
+from core.interaction.ui.templating.text_renderer import TextRenderer
 from core.interaction.ui.binding import UiClassResolver
 from .renderable_builder import RenderableBuilder
 
@@ -27,29 +29,14 @@ class UnknownUiKey(UiBuildError):
 
 @dataclass(slots=True)
 class UiBuilder:
-    """
-    Универсальный билдер сущностей UI.
-
-    Отвечает за:
-    - load cfg by key (через ConfigLoader)
-    - сборку renderable DTO (text + keyboard_layout) через RenderableBuilder
-    - выбор python-класса через UiClassResolver (custom или базовый)
-    - создание инстанса сущности
-
-    Важно:
-    - KeyboardBuilder создаётся внутри, т.к. реализация одна и DI не нужен.
-    """
-
     paths: ResourcePaths
     loader: ConfigLoader
     renderable_builder: RenderableBuilder
     resolver: UiClassResolver = field(default_factory=UiClassResolver.default)
+    text_renderer: TextRenderer = field(default_factory=JinjaTextRenderer)
 
     _keyboard_builder: Optional[KeyboardBuilder] = field(default=None, init=False, repr=False)
 
-    # -------------------------
-    # public API
-    # -------------------------
     def build_page(self, key: str) -> Page:
         cfg = self._pages_index().require(key)
         dto = self.renderable_builder.build_from_config(
@@ -64,6 +51,7 @@ class UiBuilder:
             text_template=dto.text_template,
             inline_keyboard_template=None,
             keyboard_builder=self._get_keyboard_builder(),
+            text_renderer=self.text_renderer,
             default_keyboard_layout=dto.keyboard_layout,
         )
 
@@ -81,6 +69,7 @@ class UiBuilder:
             text_template=dto.text_template,
             inline_keyboard_template=None,
             keyboard_builder=self._get_keyboard_builder(),
+            text_renderer=self.text_renderer,
             default_keyboard_layout=dto.keyboard_layout,
         )
 
@@ -101,24 +90,13 @@ class UiBuilder:
             text_template=dto.text_template,
             inline_keyboard_template=None,
             keyboard_builder=self._get_keyboard_builder(),
+            text_renderer=self.text_renderer,
             default_keyboard_layout=dto.keyboard_layout,
             html_escape_variables=html_escape_variables,
             parse_mode=parse_mode,
         )
 
-    # -------------------------
-    # internals: build dependencies (no DI)
-    # -------------------------
     def _get_keyboard_builder(self) -> KeyboardBuilder:
-        """
-        Ленивая сборка:
-        - ButtonBuilder -> KeyboardBuilder
-
-        Почему так:
-        - реализации 1 штука
-        - зависимости тривиальные
-        - PtbUiBuilder — composition root для UI, пусть и собирает.
-        """
         if self._keyboard_builder is not None:
             return self._keyboard_builder
 
@@ -126,9 +104,6 @@ class UiBuilder:
         self._keyboard_builder = KeyboardBuilder(button_builder=button_builder)
         return self._keyboard_builder
 
-    # -------------------------
-    # internals: indexes
-    # -------------------------
     def _pages_index(self):
         return self.loader.load_pages()
 
@@ -138,12 +113,5 @@ class UiBuilder:
     def _notifications_index(self):
         return self.loader.load_notifications()
 
-    # -------------------------
-    # internals: text roots
-    # -------------------------
     def _text_root(self, entity: str) -> Path:
-        """
-        Контракт: текстовые шаблоны лежат относительно config_root/text/<entity>/
-        Пример: config_root/text/pages/home_page.txt
-        """
         return self.paths.root / "text" / entity

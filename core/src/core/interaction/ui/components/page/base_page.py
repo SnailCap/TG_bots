@@ -4,32 +4,23 @@ from typing import Optional, Any, Sequence, Dict, TYPE_CHECKING
 
 from telegram import InlineKeyboardMarkup
 
+from core.interaction.ui.templating.text_renderer import TextRenderer
+
 if TYPE_CHECKING:
-    from core.interaction.runtime.user_input import UserInput
+    from core.interaction.runtime.context.user_input import UserInput
 from core.interaction.contracts.input_reactive import InputReactive
 from core.interaction.ui.components.base import UiComponent
 from core.interaction.ui.keyboard.keyboard_builder import KeyboardBuilder
 
 
 class Page(UiComponent, InputReactive):
-    """
-    Stateless Page.
-
-    Сейчас:
-      - умеет рендерить дефолтный keyboard_layout из конфига
-      - keyboard_builder прокидывается из UiBuilder
-
-    Следующий шаг (если хочешь менять клавиатуру страницы во время работы):
-      - добавить хранение layout в page state (аналог process payload)
-      - переопределить _get/_set_keyboard_layout_storage
-    """
-
     def __init__(
         self,
         text_template: str,
         inline_keyboard_template: Optional[InlineKeyboardMarkup] = None,
         *,
         keyboard_builder: Optional[KeyboardBuilder] = None,
+        text_renderer: TextRenderer,
         html_escape_variables: bool = False,
         default_keyboard_layout: Optional[Sequence[Sequence[Any]]] = None,
     ) -> None:
@@ -37,6 +28,7 @@ class Page(UiComponent, InputReactive):
             text_template=text_template,
             inline_keyboard_template=inline_keyboard_template,
             keyboard_builder=keyboard_builder,
+            text_renderer=text_renderer,
             html_escape_variables=html_escape_variables,
         )
         self._default_keyboard_layout = default_keyboard_layout
