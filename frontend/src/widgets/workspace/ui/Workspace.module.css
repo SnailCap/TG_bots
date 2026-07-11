@@ -1,0 +1,145 @@
+.workspace {
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 36px 1fr;
+  background: var(--surface-0);
+}
+
+.tabs {
+  min-width: 0;
+  display: flex;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+  background: #141821;
+}
+
+.tabs > button {
+  max-width: 220px;
+  min-width: 100px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 7px 0 10px;
+  overflow: hidden;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  background: #171b24;
+  cursor: pointer;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tabs > button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.close {
+  width: 17px;
+  height: 17px;
+  display: grid;
+  flex: 0 0 auto;
+  margin-left: auto;
+  place-items: center;
+  border-radius: 3px;
+  font-size: 14px;
+}
+
+.close:hover {
+  background: #414b5d;
+}
+
+.content {
+  min-width: 0;
+  min-height: 0;
+}
+
+.welcome {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  text-align: center;
+}
+
+.welcomeLogo {
+  width: 66px;
+  height: 66px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  color: #07111b;
+  background: linear-gradient(145deg, #70ccff, #2e8fea);
+  box-shadow: 0 16px 50px rgb(37 143 230 / 22%);
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.welcome h1 {
+  margin: 18px 0 5px;
+  color: #dce4ef;
+  font-size: 20px;
+}
+
+.welcome p {
+  max-width: 420px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.shortcuts {
+  display: grid;
+  gap: 8px;
+  margin-top: 24px;
+  font-size: 10px;
+}
+
+.shortcuts kbd {
+  padding: 2px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  color: #c6cfdd;
+  background: var(--surface-2);
+  box-shadow: 0 1px #080a0e;
+}
+
+.assetPreview {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  color: var(--muted);
+}
+
+.assetPreview span {
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-size: 9px;
+}
+
+.assetPreview strong {
+  color: var(--text);
+}
+
+.assetPreview code {
+  font-size: 10px;
+}
+
+.assetPreview button {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  background: var(--surface-2);
+  cursor: pointer;
+}

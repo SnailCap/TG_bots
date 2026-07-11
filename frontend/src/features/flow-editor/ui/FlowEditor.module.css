@@ -1,0 +1,86 @@
+.editor {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 42px 1fr;
+  background: #11151d;
+}
+
+.toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.nodeButtons {
+  min-width: 0;
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.toolbar button {
+  min-width: max-content;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: #cbd4e2;
+  background: var(--surface-2);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+.toolbar button:hover {
+  border-color: #4b5b73;
+  background: var(--surface-3);
+}
+
+.toolbar .save {
+  border-color: #2879b6;
+  background: #1a527c;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.error {
+  max-width: 250px;
+  overflow: hidden;
+  color: var(--danger);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas {
+  min-width: 0;
+  min-height: 0;
+}
+
+.minimap {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #171b24 !important;
+}
+
+.invalidNode > div {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 2px rgb(255 107 116 / 20%);
+}
+
+.message {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: var(--surface-0);
+  font-size: 13px;
+}

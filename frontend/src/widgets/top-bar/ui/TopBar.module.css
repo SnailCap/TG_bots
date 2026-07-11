@@ -1,0 +1,170 @@
+.bar {
+  height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #141821;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 145px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.logo {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  color: #07111b;
+  background: linear-gradient(145deg, #5fc4ff, #268cf1);
+}
+
+.projectSelect,
+.secondary,
+.run,
+.stop,
+.dialog button,
+.dialog input {
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.projectSelect {
+  width: min(280px, 24vw);
+  padding: 0 30px 0 10px;
+}
+
+.secondary,
+.run,
+.stop,
+.dialog button {
+  padding: 0 12px;
+  cursor: pointer;
+}
+
+.secondary:hover,
+.dialog button:hover {
+  background: var(--surface-3);
+}
+
+.run {
+  border-color: #2e9f66;
+  background: #17633f;
+}
+
+.stop {
+  border-color: #b94d58;
+  background: #782e38;
+}
+
+.bar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.status {
+  min-width: 140px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 8px;
+  text-transform: capitalize;
+}
+
+.statusDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  box-shadow: 0 0 0 3px rgb(152 163 182 / 12%);
+}
+
+.status[data-phase="running"] .statusDot {
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgb(84 209 139 / 12%);
+}
+
+.status[data-phase="error"] .statusDot {
+  background: var(--danger);
+}
+
+.status strong,
+.status small {
+  display: block;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status strong {
+  font-size: 12px;
+}
+
+.status small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.overlay {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(3 5 10 / 70%);
+}
+
+.dialog {
+  width: min(520px, 90vw);
+  padding: 22px;
+  border: 1px solid #424c5e;
+  border-radius: 12px;
+  background: var(--surface-1);
+  box-shadow: 0 20px 70px rgb(0 0 0 / 45%);
+}
+
+.dialog h2 {
+  margin: 0 0 20px;
+  font-size: 18px;
+}
+
+.dialog label {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dialog input {
+  width: 100%;
+  padding: 0 10px;
+}
+
+.pathRow {
+  display: flex;
+  gap: 8px;
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}

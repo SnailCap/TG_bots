@@ -1,1 +1,28 @@
 /pipubot/.env
+
+# Python build and test artefacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+
+# Local environments and secrets
+.venv/
+.env
+.env.*
+!.env.example
+
+# Frontend build artefacts
+node_modules/
+frontend/dist/
+frontend/dist-electron/
+frontend/release/
+
+# Telegram Bot Studio runtime artefacts
+.botstudio/
+*.db-shm
+*.db-wal

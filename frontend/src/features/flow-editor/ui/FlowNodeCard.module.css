@@ -1,0 +1,109 @@
+.node {
+  position: relative;
+  width: 176px;
+  min-height: 76px;
+  overflow: visible;
+  border: 1px solid #465166;
+  border-radius: 8px;
+  background: #202632;
+  box-shadow: 0 5px 16px rgb(0 0 0 / 24%);
+}
+
+.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(55 166 255 / 20%), 0 8px 24px rgb(0 0 0 / 32%);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 5px 9px;
+  border-radius: 7px 7px 0 0;
+  color: white;
+  background: #394354;
+  font-size: 11px;
+}
+
+.kindIcon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 4px;
+  color: #06101a;
+  background: #80c9ff;
+  font-size: 10px;
+}
+
+.start .header {
+  background: #1d6243;
+}
+
+.start .kindIcon {
+  background: #70e4a6;
+}
+
+.end .header {
+  background: #67303a;
+}
+
+.end .kindIcon {
+  background: #ff8792;
+}
+
+.action .header {
+  background: #513e72;
+}
+
+.action .kindIcon {
+  background: #c5a6ff;
+}
+
+.condition .header,
+.choice .header {
+  background: #655121;
+}
+
+.condition .kindIcon,
+.choice .kindIcon {
+  background: #f5ce6b;
+}
+
+.summary {
+  min-height: 42px;
+  padding: 8px 9px;
+  overflow: hidden;
+  color: #bec7d6;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.output {
+  position: absolute;
+  right: -1px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #aeb8ca;
+  font-size: 8px;
+  transform: translateY(-50%);
+}
+
+.output :global(.react-flow__handle) {
+  position: relative;
+  right: -5px;
+  top: auto;
+  transform: none;
+}
+
+.node :global(.react-flow__handle) {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #10131a;
+  background: #74c5ff;
+}
