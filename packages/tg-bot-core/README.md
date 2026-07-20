@@ -1,200 +1,188 @@
-# tg-bot-core v2
+# tg-bot-core 3.0
 
-`tg-bot-core` — runtime для Telegram-ботов с явной конфигурацией и SQLite.
-Проект бота состоит из Python-кода, который описывает логику, и ресурсов,
-которые описывают интерфейс. Studio редактирует только ресурсы; бот запускается
-без Studio.
+`tg-bot-core` — runtime и public custom-code SDK для автономных Telegram Bot Studio projects с `schema_version: 3`. Runtime читает декларативный application graph из `resources/`; пользовательский Python-код содержит handlers и services, но не регистрирует flows или transitions вручную.
 
-## Установка и запуск
+Schema v2 намеренно не поддерживается. `FlowDefinition`, `FlowState`, public `Transition` и registry-объект `BotModule` не входят в v3 API.
 
-Для разработки этого репозитория:
+## Установка
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".\packages\tg-bot-core[dev]"
+Поддерживается Python `>=3.12,<3.14`.
+
+Из checkout репозитория:
+
+```bash
+python -m pip install -e "packages/tg-bot-core[dev]"
 ```
 
-В самостоятельном проекте бота зависимость фиксируется на Git tag релиза:
+Сгенерированный Studio project содержит собственный `pyproject.toml`, который pin-ит core на release tag. Устанавливайте зависимости уже из папки такого проекта через `python -m pip install -e ".[dev]"`.
 
-```toml
-dependencies = [
-  "tg-bot-core @ git+https://github.com/SnailCap/TG_bots.git@core-v2.0.0#subdirectory=packages/tg-bot-core"
-]
-```
+## Что делает core
 
-Задайте `BOT_TOKEN` в окружении и запустите пакет бота:
+- Загружает и валидирует manifest, views/templates, flows, commands, handlers и schedules через общий `tg_bot_core.project`.
+- До начала polling проверяет весь graph и импортирует explicit handler bindings.
+- Преобразует Telegram text/command/callback updates в typed events через PTB polling adapter.
+- Выполняет built-in actions, flow lifecycle и declarative outcome routing.
+- Передаёт custom-коду ограниченные typed contexts и проверяет `HandlerResult`.
+- Сохраняет sessions, update deduplication, schedules, durable jobs и run history в SQLite.
+- Управляет service lifecycle и корректной остановкой runtime-компонентов.
 
-```powershell
-$env:BOT_TOKEN = "<telegram-token>"
-python -m my_bot
-```
+Studio не нужен ни одному из этих шагов.
 
-## Структура проекта
+## Минимальный проект
 
 ```text
 my-bot/
-  src/my_bot/
-    __main__.py
-    flows.py
-  resources/
-    bot.json
-    views/home.json
-    templates/home.txt
-  data/runtime.sqlite3
+├─ resources/
+│  ├─ bot.json
+│  ├─ handlers.json
+│  ├─ commands.json
+│  ├─ views/
+│  ├─ flows/
+│  ├─ schedules/
+│  └─ templates/
+├─ src/my_bot/
+│  ├─ __init__.py
+│  ├─ __main__.py
+│  ├─ handlers/
+│  └─ services/
+├─ data/
+├─ tests/
+├─ pyproject.toml
+└─ Dockerfile
 ```
 
-`resources/bot.json` задаёт корневой view и flow, запускаемый по `/start`:
+Полный JSON contract описан в [project-schema-v3.md](../../docs/architecture/project-schema-v3.md).
 
-```json
-{
-  "schema_version": 2,
-  "entry_view": "home",
-  "start_flow": "onboarding"
-}
-```
+## Entrypoint
 
-View — это замена прежней `Page`. Текст может быть inline или находиться в
-шаблоне, но не в обоих местах одновременно:
-
-```json
-{
-  "schema_version": 2,
-  "id": "home",
-  "text": { "template": "home.txt" },
-  "keyboard": [[
-    { "text": "Начать", "action": { "type": "flow.start", "target": "onboarding" } }
-  ]]
-}
-```
-
-Разрешённые действия клавиатуры:
-
-- `navigate` с `target` — показать другой view;
-- `flow.start` с `target` — начать flow;
-- `flow.cancel` — отменить текущий flow;
-- `flow.event` с `target` — передать callback активному state handler.
-
-Авторы ресурсов не формируют `callback_data`: core кодирует его сам и
-проверяет 64-байтный лимит Telegram.
-
-## Логика: flows и states
-
-Прежние `Process` и `Step` заменены явным `FlowDefinition`. Каждый state —
-обычная async-функция на входе (`on_enter`), сообщении (`on_message`) или
-callback (`on_callback`). Она получает `FlowContext` и событие, затем
-возвращает `Transition`.
+Application graph не собирается в Python. Entrypoint только задаёт runtime config, services и при необходимости custom transport:
 
 ```python
-# src/my_bot/flows.py
-from tg_bot_core import FlowDefinition, FlowState, Transition
-
-
-async def ask_name(ctx, event):
-    return Transition.render("ask_name")
-
-
-async def save_name(ctx, event):
-    ctx.set("name", event.text)
-    return Transition.finish(view="done")
-
-
-onboarding = FlowDefinition(
-    id="onboarding",
-    initial_state="name",
-    states={
-        "name": FlowState("name", on_enter=ask_name, on_message=save_name),
-    },
-)
-```
-
-Основные transitions:
-
-- `Transition.goto("state", view="view")` — перейти в state; его `on_enter`
-  будет вызван автоматически;
-- `Transition.render("view")` — сохранить session и показать view;
-- `Transition.send("text")` — отправить отдельное сообщение;
-- `Transition.finish(view="view")`, `cancel()` и `fail("message")` — завершить
-  flow;
-- `Transition.enqueue("task", payload={...})` — после сохранения session
-  поставить durable job.
-
-Переменные `ctx.set(...)` сохраняются в SQLite вместе с текущими flow/state.
-После рестарта бот продолжит активный flow. `/start` по умолчанию сбрасывает
-session; для продолжения используйте `StartPolicy.RESUME`.
-
-## Сборка приложения и сервисы
-
-`BotModule` — единственное место регистрации extension points. Здесь нет
-decorators, импорт-сканирования или глобальных registry.
-
-```python
-# src/my_bot/__main__.py
 from pathlib import Path
 
-from tg_bot_core import BotApp, BotConfig, BotModule, ServiceProvider
-from my_bot.flows import onboarding
+from tg_bot_core import BotApp, BotConfig
 
 
-def main() -> None:
-    root = Path(__file__).resolve().parents[2]
-    module = BotModule(
-        flows=[onboarding],
-        services=[ServiceProvider("greeting", lambda _container: "Hello")],
-    )
-    BotApp(
-        config=BotConfig.from_env(
-            bot_id="my-bot",
-            resource_root=root / "resources",
-            database_path=root / "data" / "runtime.sqlite3",
-        ),
-        module=module,
-    ).run()
-
-
-if __name__ == "__main__":
-    main()
+root = Path(__file__).resolve().parents[2]
+app = BotApp(
+    config=BotConfig.from_env(project_root=root),
+    services=[],
+)
+app.run()
 ```
 
-В state handler сервисы доступны через `ctx.services` или `ctx.services["greeting"]`.
-Фабрика `ServiceProvider` получает только уже построенный `Container`, поэтому
-порядок зависимостей остаётся явным.
+`BotConfig.from_env()` читает `BOT_TOKEN`, а SQLite по умолчанию размещает в `<project>/data/runtime.sqlite3`. Число in-process job workers и предел автоматических переходов задаются аргументами `worker_count` и `max_auto_transitions`. Если передан custom `BotTransport`, token не обязателен.
 
-## Background jobs и schedules
+## Explicit handler binding
 
-Задача — async-функция `(TaskContext, payload)`. Очередь хранит jobs в SQLite,
-атомарно claim'ит их, продлевает lease при долгом выполнении и повторяет ошибки
-с bounded exponential backoff.
+Runtime не сканирует package и не использует decorators. Каждый handler объявляется в `resources/handlers.json`:
+
+```json
+{
+  "schema_version": 3,
+  "handlers": [
+    {
+      "id": "checkout.submit",
+      "module": "my_bot.handlers.checkout.submit",
+      "symbol": "handle",
+      "kind": "button",
+      "outcomes": ["invalid"]
+    }
+  ]
+}
+```
+
+Module обязан находиться внутри package из `bot.json`. Runtime кеширует успешно разрешённую async-функцию; hot reload во время процесса не реализован.
+
+## Public handler SDK
 
 ```python
-from tg_bot_core import BotModule, ScheduleSpec
+from tg_bot_core import ButtonContext, HandlerResult
 
 
-async def send_digest(ctx, payload):
-    print(f"digest for {payload['chat_id']}")
+async def handle(ctx: ButtonContext) -> HandlerResult:
+    order = await ctx.services["orders"].submit(user_id=ctx.user.id)
+    if order is None:
+        return HandlerResult.outcome("invalid")
+
+    ctx.state.set("order_id", order.id)
+    return HandlerResult.success(values={"total": order.total})
+```
+
+Interactive contexts содержат `user`, `chat`, typed `event`, immutable payload mapping, управляемый `state`, services mapping и logger:
+
+| Handler kind | Context | Точка вызова |
+| --- | --- | --- |
+| `button` | `ButtonContext` | `handler.invoke` у кнопки или named state event |
+| `message` | `MessageContext` | active state `on_message` или global message fallback |
+| `command` | `CommandContext` | зарегистрированная команда или command fallback |
+| `lifecycle` | `LifecycleContext` | flow hooks и state `on_enter` |
+| `task` | `TaskContext` | schedule или `task.enqueue` |
+
+`TaskContext` намеренно содержит только `job_id`, `payload`, `services` и `logger`; у background job нет Telegram actor/session state.
+
+`HandlerResult.success()` означает стандартный outcome `success`. Дополнительные outcome names нужно объявить в binding и сопоставить actions во всех местах вызова. Values из `ctx.state` и `HandlerResult.values` сохраняются в session; при одинаковом ключе значение из result имеет приоритет. Все values должны быть JSON-serializable.
+
+Handler не получает `BotApp`, store, transport или API переходов. Flow/view/task semantics задаёт project schema.
+
+## Services
+
+Services передаются явно через `ServiceProvider` и становятся доступны по ключу в `ctx.services`:
+
+```python
+from tg_bot_core import BotApp, BotConfig, ServiceProvider
 
 
-module = BotModule(
-    flows=[onboarding],
-    task_handlers={"send_digest": send_digest},
-    schedules=[ScheduleSpec("daily-digest", "send_digest", interval_seconds=86_400, payload={"chat_id": 123})],
+async def create_orders(container):
+    return OrdersClient()
+
+
+app = BotApp(
+    config=BotConfig.from_env(project_root=root),
+    services=[ServiceProvider("orders", create_orders)],
 )
 ```
 
-Для одноразовой работы вызовите из state handler
-`Transition.enqueue("send_digest", payload={"chat_id": 123})`. Runtime сам
-запускает scheduler и workers; при остановке он перестаёт брать новые jobs и
-ждёт уже запущенные.
+Provider может вернуть обычный объект, awaitable или async context manager. Для cleanup можно передать explicit disposer; без него container использует `aclose()` или `close()`, если метод существует. Services создаются по порядку и закрываются в обратном порядке.
 
-## Что изменилось относительно legacy core
+## Validation и запуск
 
-| Legacy | v2 |
-| --- | --- |
-| `Page` | JSON `ViewDefinition` в `resources/views/` |
-| registry buttons | inline actions в keyboard view |
-| `Process` / `Step` | `FlowDefinition` / `FlowState` |
-| `ProcessCoordinator`, effects | `Transition` из async handler |
-| `AppPlugin`, builder, discovery | явный `BotApp` + `BotModule` |
-| PTB `user_data` | SQLite `flow_sessions` |
-| background registry | `task_handlers` и `ScheduleSpec` |
+Из установленного project:
 
-Legacy API намеренно удалён: существующие проекты нужно переписать на v2, а не
-подключать compatibility layer.
+```bash
+python -m tg_bot_core validate .
+python -m my_bot --validate
+BOT_TOKEN="<telegram-token>" python -m my_bot
+```
+
+Оба validate-варианта starter проверяют resources, cross-references и AST/signatures handler files. Startup повторяет validation и дополнительно импортирует bindings до запуска PTB polling.
+
+## Runtime semantics
+
+- `/start` выполняет manifest policy `reset` или `resume`.
+- Остальные commands, callbacks и messages имеют документированный раздельный dispatch.
+- `on_enter` выполняется только при фактическом входе в state; простой re-render его не вызывает.
+- `finished`, `cancelled` и `failed` — разные session statuses с разными lifecycle hooks.
+- Session update использует optimistic revision; при conflict есть одна повторная попытка после reload session.
+- Callback data содержит только `v3:a:<button-id>` и ограничивается 64 bytes.
+- Durable jobs используют claim, lease renewal, bounded exponential retries и run history.
+
+Подробности: [runtime-dispatch.md](../../docs/architecture/runtime-dispatch.md).
+
+## Ограничения текущей версии
+
+- PTB adapter работает через polling и принимает только text messages, commands и callbacks.
+- Из schedule triggers реализован только `interval`; `cron` и `once` пока отклоняются validator.
+- Jinja рендерится с `StrictUndefined`, без autoescape; PTB отправляет результат как обычный текст без неявного parse mode.
+- Custom code исполняется в процессе бота без sandbox и hot reload.
+- Update помечается processed до dispatch, а session save и `task.enqueue` не объединены одной транзакцией; детали рисков перечислены в runtime documentation.
+- Для production рекомендуется один process на project SQLite database; несколько worker coroutines внутри process поддерживаются.
+
+## Тесты
+
+Из корня репозитория:
+
+```powershell
+$env:PYTHONPATH = (Resolve-Path '.\packages\tg-bot-core\src').Path
+.\.venv\Scripts\python.exe -m pytest .\packages\tg-bot-core\tests
+```

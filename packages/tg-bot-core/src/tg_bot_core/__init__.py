@@ -1,24 +1,44 @@
-"""Core v2 public API for explicit Telegram bot applications."""
+"""Public SDK and runtime for declarative Telegram Bot Studio projects."""
 
-from tg_bot_core.v2.app import BotApp
-from tg_bot_core.v2.config import BotConfig, StartPolicy
-from tg_bot_core.v2.events import CallbackEvent, CommandEvent, MessageEvent
-from tg_bot_core.v2.flows import FlowDefinition, FlowState, Transition
-from tg_bot_core.v2.jobs import ScheduleSpec, TaskHandler
-from tg_bot_core.v2.module import BotModule, ServiceProvider
+from .app import BotApp
+from .config import BotConfig
+from .events import Actor, CallbackEvent, CommandEvent, MessageEvent
+from .sdk import (
+    BaseHandlerContext,
+    ButtonContext,
+    ChatInfo,
+    CommandContext,
+    HandlerResult,
+    LifecycleContext,
+    MessageContext,
+    StateValues,
+    TaskContext,
+    UserInfo,
+)
+from .services import ServiceProvider
+from .transport import BotTransport, OutboundButton, OutboundMessage
+
+__version__ = "3.0.0"
 
 __all__ = [
+    "Actor",
+    "BaseHandlerContext",
     "BotApp",
     "BotConfig",
-    "BotModule",
+    "BotTransport",
+    "ButtonContext",
     "CallbackEvent",
+    "ChatInfo",
+    "CommandContext",
     "CommandEvent",
-    "FlowDefinition",
-    "FlowState",
+    "HandlerResult",
+    "LifecycleContext",
+    "MessageContext",
     "MessageEvent",
-    "ScheduleSpec",
+    "OutboundButton",
+    "OutboundMessage",
     "ServiceProvider",
-    "StartPolicy",
-    "TaskHandler",
-    "Transition",
+    "StateValues",
+    "TaskContext",
+    "UserInfo",
 ]

@@ -3,13 +3,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routers.health import router as health_router
 from app.api.routers.projects import router as projects_router
-from app.workspace import WorkspaceManager
+from app.workspace import ProjectService
 
 
 def create_app() -> FastAPI:
     app = FastAPI(
         title="Telegram Bot Studio API",
-        version="2.0.0",
+        version="3.0.0",
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
     )
@@ -24,7 +24,7 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Accept", "Content-Type"],
     )
-    app.state.workspace_manager = WorkspaceManager()
+    app.state.project_service = ProjectService()
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(projects_router, prefix="/api/v1")
     return app

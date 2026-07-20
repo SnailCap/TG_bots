@@ -1,3 +1,3 @@
-from .service import WorkspaceManager
+from .service import ProjectService
 
-__all__ = ["WorkspaceManager"]
+__all__ = ["ProjectService"]

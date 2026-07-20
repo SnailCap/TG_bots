@@ -1,8 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { ideConfiguration, launchOpenCode, parseOpenCodeInput } from "./open-code";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isDevelopment = Boolean(process.env.VITE_DEV_SERVER_URL);
@@ -12,6 +15,7 @@ const backendBaseUrl = `http://${backendHost}:${backendPort}`;
 
 let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
+const approvedRoots = new Set<string>();
 
 function backendDirectory(): string {
   if (process.env.BOT_STUDIO_BACKEND_DIR) {
@@ -113,7 +117,17 @@ ipcMain.handle("desktop:select-directory", async () => {
   const result = mainWindow
     ? await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] })
     : await dialog.showOpenDialog({ properties: ["openDirectory", "createDirectory"] });
-  return result.canceled ? null : result.filePaths[0] ?? null;
+  const selected = result.canceled ? null : result.filePaths[0] ?? null;
+  if (!selected) return null;
+  const canonical = await realpath(selected);
+  approvedRoots.add(canonical);
+  return canonical;
+});
+ipcMain.handle("desktop:open-code", async (_event, input: unknown) => {
+  await launchOpenCode(parseOpenCodeInput(input), ideConfiguration(process.env), {
+    openPath: (filePath) => shell.openPath(filePath),
+    spawnProcess: (command, args, options) => spawn(command, args, options),
+  }, approvedRoots);
 });
 
 app.whenReady().then(async () => {

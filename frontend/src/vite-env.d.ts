@@ -1,8 +1,11 @@
 /// <reference types="vite/client" />
 
-interface Window {
-  studioDesktop?: {
-    backendInfo(): Promise<{ baseUrl: string }>;
-    selectDirectory(): Promise<string | null>;
-  };
+import type { StudioDesktop } from "../electron/contracts";
+
+declare global {
+  interface Window {
+    studioDesktop?: StudioDesktop;
+  }
 }
+
+export {};
