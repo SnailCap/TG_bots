@@ -209,6 +209,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
     flows: workspace.flows.map((item) => item.id),
     states: editor?.kind === "flow" ? Object.keys(editor.detail.payload.states) : [],
     handlers: workspace.handlers,
+    templates: workspace.templates.map((item) => item.path),
   }), [editor, workspace]);
 
   const addResource = (kind: CreatableResource) => {

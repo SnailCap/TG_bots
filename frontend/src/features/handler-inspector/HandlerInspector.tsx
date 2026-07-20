@@ -46,7 +46,8 @@ export function NewHandlerEditor({ onCreate }: { onCreate(id: string, kind: Hand
     <section className="editor" aria-label="New handler editor">
       <header className="editor__header"><div><p className="eyebrow">Custom code scaffold</p><h2>New handler</h2></div></header>
       <div className="form-grid">
-        <label>Stable handler ID<input value={id} onChange={(event) => setId(event.target.value)} /></label>
+        <label>Handler name<input value={id} onChange={(event) => setId(event.target.value)} placeholder="checkout.submit" /></label>
+        <small className="muted">Use dot-separated words. Studio derives the binding and Python file path from this name.</small>
         <label>Context kind<select value={kind} onChange={(event) => setKind(event.target.value as HandlerKind)}><option value="button">Button</option><option value="message">Message</option><option value="command">Command</option><option value="lifecycle">Lifecycle</option><option value="task">Task</option></select></label>
         <label>Additional outcomes, comma-separated<input value={outcomes} onChange={(event) => setOutcomes(event.target.value)} placeholder="invalid, access_denied" /></label>
         <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>

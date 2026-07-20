@@ -43,6 +43,33 @@ export interface HandlerActions {
   usages(id: string): Promise<HandlerUsage[]>;
 }
 
+function suggestedHandlerName(options: HandlerCreateOptions | undefined, kind: HandlerKind): string {
+  const attachment = options?.attachment;
+  if (!attachment) return "";
+  switch (attachment.type) {
+    case "view_button": return normalizeHandlerName(attachment.button_id);
+    case "flow_event": return normalizeHandlerName(`${attachment.flow_id}.${attachment.state_id}.${attachment.event_id}`);
+    case "state_on_message": return normalizeHandlerName(`${attachment.flow_id}.${attachment.state_id}.message`);
+    case "state_on_enter": return normalizeHandlerName(`${attachment.flow_id}.${attachment.state_id}.enter`);
+    case "flow_lifecycle": return normalizeHandlerName(`${attachment.flow_id}.${attachment.hook}`);
+    case "command": return normalizeHandlerName(`command.${attachment.command}`);
+    case "global_message_fallback": return "fallback.message";
+    case "global_command_fallback": return "fallback.command";
+    case "schedule": return normalizeHandlerName(`schedule.${attachment.schedule_id}`);
+  }
+}
+
+function normalizeHandlerName(value: string): string {
+  return value
+    .split(".")
+    .filter(Boolean)
+    .map((part) => {
+      const normalized = part.replace(/[^A-Za-z0-9_]/g, "_");
+      return /^[A-Za-z]/.test(normalized) ? normalized : `handler_${normalized}`;
+    })
+    .join(".");
+}
+
 export function ActionEditor({
   action,
   onChange,
@@ -62,6 +89,12 @@ export function ActionEditor({
 }) {
   const listId = useId().replace(/:/g, "");
   const compatibleHandlers = options.handlers.filter((handler) => handler.kind === scope.expectedKind);
+  const defaultHandlerName = suggestedHandlerName(createOptions, scope.expectedKind);
+  useEffect(() => {
+    if (action.type === "handler.invoke" && !action.handler) {
+      onChange({ ...action, handler: defaultHandlerName });
+    }
+  }, [action, defaultHandlerName, onChange]);
   const allowed = allowedActions(scope);
   const currentActionAllowed = allowed.includes(action.type);
   const targetOptions = action.type === "view.render"
@@ -108,10 +141,11 @@ export function ActionEditor({
       {action.type === "handler.invoke" && (
         <>
           <label>
-            Handler ID
+            Handler name
             <input list={`${listId}-handlers`} value={action.handler} onChange={(event) => onChange({ ...action, handler: event.target.value })} />
             <datalist id={`${listId}-handlers`}>{compatibleHandlers.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
           </label>
+          <small className="muted">Studio uses this stable name for the binding and Python file.</small>
           <HandlerControls
             handlerId={action.handler}
             kind={scope.expectedKind}

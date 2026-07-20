@@ -191,6 +191,27 @@ describe("view button IDs", () => {
   });
 });
 
+describe("template selection", () => {
+  it("offers available .txt templates through a searchable datalist", () => {
+    const onChange = vi.fn();
+    render(<ViewEditor
+      value={{ schema_version: 3, id: "home", text: { template: "home.txt" }, keyboard: [] }}
+      sourcePath="views/home.json"
+      revision="view-one"
+      isNew={false}
+      options={{ views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "checkout/receipt.txt"] }}
+      handlerActions={handlerActions()}
+      onChange={onChange}
+    />);
+
+    const input = screen.getByLabelText("Template") as HTMLInputElement;
+    expect(input.getAttribute("list")).toBe("available-templates");
+    expect(document.querySelectorAll("#available-templates option")).toHaveLength(2);
+    fireEvent.change(input, { target: { value: "checkout/receipt.txt" } });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "checkout/receipt.txt" } }));
+  });
+});
+
 function handlerActions() {
   return { create: vi.fn(), repair: vi.fn(), open: vi.fn(), usages: vi.fn().mockResolvedValue([]) };
 }

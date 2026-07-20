@@ -138,7 +138,7 @@ describe("schema v3 Studio", () => {
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={{ ...workspace, handlers: [] }} />);
     fireEvent.click(screen.getByRole("button", { name: /home views\/home.json/ }));
     fireEvent.change(await screen.findByLabelText("Action"), { target: { value: "handler.invoke" } });
-    fireEvent.change(screen.getByLabelText("Handler ID"), { target: { value: "checkout.submit" } });
+    fireEvent.change(screen.getByLabelText("Handler name"), { target: { value: "checkout.submit" } });
     fireEvent.click(screen.getByRole("button", { name: "Create handler" }));
 
     await waitFor(() => expect(api.createHandler).toHaveBeenCalledWith("project-1", {
@@ -250,7 +250,7 @@ describe("schema v3 Studio", () => {
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
 
     fireEvent.change(screen.getByLabelText("Text source"), { target: { value: "template" } });
-    fireEvent.change(screen.getByLabelText("Template path"), { target: { value: "  " } });
+    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "  " } });
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(screen.getByText("Template path is required.")).toBeInTheDocument();
   });

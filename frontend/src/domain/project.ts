@@ -307,6 +307,7 @@ export interface ActionOptions {
   flows: string[];
   states: string[];
   handlers: HandlerSummary[];
+  templates?: string[];
 }
 
 export function actionFor(type: ActionSpec["type"]): ActionSpec {

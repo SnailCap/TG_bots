@@ -221,10 +221,11 @@ function InvocationEditor({
     <div className="invocation-editor">
       <h4>{title}</h4>
       <label>
-        Handler ID
+        Handler name
         <input list={`${datalist}-handlers`} value={invocation.handler} onChange={(event) => onChange({ ...invocation, handler: event.target.value })} />
         <datalist id={`${datalist}-handlers`}>{compatible.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
       </label>
+      <small className="muted">Stable name for this handler's binding and generated Python file.</small>
       <HandlerControls handlerId={invocation.handler} kind={scope.expectedKind} handlers={options.handlers} onCreate={handlerActions.create} onRepair={handlerActions.repair} onOpen={handlerActions.open} onFindUsages={handlerActions.usages} createOptions={{ ...createOptions, routes: invocation.outcomes }} />
       <OutcomeEditor
         outcomes={invocation.outcomes}

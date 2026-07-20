@@ -56,12 +56,24 @@ export function ViewEditor({
           </select>
         </label>
         <label>
-          {useTemplate ? "Template path" : "Inline text"}
-          <textarea
-            aria-label={useTemplate ? "Template path" : "Inline text"}
-            value={useTemplate ? value.text.template : value.text.inline}
-            onChange={(event) => onChange({ ...value, text: useTemplate ? { template: event.target.value } : { inline: event.target.value } })}
-          />
+          {useTemplate ? "Template" : "Inline text"}
+          {useTemplate ? <>
+            <input
+              aria-label="Template"
+              list="available-templates"
+              value={value.text.template}
+              placeholder="Choose a .txt template"
+              onChange={(event) => onChange({ ...value, text: { template: event.target.value } })}
+            />
+            <datalist id="available-templates">
+              {(options.templates ?? []).map((template) => <option key={template} value={template} />)}
+            </datalist>
+            <small className="muted">Type to search available .txt files, or choose one from the list.</small>
+          </> : <textarea
+            aria-label="Inline text"
+            value={value.text.inline}
+            onChange={(event) => onChange({ ...value, text: { inline: event.target.value } })}
+          />}
           {textSourceEmpty && <small className="error">{useTemplate ? "Template path is required." : "Inline text cannot be empty."}</small>}
         </label>
         <fieldset className="keyboard-editor">
