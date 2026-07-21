@@ -11,6 +11,7 @@ import {
   type OutcomeRoutes,
 } from "../../domain/project";
 import { HandlerControls } from "../handlers/HandlerControls";
+import { Select } from "../../shared/ui/Select";
 
 const ACTION_LABELS: Array<{ value: ActionSpec["type"]; label: string }> = [
   { value: "noop", label: "No action" },
@@ -111,10 +112,7 @@ export function ActionEditor({
     <div className={compact ? "action-editor action-editor--compact" : "action-editor"}>
       <label>
         Action
-        <select value={currentActionAllowed ? action.type : ""} onChange={(event) => onChange(actionFor(event.target.value as ActionSpec["type"]))}>
-          {!currentActionAllowed && <option value="" disabled>Choose a valid action</option>}
-          {ACTION_LABELS.filter((item) => allowed.includes(item.value)).map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
-        </select>
+        <Select ariaLabel="Action" value={currentActionAllowed ? action.type : ""} placeholder="Choose a valid action" options={ACTION_LABELS.filter((item) => allowed.includes(item.value))} onChange={(value) => onChange(actionFor(value as ActionSpec["type"]))} />
         {!currentActionAllowed && <small className="error">{action.type} is not valid in this slot.</small>}
       </label>
 

@@ -1,0 +1,12 @@
+{
+  "schema_version": 3,
+  "id": "home",
+  "initial_state": "home",
+  "lifecycle": {},
+  "states": {
+    "home": {
+      "view": "home",
+      "events": {}
+    }
+  }
+}

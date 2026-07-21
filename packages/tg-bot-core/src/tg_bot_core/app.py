@@ -21,7 +21,7 @@ log = logging.getLogger(__name__)
 
 
 class BotApp:
-    """Composition root for an autonomous schema v3 bot project."""
+    """Composition root for an autonomous bot project."""
 
     def __init__(
         self,

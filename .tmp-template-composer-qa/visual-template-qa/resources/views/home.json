@@ -1,0 +1,8 @@
+{
+  "schema_version": 3,
+  "id": "home",
+  "text": {
+    "template": "home.txt"
+  },
+  "keyboard": []
+}

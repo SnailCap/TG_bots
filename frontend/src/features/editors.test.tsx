@@ -65,7 +65,8 @@ describe("flow outcome editor", () => {
       onChange={onChange}
     />);
     expect(screen.getByText("success")).toBeInTheDocument();
-    fireEvent.change(screen.getByDisplayValue("Render view"), { target: { value: "flow.goto" } });
+    fireEvent.click(screen.getAllByLabelText("Action")[0]);
+    fireEvent.click(screen.getByRole("option", { name: "Go to state" }));
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       states: expect.objectContaining({
         details: expect.objectContaining({
@@ -106,20 +107,20 @@ describe("action editor", () => {
       handlerActions: handlerActions(),
     };
     const { rerender } = render(<ActionEditor {...props} scope={{ expectedKind: "command" }} />);
-    expect(actionValues()).not.toContain("flow.event");
-    expect(actionValues()).not.toContain("flow.goto");
+    expect(actionValues()).not.toContain("Emit flow event");
+    expect(actionValues()).not.toContain("Go to state");
 
     rerender(<ActionEditor {...props} scope={{ expectedKind: "button" }} />);
-    expect(actionValues()).toContain("flow.event");
-    expect(actionValues()).not.toContain("flow.goto");
+    expect(actionValues()).toContain("Emit flow event");
+    expect(actionValues()).not.toContain("Go to state");
 
     rerender(<ActionEditor {...props} scope={{ expectedKind: "lifecycle", currentFlow: "checkout" }} />);
-    expect(actionValues()).not.toContain("flow.event");
-    expect(actionValues()).toContain("flow.goto");
+    expect(actionValues()).not.toContain("Emit flow event");
+    expect(actionValues()).toContain("Go to state");
 
     rerender(<ActionEditor {...props} scope={{ expectedKind: "button", currentFlow: "checkout" }} />);
-    expect(actionValues()).toContain("flow.event");
-    expect(actionValues()).toContain("flow.goto");
+    expect(actionValues()).toContain("Emit flow event");
+    expect(actionValues()).toContain("Go to state");
   });
 });
 
@@ -142,12 +143,12 @@ describe("flow action scopes", () => {
       handlerActions={handlerActions()}
       onChange={vi.fn()}
     />);
-    const [onStart, ...withoutCurrentFlow] = screen.getAllByLabelText("Action") as HTMLSelectElement[];
-    expect(selectValues(onStart)).toContain("flow.goto");
-    expect(selectValues(onStart)).not.toContain("flow.event");
+    const [onStart, ...withoutCurrentFlow] = screen.getAllByLabelText("Action");
+    expect(selectValues(onStart)).toContain("Go to state");
+    expect(selectValues(onStart)).not.toContain("Emit flow event");
     for (const select of withoutCurrentFlow) {
-      expect(selectValues(select)).not.toContain("flow.goto");
-      expect(selectValues(select)).not.toContain("flow.event");
+      expect(selectValues(select)).not.toContain("Go to state");
+      expect(selectValues(select)).not.toContain("Emit flow event");
     }
   });
 });
@@ -157,7 +158,6 @@ describe("view button IDs", () => {
     const onChange = vi.fn();
     const base: ViewSpec = { schema_version: 3, id: "home", text: { inline: "Home" }, keyboard: [[]] };
     const props = {
-      sourcePath: "views/home.json",
       revision: "view-one",
       isNew: false,
       options: { views: ["home", "settings"], flows: [], states: [], handlers: [] },
@@ -192,11 +192,10 @@ describe("view button IDs", () => {
 });
 
 describe("template selection", () => {
-  it("offers available .txt templates through a searchable datalist", () => {
+  it("allows typing a template name or choosing one from the template picker", () => {
     const onChange = vi.fn();
     render(<ViewEditor
       value={{ schema_version: 3, id: "home", text: { template: "home.txt" }, keyboard: [] }}
-      sourcePath="views/home.json"
       revision="view-one"
       isNew={false}
       options={{ views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "checkout/receipt.txt"] }}
@@ -205,10 +204,52 @@ describe("template selection", () => {
     />);
 
     const input = screen.getByLabelText("Template") as HTMLInputElement;
-    expect(input.getAttribute("list")).toBe("available-templates");
-    expect(document.querySelectorAll("#available-templates option")).toHaveLength(2);
     fireEvent.change(input, { target: { value: "checkout/receipt.txt" } });
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "checkout/receipt.txt" } }));
+    fireEvent.click(screen.getByRole("button", { name: "Browse templates" }));
+    expect(screen.getByRole("dialog", { name: "Choose template" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "home.txt" }));
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "home.txt" } }));
+  });
+
+  it("selects an inline template suggestion with arrow keys", () => {
+    const onChange = vi.fn();
+    const value = { schema_version: 3 as const, id: "home", text: { template: "" }, keyboard: [] };
+    const props = {
+      revision: "view-one",
+      isNew: false,
+      options: { views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "help.txt"] },
+      handlerActions: handlerActions(),
+      onChange,
+    };
+    const { rerender } = render(<ViewEditor {...props} value={value} />);
+
+    const input = screen.getByLabelText("Template");
+    fireEvent.change(input, { target: { value: "h" } });
+    rerender(<ViewEditor {...props} value={{ ...value, text: { template: "h" } }} />);
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "home.txt" } }));
+  });
+
+  it("selects the first inline template suggestion with Enter", () => {
+    const onChange = vi.fn();
+    const value = { schema_version: 3 as const, id: "home", text: { template: "" }, keyboard: [] };
+    const props = {
+      revision: "view-one",
+      isNew: false,
+      options: { views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "help.txt"] },
+      handlerActions: handlerActions(),
+      onChange,
+    };
+    const { rerender } = render(<ViewEditor {...props} value={value} />);
+
+    const input = screen.getByLabelText("Template");
+    fireEvent.change(input, { target: { value: "h" } });
+    rerender(<ViewEditor {...props} value={{ ...value, text: { template: "h" } }} />);
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "home.txt" } }));
   });
 });
 
@@ -217,11 +258,13 @@ function handlerActions() {
 }
 
 function actionValues(): string[] {
-  return selectValues(screen.getByLabelText("Action") as HTMLSelectElement);
+  return selectValues(screen.getByLabelText("Action"));
 }
 
-function selectValues(select: HTMLSelectElement): string[] {
-  return Array.from(select.options, (option) => option.value);
+function selectValues(select: HTMLElement): string[] {
+  if (select.getAttribute("aria-expanded") !== "true") fireEvent.click(select);
+  const menu = document.getElementById(select.getAttribute("aria-controls") ?? "");
+  return Array.from(menu?.querySelectorAll('[role="option"]') ?? [], (option) => option.textContent ?? "");
 }
 
 function handler(status: HandlerIntegrity, usageCount: number, kind: HandlerSummary["kind"] = "button"): HandlerSummary {

@@ -1,4 +1,4 @@
-# Архитектура Telegram Bot Studio v3
+# Архитектура Telegram Bot Studio
 
 ## Коротко
 
@@ -69,7 +69,7 @@ flowchart TD
 
 | Компонент | Ответственность |
 | --- | --- |
-| `ProjectLoader` | Детерминированно читает schema v3, не импортируя custom code |
+| `ProjectLoader` | Детерминированно читает схему проекта, не импортируя custom code |
 | `validate_project` | Проверяет IDs, references, outcomes, callbacks, schedules, Jinja и при запросе AST handler files |
 | `ProjectCatalog` | Индексирует button IDs/actions и рендерит views через Jinja |
 | `EventDispatcher` | Выбирает ветку command/callback/message и global fallback |

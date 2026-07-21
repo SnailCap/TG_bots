@@ -189,6 +189,48 @@ class ProjectService:
     ) -> dict[str, Any]:
         return self._save_resource(project_id, "views", view_id, payload, revision)
 
+    def rename_view(
+        self, project_id: str, view_id: str, new_id: str, revision: str
+    ) -> dict[str, Any]:
+        self._validate_resource_id(new_id)
+        if view_id == new_id:
+            return self.get_view(project_id, view_id)
+        workspace = self.repository.workspace(project_id)
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            source = self._entity_path(workspace, project, "views", view_id)
+            target = self.repository.safe_path(
+                workspace.resources, Path("views") / f"{new_id}.json", suffix=".json"
+            )
+            if new_id in project.views or target.exists():
+                raise ResourceConflict(f"View '{new_id}' already exists.")
+            self.repository.assert_revision(source, revision)
+            documents = [
+                workspace.resources / "bot.json",
+                workspace.resources / "commands.json",
+                *(self._entity_path(workspace, project, "views", item.id) for item in project.views.values()),
+                *(self._entity_path(workspace, project, "flows", item.id) for item in project.flows.values()),
+            ]
+            payloads = {path: self.repository.read_json(path) for path in documents}
+            payloads[source]["id"] = new_id
+            manifest = payloads[workspace.resources / "bot.json"]
+            if manifest.get("entry_view") == view_id:
+                manifest["entry_view"] = new_id
+            for payload in payloads.values():
+                self._replace_view_reference(payload, view_id, new_id)
+            before = {path: path.read_bytes() for path in payloads}
+            try:
+                for path, payload in payloads.items():
+                    self.repository.atomic_write_json(target if path == source else path, payload)
+                source.unlink()
+                self._load(workspace)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                for path, content in before.items():
+                    self.repository.restore(path, content)
+                raise
+        return self.get_view(project_id, new_id)
+
     def save_flow(
         self, project_id: str, flow_id: str, payload: dict[str, Any], revision: str
     ) -> dict[str, Any]:
@@ -236,6 +278,31 @@ class ProjectService:
             self.repository.assert_revision(target, revision, creating=creating)
             self.repository.atomic_write(target, content.encode("utf-8"))
         return self.get_template(project_id, path)
+
+    def delete_template(self, project_id: str, path: str, revision: str) -> None:
+        workspace = self.repository.workspace(project_id)
+        target = self.repository.safe_path(
+            workspace.resources / "templates", path, suffix=".txt"
+        )
+        with self.repository.lock(workspace):
+            self.repository.assert_revision(target, revision)
+            project = self._load(workspace)
+            usages = [
+                view.source_path or view.id
+                for view in project.views.values()
+                if view.text.template == path
+            ]
+            if usages:
+                raise ResourceInUse(
+                    f"Template '{path}' is still referenced {len(usages)} time(s)."
+                )
+            before = target.read_bytes()
+            try:
+                target.unlink()
+                self._load(workspace)
+            except BaseException:
+                self.repository.restore(target, before)
+                raise
 
     def preview(self, project_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         workspace = self.repository.workspace(project_id)
@@ -1084,6 +1151,21 @@ class ProjectService:
                 for outcome, route in invocation.outcomes.items():
                     action(route, flow.source_path or "", f"outcomes.{outcome}")
         return usages
+
+    @staticmethod
+    def _replace_view_reference(value: Any, old_id: str, new_id: str) -> None:
+        if isinstance(value, list):
+            for item in value:
+                ProjectService._replace_view_reference(item, old_id, new_id)
+            return
+        if not isinstance(value, dict):
+            return
+        if value.get("view") == old_id:
+            value["view"] = new_id
+        if value.get("type") == "view.render" and value.get("target") == old_id:
+            value["target"] = new_id
+        for item in value.values():
+            ProjectService._replace_view_reference(item, old_id, new_id)
 
 
 __all__ = [

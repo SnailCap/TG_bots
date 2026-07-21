@@ -1,52 +1,100 @@
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+
 import type { Selection, Workspace } from "../../domain/project";
 
 export type CreatableResource = "view" | "template" | "flow" | "handler" | "schedule";
+export type ExplorerDraft = { kind: CreatableResource; label: string };
+type ResourceSection = "views" | "templates" | "flows" | "handlers" | "commands" | "schedules";
+type ContextTarget = { x: number; y: number; kind?: CreatableResource; selection?: Selection } | null;
 
-export function ProjectExplorer({
-  workspace,
-  selection,
-  onSelect,
-  onAdd,
-}: {
+export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, onDelete = () => undefined }: {
   workspace: Workspace;
   selection: Selection | null;
+  draft?: ExplorerDraft | null;
   onSelect(selection: Selection): void;
   onAdd(kind: CreatableResource): void;
+  onDelete?(selection: Selection): void;
 }) {
-  return (
-    <nav className="explorer" aria-label="Project resources">
-      <div className="explorer__project"><p className="eyebrow">Current project</p><strong>{workspace.name}</strong><small title={workspace.project_root}>{workspace.project_root}</small><span>Schema v{workspace.schema_version}</span></div>
-      <Section title="Views" onAdd={() => onAdd("view")}>
-        {workspace.views.map((view) => <ResourceButton key={view.id} active={selection?.kind === "view" && selection.id === view.id} title={view.id} subtitle={view.source_path} onClick={() => onSelect({ kind: "view", id: view.id })} />)}
-      </Section>
-      <Section title="Templates" onAdd={() => onAdd("template") }>
-        {workspace.templates.map((template) => <ResourceButton key={template.path} active={selection?.kind === "template" && selection.path === template.path} title={template.path} onClick={() => onSelect({ kind: "template", path: template.path })} />)}
-      </Section>
-      <Section title="Flows" onAdd={() => onAdd("flow") }>
-        {workspace.flows.map((flow) => <ResourceButton key={flow.id} active={selection?.kind === "flow" && selection.id === flow.id} title={flow.id} subtitle={flow.source_path} onClick={() => onSelect({ kind: "flow", id: flow.id })} />)}
-      </Section>
-      <Section title="Handlers" onAdd={() => onAdd("handler") }>
-        {workspace.handlers.map((handler) => <ResourceButton key={handler.id} active={selection?.kind === "handler" && selection.id === handler.id} title={handler.id} subtitle={`${handler.kind} · ${handler.status}${handler.usage_count === 0 ? " · unused" : ""}`} onClick={() => onSelect({ kind: "handler", id: handler.id })} />)}
-      </Section>
-      <Section title="Commands">
-        <ResourceButton active={selection?.kind === "commands"} title="commands.json" subtitle={workspace.commands.source_path} onClick={() => onSelect({ kind: "commands" })} />
-      </Section>
-      <Section title="Schedules" onAdd={() => onAdd("schedule") }>
-        {workspace.schedules.map((schedule) => <ResourceButton key={schedule.id} active={selection?.kind === "schedule" && selection.id === schedule.id} title={schedule.id} subtitle={schedule.source_path} onClick={() => onSelect({ kind: "schedule", id: schedule.id })} />)}
-      </Section>
-    </nav>
-  );
+  const [openSections, setOpenSections] = useState<Set<ResourceSection>>(() => new Set());
+  const [context, setContext] = useState<ContextTarget>(null);
+  useEffect(() => {
+    const section = draft && draftSection(draft.kind);
+    if (!section) return;
+    setOpenSections((current) => current.has(section) ? current : new Set(current).add(section));
+  }, [draft?.kind]);
+  useEffect(() => {
+    if (!context) return;
+    const close = () => setContext(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", close);
+    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", close); };
+  }, [context]);
+  const toggle = (section: ResourceSection) => setOpenSections((current) => {
+    const next = new Set(current); if (next.has(section)) next.delete(section); else next.add(section); return next;
+  });
+  const openContext = (event: MouseEvent, target: Omit<NonNullable<ContextTarget>, "x" | "y">) => {
+    event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, ...target });
+  };
+  const item = (next: Selection, title: string) => <ResourceButton key={title} active={selection?.kind === next.kind && (("id" in next && "id" in selection && next.id === selection.id) || ("path" in next && "path" in selection && next.path === selection.path))} selection={next} title={title} onClick={() => onSelect(next)} onContextMenu={(event) => openContext(event, { selection: next })} />;
+  return <nav className="explorer explorer--ide" aria-label="Project resources" onContextMenu={(event) => { if (event.target === event.currentTarget) openContext(event, { kind: "view" }); }}>
+    <Section id="views" title="views" open={openSections.has("views")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "view" })}>{draft?.kind === "view" && <DraftResource label={draft.label} kind="view" />}{workspace.views.map((view) => item({ kind: "view", id: view.id }, view.id))}</Section>
+    <Section id="templates" title="templates" open={openSections.has("templates")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "template" })}>{draft?.kind === "template" && <DraftResource label={draft.label} kind="template" />}{workspace.templates.map((template) => item({ kind: "template", path: template.path }, template.path))}</Section>
+    <Section id="flows" title="flows" open={openSections.has("flows")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "flow" })}>{draft?.kind === "flow" && <DraftResource label={draft.label} kind="flow" />}{workspace.flows.map((flow) => item({ kind: "flow", id: flow.id }, flow.id))}</Section>
+    <Section id="handlers" title="handlers" open={openSections.has("handlers")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "handler" })}>{draft?.kind === "handler" && <DraftResource label={draft.label} kind="handler" />}{workspace.handlers.map((handler) => item({ kind: "handler", id: handler.id }, handler.id))}</Section>
+    <Section id="commands" title="commands.json" open={openSections.has("commands")} onToggle={toggle}>{item({ kind: "commands" }, "commands.json")}</Section>
+    <Section id="schedules" title="schedules" open={openSections.has("schedules")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "schedule" })}>{draft?.kind === "schedule" && <DraftResource label={draft.label} kind="schedule" />}{workspace.schedules.map((schedule) => item({ kind: "schedule", id: schedule.id }, schedule.id))}</Section>
+    {context && <div className="explorer__context-menu" role="menu" style={{ left: context.x, top: context.y }} onPointerDown={(event) => event.stopPropagation()}>
+      {context.kind && <button type="button" role="menuitem" onClick={() => { onAdd(context.kind!); setContext(null); }}>New {context.kind}</button>}
+      {context.selection && context.selection.kind !== "commands" && <button type="button" role="menuitem" className="explorer__context-danger" onClick={() => { onDelete(context.selection!); setContext(null); }}>Delete</button>}
+    </div>}
+  </nav>;
 }
 
-function Section({ title, onAdd, children }: { title: string; onAdd?: () => void; children: React.ReactNode }) {
-  return (
-    <section className="explorer__section">
-      <header><span>{title}</span>{onAdd && <button type="button" aria-label={`Add ${title.toLowerCase()}`} onClick={onAdd}>+</button>}</header>
-      <div className="explorer__items">{children}</div>
-    </section>
-  );
+function Section({ id, title, open, onToggle, onContextMenu, children }: { id: ResourceSection; title: string; open: boolean; onToggle(section: ResourceSection): void; onContextMenu?(event: MouseEvent): void; children: ReactNode }) {
+  const contentId = `explorer-${id}`;
+  return <section className={open ? "explorer__section explorer__section--open" : "explorer__section"} onContextMenu={onContextMenu}>
+    <button type="button" className="explorer__section-toggle" aria-expanded={open} aria-controls={contentId} onClick={() => onToggle(id)}><span className="explorer__tree-arrow" aria-hidden="true"><ChevronIcon /></span><CategoryIcon category={id} /><span>{title}</span></button>
+    <div id={contentId} className="explorer__section-content"><div className="explorer__items">{children}</div></div>
+  </section>;
 }
 
-function ResourceButton({ active, title, subtitle, onClick }: { active: boolean; title: string; subtitle?: string; onClick(): void }) {
-  return <button type="button" aria-current={active ? "page" : undefined} className={active ? "explorer__item explorer__item--active" : "explorer__item"} onClick={onClick}><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</button>;
+function ResourceButton({ active, selection, title, onClick, onContextMenu }: { active: boolean; selection: Selection; title: string; onClick(): void; onContextMenu(event: MouseEvent): void }) {
+  return <button type="button" aria-current={active ? "page" : undefined} className={active ? "explorer__item explorer__item--active" : "explorer__item"} onClick={onClick} onContextMenu={onContextMenu}><ResourceIcon selection={selection} title={title} /> <strong>{title}</strong></button>;
+}
+
+function DraftResource({ kind, label }: ExplorerDraft) {
+  return <div className="explorer__item explorer__item--active explorer__item--draft" aria-current="page"><ResourceIcon selection={kind === "template" ? { kind, path: label } : { kind, id: label }} title={label} /><strong>{label}</strong><span className="explorer__draft-indicator">new</span></div>;
+}
+
+function ChevronIcon() {
+  return <svg viewBox="0 0 16 16" focusable="false"><path d="m4.5 6.25 3.5 3.5 3.5-3.5" /></svg>;
+}
+
+function CategoryIcon({ category }: { category: ResourceSection }) {
+  const paths: Record<ResourceSection, ReactNode> = {
+    views: <><rect x="3" y="3" width="4" height="4" rx=".65" /><rect x="9" y="3" width="4" height="4" rx=".65" /><rect x="3" y="9" width="4" height="4" rx=".65" /><rect x="9" y="9" width="4" height="4" rx=".65" /></>,
+    templates: <><path d="m6.25 4-3 4 3 4M9.75 4l3 4-3 4" /><path d="m9 3-2 10" /></>,
+    flows: <><circle cx="4" cy="4" r="1.5" /><circle cx="12" cy="4" r="1.5" /><circle cx="12" cy="12" r="1.5" /><path d="M5.5 4h2A2.5 2.5 0 0 1 10 6.5v4" /></>,
+    handlers: <><path d="m9.25 2.5-4.5 6h3l-.75 5 4.5-6h-3l.75-5Z" /></>,
+    commands: <><path d="m3.5 5 2.5 3-2.5 3M8 11h4.5" /></>,
+    schedules: <><rect x="3" y="4" width="10" height="9" rx="1.25" /><path d="M5.5 2.75v2.5M10.5 2.75v2.5M3 7h10M5.5 9.5h.01M8 9.5h.01M10.5 9.5h.01" /></>,
+  };
+  return <span className={`explorer__category-icon explorer__category-icon--${category}`} aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false">{paths[category]}</svg></span>;
+}
+
+export function ResourceIcon({ selection, title }: { selection: Selection; title: string }) {
+  const isHome = selection.kind === "view" && /^(home|index|start)$/i.test(title);
+  const paths: Record<Selection["kind"], ReactNode> = {
+    view: isHome ? <path d="M3 7.1 8 3l5 4.1v5.15c0 .4-.32.75-.75.75H9.5V9.5h-3v3.5H3.75a.75.75 0 0 1-.75-.75V7.1Z" /> : <><rect x="2.75" y="3.25" width="10.5" height="9.5" rx="1.25" /><path d="M5.25 6.25h5.5M5.25 8.5h5.5M5.25 10.75h3" /></>,
+    template: <><path d="m5.75 4-3 4 3 4M10.25 4l3 4-3 4" /><path d="m9.25 3-2.5 10" /></>,
+    flow: <><circle cx="4" cy="4" r="1.35" /><circle cx="12" cy="4" r="1.35" /><circle cx="12" cy="12" r="1.35" /><path d="M5.35 4h1.8A2.85 2.85 0 0 1 10 6.85v3.8" /></>,
+    handler: <path d="m9.2 2.5-4.4 6h3l-.75 5 4.4-6h-3l.75-5Z" />,
+    commands: <><path d="m3.5 5 2.5 3-2.5 3M8 11h4.5" /></>,
+    schedule: <><rect x="3" y="4" width="10" height="9" rx="1.25" /><path d="M5.5 2.75v2.5M10.5 2.75v2.5M3 7h10M5.5 9.5h.01M8 9.5h.01M10.5 9.5h.01" /></>,
+  };
+  return <span className={`explorer__resource-icon explorer__resource-icon--${selection.kind}`} aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false">{paths[selection.kind]}</svg></span>;
+}
+
+function draftSection(kind: CreatableResource): ResourceSection {
+  return kind === "schedule" ? "schedules" : `${kind}s` as ResourceSection;
 }

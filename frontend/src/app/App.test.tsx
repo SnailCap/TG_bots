@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -13,7 +14,7 @@ import type { StudioApiClient } from "../studio/api";
 import { StudioApiError } from "../studio/api";
 import { ProjectExplorer } from "../widgets/project-explorer/ProjectExplorer";
 import { ValidationPanel } from "../widgets/validation-panel/ValidationPanel";
-import { App, BackendStatusCard } from "./App";
+import { App, BackendStatusCard, LAST_PROJECT_STORAGE_KEY } from "./App";
 
 const handler: HandlerDetail = {
   id: "checkout.submit",
@@ -62,27 +63,63 @@ const viewDetail: ViewDetail = {
 afterEach(() => {
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "studioDesktop");
+  window.localStorage.clear();
 });
 
-describe("schema v3 Studio", () => {
-  it("shows backend health and opens a v3 project", async () => {
+describe("Studio", () => {
+  it("shows backend health and opens a project", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) }));
     const api = apiMock();
     render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
     expect(await screen.findByText("Backend online")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Existing schema v3 project"), { target: { value: "C:/demo" } });
+    fireEvent.change(screen.getByLabelText("Existing project"), { target: { value: "C:/demo" } });
     fireEvent.click(screen.getByRole("button", { name: "Open project" }));
-    expect(await screen.findByText("Schema v3")).toBeInTheDocument();
+    expect((await screen.findAllByText("demo")).length).toBeGreaterThan(0);
     expect(api.open).toHaveBeenCalledWith("C:/demo");
+    expect(window.localStorage.getItem(LAST_PROJECT_STORAGE_KEY)).toBe("C:/demo");
+  });
+
+  it("restores the last project during development startup", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) }));
+    window.localStorage.setItem(LAST_PROJECT_STORAGE_KEY, "C:/demo");
+    const api = apiMock();
+    render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
+    await waitFor(() => expect(api.open).toHaveBeenCalledWith("C:/demo"));
+    expect((await screen.findAllByText("demo")).length).toBeGreaterThan(0);
+  });
+
+  it("restores the last project after React development remounting", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) }));
+    window.localStorage.setItem(LAST_PROJECT_STORAGE_KEY, "C:/demo");
+    const api = apiMock();
+    render(<StrictMode><App apiBaseUrl="http://studio.test" apiClient={api} /></StrictMode>);
+    expect((await screen.findAllByText("demo")).length).toBeGreaterThan(0);
+  });
+
+  it("keeps the last project path after a transient automatic restore failure", async () => {
+    window.localStorage.setItem(LAST_PROJECT_STORAGE_KEY, "C:/demo");
+    const api = apiMock({ open: vi.fn().mockRejectedValue(new Error("backend restarting")) });
+    render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
+    await waitFor(() => expect(api.open).toHaveBeenCalledWith("C:/demo"));
+    expect(window.localStorage.getItem(LAST_PROJECT_STORAGE_KEY)).toBe("C:/demo");
+  });
+
+  it("keeps manual project controls available while automatic restore is pending", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) }));
+    window.localStorage.setItem(LAST_PROJECT_STORAGE_KEY, "C:/stale-project");
+    const api = apiMock({ open: vi.fn().mockReturnValue(new Promise<Workspace>(() => undefined)) });
+    render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
+    fireEvent.change(screen.getByLabelText("Existing project"), { target: { value: "C:/demo" } });
+    expect(screen.getByRole("button", { name: "Open project" })).toBeEnabled();
   });
 
   it("renders all typed explorer sections", () => {
     render(<ProjectExplorer workspace={workspace} selection={null} onSelect={vi.fn()} onAdd={vi.fn()} />);
-    for (const section of ["Views", "Templates", "Flows", "Handlers", "Commands", "Schedules"]) {
-      expect(screen.getByText(section)).toBeInTheDocument();
+    for (const section of ["views", "templates", "flows", "handlers", "commands.json", "schedules"]) {
+      expect(screen.getAllByText(section).length).toBeGreaterThan(0);
     }
-    expect(screen.getByRole("button", { name: /checkout\.submit button · ready/ })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /commands.json commands.json/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "checkout.submit" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "commands.json" })[1]).toBeInTheDocument();
   });
 
   it("creates a missing custom button handler and asks Electron to open it", async () => {
@@ -104,7 +141,7 @@ describe("schema v3 Studio", () => {
     const openCode = vi.fn().mockResolvedValue(undefined);
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={missingWorkspace} />);
-    fireEvent.click(screen.getByRole("button", { name: /home views\/home.json/ }));
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
     expect(await screen.findByText("Binding missing")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create handler" }));
     await waitFor(() => expect(api.createHandler).toHaveBeenCalledWith("project-1", {
@@ -136,8 +173,9 @@ describe("schema v3 Studio", () => {
     });
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode: vi.fn().mockResolvedValue(undefined) };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={{ ...workspace, handlers: [] }} />);
-    fireEvent.click(screen.getByRole("button", { name: /home views\/home.json/ }));
-    fireEvent.change(await screen.findByLabelText("Action"), { target: { value: "handler.invoke" } });
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    fireEvent.click(await screen.findByLabelText("Action"));
+    fireEvent.click(screen.getByRole("option", { name: "Custom handler" }));
     fireEvent.change(screen.getByLabelText("Handler name"), { target: { value: "checkout.submit" } });
     fireEvent.click(screen.getByRole("button", { name: "Create handler" }));
 
@@ -149,9 +187,8 @@ describe("schema v3 Studio", () => {
       description: undefined,
     }));
     expect(screen.getByDisplayValue("checkout.submit")).toBeInTheDocument();
-    expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
     expect(await screen.findByText(/reference is still only in this draft/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.saveView).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText(/reference is still only in this draft/)).not.toBeInTheDocument());
   });
@@ -162,7 +199,7 @@ describe("schema v3 Studio", () => {
     const openCode = vi.fn().mockResolvedValue(undefined);
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
-    fireEvent.click(screen.getByRole("button", { name: /checkout.submit button · ready/ }));
+    fireEvent.click(screen.getByRole("button", { name: "checkout.submit" }));
     fireEvent.click(await screen.findByRole("button", { name: "Open code" }));
     await waitFor(() => expect(openCode).toHaveBeenCalledWith(source));
   });
@@ -182,7 +219,7 @@ describe("schema v3 Studio", () => {
     const openCode = vi.fn().mockResolvedValue(undefined);
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={{ ...workspace, handlers: [missing] }} />);
-    fireEvent.click(screen.getByRole("button", { name: /checkout.submit button · missing_file/ }));
+    fireEvent.click(screen.getByRole("button", { name: "checkout.submit" }));
     fireEvent.click(await screen.findByRole("button", { name: "Create missing source" }));
 
     await waitFor(() => expect(api.repairHandlerSource).toHaveBeenCalledWith("project-1", "checkout.submit", "handlers-one"));
@@ -208,7 +245,7 @@ describe("schema v3 Studio", () => {
     const openCode = vi.fn().mockResolvedValue(undefined);
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={{ ...workspace, handlers: [] }} />);
-    fireEvent.click(screen.getByRole("button", { name: /commands.json commands.json/ }));
+    fireEvent.click(screen.getAllByRole("button", { name: "commands.json" })[1]);
     expect(await screen.findByText("Message fallback")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create handler" }));
     await waitFor(() => expect(api.createHandler).toHaveBeenCalledWith("project-1", {
@@ -230,10 +267,10 @@ describe("schema v3 Studio", () => {
       saveView: vi.fn().mockRejectedValue(new StudioApiError(409, "revision_conflict", "Changed outside Studio")),
     });
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
-    fireEvent.click(screen.getByRole("button", { name: /home views\/home.json/ }));
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
     const text = await screen.findByLabelText("Inline text");
     fireEvent.change(text, { target: { value: "Changed" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Changed outside Studio")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reload from disk" })).toBeInTheDocument();
   });
@@ -241,18 +278,24 @@ describe("schema v3 Studio", () => {
   it("does not save a view with an empty inline text or template path", async () => {
     const api = apiMock();
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
-    fireEvent.click(screen.getByRole("button", { name: /home views\/home.json/ }));
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
 
     fireEvent.change(await screen.findByLabelText("Inline text"), { target: { value: "   " } });
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
-    expect(screen.getByText("Inline text cannot be empty.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.queryByText("Inline text cannot be empty.")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Inline text"), { target: { value: "Visible" } });
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
 
-    fireEvent.change(screen.getByLabelText("Text source"), { target: { value: "template" } });
-    fireEvent.change(screen.getByLabelText("Template"), { target: { value: "  " } });
-    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
-    expect(screen.getByText("Template path is required.")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Text source"));
+    fireEvent.click(screen.getByRole("option", { name: "Template" }));
+    expect(screen.queryByRole("listbox", { name: "Text source" })).not.toBeInTheDocument();
+    const templateInput = screen.getByLabelText("Template");
+    fireEvent.change(templateInput, { target: { value: "ho" } });
+    fireEvent.mouseDown(screen.getByRole("option", { name: "home.txt" }));
+    expect(templateInput).toHaveValue("home.txt");
+    fireEvent.change(templateInput, { target: { value: "  " } });
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.queryByText("Template path is required.")).not.toBeInTheDocument();
   });
 
   it("renders stable cross-resource diagnostic fields", () => {
@@ -280,9 +323,11 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     getView: vi.fn().mockResolvedValue(viewDetail),
     createView: vi.fn().mockResolvedValue(viewDetail),
     saveView: vi.fn().mockResolvedValue(viewDetail),
+    renameView: vi.fn().mockResolvedValue(viewDetail),
     deleteView: vi.fn().mockResolvedValue(undefined),
     getTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
     saveTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
+    deleteTemplate: vi.fn().mockResolvedValue(undefined),
     getFlow: vi.fn().mockResolvedValue({ id: "checkout", source_path: "flows/checkout.json", revision: "flow-one", payload: { schema_version: 3, id: "checkout", initial_state: "start", lifecycle: {}, states: { start: { view: "home", events: {} } } } }),
     createFlow: vi.fn(),
     saveFlow: vi.fn(),

@@ -31,6 +31,11 @@ class ResourceSaveRequest(BaseModel):
     revision: str
 
 
+class ResourceRenameRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+    revision: str
+
+
 class TemplateSaveRequest(BaseModel):
     content: str
     revision: str | None = None
@@ -170,6 +175,16 @@ async def delete_view(
     try:
         service(request).delete_view(project_id, view_id, revision)
         return Response(status_code=204)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.post("/{project_id}/views/{view_id}/rename")
+async def rename_view(
+    project_id: str, view_id: str, body: ResourceRenameRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).rename_view(project_id, view_id, body.id, body.revision)
     except WorkspaceError as error:
         fail(error)
 
@@ -453,6 +468,17 @@ async def save_template(
         return service(request).save_template(
             project_id, path, body.content, body.revision
         )
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.delete("/{project_id}/templates/{path:path}")
+async def delete_template(
+    project_id: str, path: str, revision: str, request: Request
+) -> Response:
+    try:
+        service(request).delete_template(project_id, path, revision)
+        return Response(status_code=204)
     except WorkspaceError as error:
         fail(error)
 

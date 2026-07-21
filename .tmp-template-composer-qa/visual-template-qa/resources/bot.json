@@ -1,0 +1,10 @@
+{
+  "schema_version": 3,
+  "id": "visual_template_qa",
+  "package": "visual_template_qa",
+  "entry_view": "home",
+  "start": {
+    "flow": "home",
+    "policy": "reset"
+  }
+}

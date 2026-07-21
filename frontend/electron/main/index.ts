@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
 import { realpath } from "node:fs/promises";
@@ -96,6 +96,12 @@ async function createWindow(): Promise<void> {
     minHeight: 560,
     backgroundColor: "#111827",
     title: "Telegram Bot Studio",
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+      color: "#272a30",
+      symbolColor: "#9eafc3",
+      height: 42,
+    },
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -131,6 +137,7 @@ ipcMain.handle("desktop:open-code", async (_event, input: unknown) => {
 });
 
 app.whenReady().then(async () => {
+  Menu.setApplicationMenu(null);
   startBackend();
   await createWindow();
 

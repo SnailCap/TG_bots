@@ -6,7 +6,7 @@
 
 `BotApp.start()` выполняет действия в таком порядке:
 
-1. `ProjectLoader` читает schema v3.
+1. `ProjectLoader` читает декларативную схему проекта.
 2. `validate_project(..., inspect_code=True)` проверяет graph и handler source signatures. Любая error diagnostic останавливает startup до polling.
 3. `SqliteStore` инициализирует runtime tables (`CREATE TABLE IF NOT EXISTS`) и включает WAL.
 4. `ServiceContainer` создаёт providers последовательно.

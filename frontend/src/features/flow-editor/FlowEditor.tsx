@@ -10,6 +10,7 @@ import type {
 } from "../../domain/project";
 import { HandlerControls } from "../handlers/HandlerControls";
 import { OutcomeEditor, type ActionScope, type HandlerActions } from "../action-editor/ActionEditor";
+import { Select } from "../../shared/ui/Select";
 
 const LIFECYCLE_HOOKS: Array<keyof FlowLifecycle> = ["on_start", "on_complete", "on_cancel", "on_error"];
 
@@ -35,14 +36,11 @@ export function FlowEditor({
   const flowOptions = { ...options, states: stateIds };
   return (
     <section className="editor editor--wide" aria-label="Flow editor">
-      <header className="editor__header"><div><p className="eyebrow">Schema v3 flow</p><h2>{isNew ? "New flow" : value.id}</h2><small>{sourcePath || "flows/<id>.json"}</small></div></header>
       <div className="form-grid">
         <label>Flow ID<input disabled={!isNew} value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} /></label>
         <label>
           Initial state
-          <select value={value.initial_state} onChange={(event) => onChange({ ...value, initial_state: event.target.value })}>
-            {stateIds.map((stateId) => <option key={stateId} value={stateId}>{stateId}</option>)}
-          </select>
+          <Select ariaLabel="Initial state" value={value.initial_state} options={stateIds.map((stateId) => ({ value: stateId, label: stateId }))} onChange={(initial_state) => onChange({ ...value, initial_state })} />
         </label>
         <fieldset>
           <legend>Flow lifecycle</legend>
@@ -125,10 +123,7 @@ function StateEditor({
       <header><div><strong>{stateId}</strong><small>{flowId}.{stateId}</small></div>{removable && <button type="button" className="button--danger" onClick={onRemove}>Remove state</button>}</header>
       <label>
         Default view
-        <select value={state.view} onChange={(event) => onChange({ ...state, view: event.target.value })}>
-          <option value="">Select a view</option>
-          {options.views.map((viewId) => <option key={viewId} value={viewId}>{viewId}</option>)}
-        </select>
+        <Select ariaLabel="Default view" value={state.view} options={[{ value: "", label: "Select a view" }, ...options.views.map((viewId) => ({ value: viewId, label: viewId }))]} onChange={(view) => onChange({ ...state, view })} />
       </label>
       <InvocationSlot title="on_enter" invocation={state.on_enter} scope={{ expectedKind: "lifecycle", currentFlow: flowId }} options={options} handlerActions={handlerActions} createOptions={targetRevision ? { attachment: { type: "state_on_enter", flow_id: flowId, state_id: stateId }, target_revision: targetRevision } : undefined} onChange={(on_enter) => onChange({ ...state, on_enter })} />
       <InvocationSlot title="on_message" invocation={state.on_message} scope={{ expectedKind: "message", currentFlow: flowId }} options={options} handlerActions={handlerActions} createOptions={targetRevision ? { attachment: { type: "state_on_message", flow_id: flowId, state_id: stateId }, target_revision: targetRevision } : undefined} onChange={(on_message) => onChange({ ...state, on_message })} />

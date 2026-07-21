@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 import {
   SCHEMA_VERSION,
@@ -7,13 +7,11 @@ import {
   emptyView,
   type ActionOptions,
   type CommandsDetail,
-  type Diagnostic,
   type FlowDetail,
   type HandlerDetail,
   type HandlerCreateOptions,
   type HandlerKind,
   type HandlerUsage,
-  type Preview,
   type ScheduleDetail,
   type Selection,
   type TemplateDetail,
@@ -27,12 +25,10 @@ import { HandlerInspector, NewHandlerEditor } from "../../features/handler-inspe
 import { ScheduleEditor } from "../../features/schedule-editor/ScheduleEditor";
 import { TemplateEditor } from "../../features/template-editor/TemplateEditor";
 import { ViewEditor } from "../../features/view-editor/ViewEditor";
+import { ResourceEditorHeader } from "../../shared/ui/ResourceEditorHeader";
 import { type StudioApiClient, StudioApiError } from "../../studio/api";
 import { openCode } from "../../studio/desktop";
-import { ProjectExplorer, type CreatableResource } from "../../widgets/project-explorer/ProjectExplorer";
-import { TelegramPreview } from "../../widgets/telegram-preview/TelegramPreview";
-import { ValidationPanel } from "../../widgets/validation-panel/ValidationPanel";
-import { BackendStatusCard } from "../../app/BackendStatusCard";
+import { ProjectExplorer, ResourceIcon, type CreatableResource, type ExplorerDraft } from "../../widgets/project-explorer/ProjectExplorer";
 
 type EditorState =
   | { kind: "view"; detail: ViewDetail; isNew: boolean }
@@ -44,17 +40,24 @@ type EditorState =
   | { kind: "new-handler" }
   | null;
 
-export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioApiClient; apiBaseUrl: string; initialWorkspace: Workspace }) {
+type EditorTab = { key: string; editor: Exclude<EditorState, null>; dirty: boolean };
+
+export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace }: { api: StudioApiClient; apiBaseUrl: string; initialWorkspace: Workspace }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
-  const [preview, setPreview] = useState<Preview | null>(null);
-  const [issues, setIssues] = useState<Diagnostic[]>([]);
+  const [tabs, setTabs] = useState<EditorTab[]>([]);
+  const [activeTabKey, setActiveTabKey] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [explorerWidth, setExplorerWidth] = useState(262);
+  const explorerWidthRef = useRef(explorerWidth);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const nextNewTabId = useRef(1);
 
   const report = useCallback((caught: unknown) => {
     const message = caught instanceof Error ? caught.message : "Unexpected error";
@@ -68,25 +71,62 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
     return next;
   }, [api, workspace.project_id]);
 
-  const refreshValidation = useCallback(async () => {
+  const validateProject = useCallback(async () => {
     try {
-      setIssues(await api.validate(workspace.project_id));
+      const diagnostics = await api.validate(workspace.project_id);
+      setNotice(diagnostics.length === 0 ? "Project is valid." : `Validation found ${diagnostics.length} issue(s).`);
     } catch (caught) {
       report(caught);
     }
   }, [api, report, workspace.project_id]);
 
-  useEffect(() => { void refreshValidation(); }, [refreshValidation]);
+  const resizeExplorer = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const workspaceElement = workspaceRef.current;
+    if (!workspaceElement) return;
+    const startX = event.clientX;
+    const startWidth = explorerWidthRef.current;
+    const maximumWidth = Math.max(320, workspaceElement.clientWidth - 420);
+    document.body.classList.add("is-resizing");
 
-  const loadSelection = useCallback(async (next: Selection) => {
+    const onMove = (moveEvent: globalThis.PointerEvent) => {
+      const width = Math.min(maximumWidth, Math.max(180, startWidth + moveEvent.clientX - startX));
+      explorerWidthRef.current = width;
+      workspaceElement.style.setProperty("--explorer-width", `${width}px`);
+    };
+    const onEnd = () => {
+      document.body.classList.remove("is-resizing");
+      setExplorerWidth(explorerWidthRef.current);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onEnd, { once: true });
+  }, []);
+
+  const resizeExplorerByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const direction = event.key === "ArrowLeft" ? -1 : 1;
+    const maximumWidth = Math.max(320, (workspaceRef.current?.clientWidth ?? 0) - 420);
+    const width = Math.min(maximumWidth, Math.max(180, explorerWidthRef.current + direction * 16));
+    explorerWidthRef.current = width;
+    setExplorerWidth(width);
+  }, []);
+
+  const loadSelection = useCallback(async (next: Selection, tabKey?: string) => {
+    let nextEditor: Exclude<EditorState, null>;
     switch (next.kind) {
-      case "view": setEditor({ kind: "view", detail: await api.getView(workspace.project_id, next.id), isNew: false }); break;
-      case "template": setEditor({ kind: "template", detail: await api.getTemplate(workspace.project_id, next.path), isNew: false }); break;
-      case "flow": setEditor({ kind: "flow", detail: await api.getFlow(workspace.project_id, next.id), isNew: false }); break;
-      case "commands": setEditor({ kind: "commands", detail: await api.getCommands(workspace.project_id) }); break;
-      case "schedule": setEditor({ kind: "schedule", detail: await api.getSchedule(workspace.project_id, next.id), isNew: false }); break;
-      case "handler": setEditor({ kind: "handler", detail: await api.getHandler(workspace.project_id, next.id) }); break;
+      case "view": nextEditor = { kind: "view", detail: await api.getView(workspace.project_id, next.id), isNew: false }; break;
+      case "template": nextEditor = { kind: "template", detail: await api.getTemplate(workspace.project_id, next.path), isNew: false }; break;
+      case "flow": nextEditor = { kind: "flow", detail: await api.getFlow(workspace.project_id, next.id), isNew: false }; break;
+      case "commands": nextEditor = { kind: "commands", detail: await api.getCommands(workspace.project_id) }; break;
+      case "schedule": nextEditor = { kind: "schedule", detail: await api.getSchedule(workspace.project_id, next.id), isNew: false }; break;
+      case "handler": nextEditor = { kind: "handler", detail: await api.getHandler(workspace.project_id, next.id) }; break;
     }
+    setEditor(nextEditor);
+    if (tabKey) setTabs((current) => current.some((tab) => tab.key === tabKey)
+      ? current.map((tab) => tab.key === tabKey ? { ...tab, editor: nextEditor, dirty: false } : tab)
+      : [...current, { key: tabKey, editor: nextEditor, dirty: false }]);
     setDirty(false);
     setNotice("");
     setError("");
@@ -94,25 +134,29 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
   }, [api, workspace.project_id]);
 
   const select = useCallback((next: Selection) => {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
-    setSelection(next);
-    setBusy(true);
-    void loadSelection(next).catch(report).finally(() => setBusy(false));
-  }, [dirty, loadSelection, report]);
-
-  useEffect(() => {
-    if (editor?.kind !== "view") {
-      setPreview(null);
+    const tabKey = selectionTabKey(next);
+    const existing = tabs.find((tab) => tab.key === tabKey);
+    if (existing) {
+      setActiveTabKey(tabKey);
+      setEditor(existing.editor);
+      setSelection(selectionForEditor(existing.editor));
+      setDirty(existing.dirty);
+      setNotice("");
+      setError("");
+      setConflict(false);
       return;
     }
-    let cancelled = false;
-    const timer = window.setTimeout(() => {
-      void api.preview(workspace.project_id, editor.detail.payload)
-        .then((next) => { if (!cancelled) setPreview(next); })
-        .catch((caught) => { if (!cancelled) report(caught); });
-    }, 150);
-    return () => { cancelled = true; window.clearTimeout(timer); };
-  }, [api, editor, report, workspace.project_id]);
+    if (editor && activeTabKey) setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
+    setActiveTabKey(tabKey);
+    setSelection(next);
+    setBusy(true);
+    void loadSelection(next, tabKey).catch(report).finally(() => setBusy(false));
+  }, [activeTabKey, dirty, editor, loadSelection, report, tabs]);
+
+  useEffect(() => {
+    if (!editor || !activeTabKey) return;
+    setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
+  }, [activeTabKey, dirty, editor]);
 
   const createAndOpenHandler = useCallback(async (id: string, kind: HandlerKind, outcomes: string[] = [], description?: string, createOptions?: HandlerCreateOptions) => {
     // The backend can attach atomically only to the persisted revision. If this
@@ -143,13 +187,12 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
       } catch (caught) {
         report(caught);
       }
-      await refreshValidation();
     } catch (caught) {
       report(caught);
     } finally {
       setBusy(false);
     }
-  }, [api, dirty, loadSelection, refreshValidation, refreshWorkspace, report, selection, workspace.handlers_revision, workspace.project_id]);
+  }, [api, dirty, loadSelection, refreshWorkspace, report, selection, workspace.handlers_revision, workspace.project_id]);
 
   const openHandler = useCallback(async (id: string) => {
     try {
@@ -174,13 +217,12 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
       } catch (caught) {
         report(caught);
       }
-      await refreshValidation();
     } catch (caught) {
       report(caught);
     } finally {
       setBusy(false);
     }
-  }, [api, refreshValidation, refreshWorkspace, report, selection, workspace.handlers_revision, workspace.project_id]);
+  }, [api, refreshWorkspace, report, selection, workspace.handlers_revision, workspace.project_id]);
 
   const findUsages = useCallback(async (id: string): Promise<HandlerUsage[]> => {
     try {
@@ -212,30 +254,85 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
     templates: workspace.templates.map((item) => item.path),
   }), [editor, workspace]);
 
-  const editorContext = editor ? describeEditor(editor) : "Choose a resource";
+  const explorerDraft = useMemo(() => draftForEditor(editor), [editor]);
 
   const addResource = (kind: CreatableResource) => {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    let nextEditor: Exclude<EditorState, null>;
+    if (kind === "view") nextEditor = { kind, isNew: true, detail: { id: "", source_path: "", revision: "", payload: emptyView() } };
+    else if (kind === "template") nextEditor = { kind, isNew: true, detail: { path: "new-template.txt", content: "", revision: "" } };
+    else if (kind === "flow") nextEditor = { kind, isNew: true, detail: { id: "", source_path: "", revision: "", payload: emptyFlow() } };
+    else if (kind === "schedule") nextEditor = { kind, isNew: true, detail: { id: "", source_path: "", revision: "", payload: emptySchedule() } };
+    else nextEditor = { kind: "new-handler" };
+    if (editor && activeTabKey) setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
+    const tabKey = `new:${kind}:${nextNewTabId.current++}`;
     setSelection(null);
+    setActiveTabKey(tabKey);
+    setTabs((current) => [...current, { key: tabKey, editor: nextEditor, dirty: false }]);
+    setEditor(nextEditor);
     setDirty(false);
     setNotice("");
-    if (kind === "view") setEditor({ kind, isNew: true, detail: { id: "", source_path: "", revision: "", payload: emptyView() } });
-    if (kind === "template") setEditor({ kind, isNew: true, detail: { path: "new-template.txt", content: "", revision: "" } });
-    if (kind === "flow") setEditor({ kind, isNew: true, detail: { id: "", source_path: "", revision: "", payload: emptyFlow() } });
-    if (kind === "schedule") setEditor({ kind, isNew: true, detail: { id: "", source_path: "", revision: "", payload: emptySchedule() } });
-    if (kind === "handler") setEditor({ kind: "new-handler" });
   };
+
+  const closeTab = useCallback((tabKey: string, force = false) => {
+    const tab = tabs.find((item) => item.key === tabKey);
+    if (!tab) return;
+    const needsConfirmation = tabKey === activeTabKey ? dirty : tab.dirty;
+    if (!force && needsConfirmation && !window.confirm("Discard unsaved changes?")) return;
+    const tabIndex = tabs.findIndex((item) => item.key === tabKey);
+    const nextTabs = tabs.filter((item) => item.key !== tabKey);
+    setTabs(nextTabs);
+    if (tabKey !== activeTabKey) return;
+    const nextTab = nextTabs[Math.max(0, tabIndex - 1)] ?? null;
+    if (!nextTab) {
+      setActiveTabKey(null);
+      setEditor(null);
+      setSelection(null);
+      setDirty(false);
+      return;
+    }
+    setActiveTabKey(nextTab.key);
+    setEditor(nextTab.editor);
+    setSelection(selectionForEditor(nextTab.editor));
+    setDirty(nextTab.dirty);
+  }, [activeTabKey, dirty, tabs]);
+
+  const activateTab = useCallback((tabKey: string) => {
+    const tab = tabs.find((item) => item.key === tabKey);
+    if (!tab || tabKey === activeTabKey) return;
+    if (editor && activeTabKey) setTabs((current) => current.map((item) => item.key === activeTabKey ? { ...item, editor, dirty } : item));
+    setActiveTabKey(tabKey);
+    setEditor(tab.editor);
+    setSelection(selectionForEditor(tab.editor));
+    setDirty(tab.dirty);
+    setNotice("");
+    setError("");
+    setConflict(false);
+  }, [activeTabKey, dirty, editor, tabs]);
+
+  useEffect(() => {
+    const closeWithShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "w" && activeTabKey) {
+        event.preventDefault();
+        closeTab(activeTabKey);
+      }
+    };
+    window.addEventListener("keydown", closeWithShortcut);
+    return () => window.removeEventListener("keydown", closeWithShortcut);
+  }, [activeTabKey, closeTab]);
 
   const save = async () => {
     if (!editor) return;
     setBusy(true);
+    setSaving(true);
     try {
       let nextSelection: Selection | null = selection;
       if (editor.kind === "view") {
         const id = editor.detail.payload.id;
         const saved = editor.isNew
           ? await api.createView(workspace.project_id, id, editor.detail.payload)
-          : await api.saveView(workspace.project_id, id, editor.detail.payload, editor.detail.revision);
+          : editor.detail.id !== id
+            ? await api.renameView(workspace.project_id, editor.detail.id, id, editor.detail.revision)
+            : await api.saveView(workspace.project_id, id, editor.detail.payload, editor.detail.revision);
         setEditor({ kind: "view", detail: saved, isNew: false });
         nextSelection = { kind: "view", id: saved.id };
       } else if (editor.kind === "template") {
@@ -265,10 +362,10 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
       setError("");
       setConflict(false);
       await refreshWorkspace();
-      await refreshValidation();
     } catch (caught) {
       report(caught);
     } finally {
+      setSaving(false);
       setBusy(false);
     }
   };
@@ -278,21 +375,36 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
     setBusy(true);
     try {
       if (editor.kind === "view" && !editor.isNew) await api.deleteView(workspace.project_id, editor.detail.id, editor.detail.revision);
+      else if (editor.kind === "template" && !editor.isNew) await api.deleteTemplate(workspace.project_id, editor.detail.path, editor.detail.revision);
       else if (editor.kind === "flow" && !editor.isNew) await api.deleteFlow(workspace.project_id, editor.detail.id, editor.detail.revision);
       else if (editor.kind === "schedule" && !editor.isNew) await api.deleteSchedule(workspace.project_id, editor.detail.id, editor.detail.revision);
       else if (editor.kind === "handler") await api.deleteHandler(workspace.project_id, editor.detail.id, editor.detail.revision);
       else return;
-      setEditor(null);
-      setSelection(null);
-      setDirty(false);
+      if (activeTabKey) closeTab(activeTabKey, true);
       setNotice("");
       await refreshWorkspace();
-      await refreshValidation();
     } catch (caught) {
       report(caught);
     } finally {
       setBusy(false);
     }
+  };
+
+  const removeFromExplorer = (next: Selection) => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (!window.confirm("Delete this resource?")) return;
+    setBusy(true);
+    void (async () => {
+      if (next.kind === "view") { const detail = await api.getView(workspace.project_id, next.id); await api.deleteView(workspace.project_id, next.id, detail.revision); }
+      else if (next.kind === "template") { const detail = await api.getTemplate(workspace.project_id, next.path); await api.deleteTemplate(workspace.project_id, next.path, detail.revision); }
+      else if (next.kind === "flow") { const detail = await api.getFlow(workspace.project_id, next.id); await api.deleteFlow(workspace.project_id, next.id, detail.revision); }
+      else if (next.kind === "schedule") { const detail = await api.getSchedule(workspace.project_id, next.id); await api.deleteSchedule(workspace.project_id, next.id, detail.revision); }
+      else if (next.kind === "handler") { const detail = await api.getHandler(workspace.project_id, next.id); await api.deleteHandler(workspace.project_id, next.id, detail.revision); }
+      else return;
+      if (activeTabKey && selectionKeyEquals(selection, next)) closeTab(activeTabKey, true);
+      setTabs((current) => current.filter((tab) => !selectionKeyEquals(selectionForEditor(tab.editor), next)));
+      await refreshWorkspace();
+    })().catch(report).finally(() => setBusy(false));
   };
 
   const reloadCurrent = () => {
@@ -305,34 +417,86 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
   return (
     <main className="studio">
       <header className="topbar">
-        <div className="topbar__identity"><strong>Telegram Bot Studio</strong><span className="topbar__project">{workspace.name}</span><small title={workspace.resource_root}>{workspace.resource_root}</small></div>
-        <div className="topbar__status"><BackendStatusCard apiBaseUrl={apiBaseUrl} /><span className={dirty ? "save-state save-state--dirty" : "save-state"}>{dirty ? "Unsaved changes" : "All changes saved"}</span></div>
-        <div className="topbar__actions"><button type="button" className="button--secondary" onClick={() => void refreshWorkspace().catch(report)}>Refresh</button><button type="button" onClick={() => void refreshValidation()}>Validate project</button></div>
+        <strong className="topbar__project" title={workspace.name}>{workspace.name}</strong>
+        <div className="topbar__actions"><button type="button" onClick={() => void validateProject()}>Validate</button></div>
       </header>
       {error && <p className="alert alert--error" role="alert"><span>{error}</span>{conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>}<button type="button" className="button--icon" aria-label="Dismiss error" onClick={() => { setError(""); setConflict(false); }}>×</button></p>}
       {notice && <p className="alert alert--notice" role="status"><span>{notice}</span><button type="button" className="button--icon" aria-label="Dismiss notice" onClick={() => setNotice("")}>×</button></p>}
-      <div className="workspace">
-        <ProjectExplorer workspace={workspace} selection={selection} onSelect={select} onAdd={addResource} />
+      <div ref={workspaceRef} className="workspace" style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}>
+        <ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onAdd={addResource} onDelete={removeFromExplorer} />
+        <div className="workspace__resizer" role="separator" aria-label="Resize resource list" aria-orientation="vertical" tabIndex={0} onPointerDown={resizeExplorer} onKeyDown={resizeExplorerByKeyboard} />
         <section className="workspace__main" aria-busy={busy}>
-          <div className="context-bar" aria-label="Current editor context"><p className="eyebrow">{editor ? "Editing" : "Workspace"}</p><strong>{editorContext}</strong>{editor && <span>{editor.kind === "handler" ? "Custom code binding" : "Schema v3 resource"}</span>}</div>
-          {busy && <div className="loading-line" role="status"><span>Updating workspace…</span></div>}
-          {renderEditor(editor, options, handlerActions, setEditor, setDirty, repairHandler, openHandler, findUsages, createAndOpenHandler, select)}
-          {editor && !["handler", "new-handler"].includes(editor.kind) && <footer className="editor__actions"><div><span className={dirty ? "dirty-indicator" : "muted"}>{dirty ? "Unsaved changes — save to write this resource to disk." : "No local changes"}</span></div><div className="editor__action-buttons"><button type="button" disabled={busy || !canSave(editor)} onClick={() => void save()}>{isNewEditor(editor) ? "Create resource" : "Save changes"}</button>{canDelete(editor) && <button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete resource</button>}</div></footer>}
+          {tabs.length > 0 && <nav className="editor-tabs" aria-label="Open resources" role="tablist">
+            {tabs.map((tab) => <div key={tab.key} className={tab.key === activeTabKey ? "editor-tab editor-tab--active" : "editor-tab"} role="presentation">
+              <button type="button" className="editor-tab__select" role="tab" aria-selected={tab.key === activeTabKey} onClick={() => activateTab(tab.key)}><ResourceIcon selection={editorTabSelection(tab.editor)} title={editorTabLabel(tab.editor)} /><span className="editor-tab__label">{editorTabLabel(tab.editor)}</span>{tab.dirty && <span className="editor-tab__dirty" aria-label="Unsaved changes" />}</button>
+              <button type="button" className="editor-tab__close" aria-label={`Close ${editorTabLabel(tab.editor)}`} title="Close tab" onClick={() => closeTab(tab.key)}>×</button>
+            </div>)}
+          </nav>}
+          <div key={editorMotionKey(editor)} className="workspace__content">
+            {editor && <ResourceEditorHeader category={editorCategory(editor)} title={editorHeaderTitle(editor)} saveAction={isSaveableEditor(editor) ? { disabled: busy || !canSave(editor), saving, onSave: () => void save() } : undefined} />}
+            {renderEditor(editor, options, handlerActions, setEditor, setDirty, repairHandler, openHandler, findUsages, createAndOpenHandler, select)}
           {editor?.kind === "handler" && <footer className="editor__actions editor__actions--danger"><span>Deleting a binding can break the resources that use it.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
-          {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a v3 resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
+          {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
+          </div>
         </section>
-        <aside className="right-panel"><TelegramPreview preview={preview} /><ValidationPanel issues={issues} onRefresh={() => void refreshValidation()} onSelect={(issue) => selectDiagnostic(issue, select)} /></aside>
       </div>
     </main>
   );
 }
 
-function describeEditor(editor: Exclude<EditorState, null>): string {
-  if (editor.kind === "template") return editor.isNew ? "New template" : editor.detail.path;
-  if (editor.kind === "new-handler") return "New custom handler";
-  if (editor.kind === "commands") return "Commands and fallbacks";
-  if (editor.kind === "handler") return editor.detail.id;
-  return editor.isNew ? `New ${editor.kind}` : editor.detail.id;
+function editorMotionKey(editor: EditorState): string {
+  if (!editor) return "empty";
+  if (editor.kind === "new-handler") return "new-handler";
+  if ("isNew" in editor && editor.isNew) return `${editor.kind}:new`;
+  if (editor.kind === "template") return `${editor.kind}:${editor.detail.path}`;
+  if (editor.kind === "commands") return editor.kind;
+  return `${editor.kind}:${editor.detail.id}`;
+}
+
+function selectionTabKey(selection: Selection): string {
+  if (selection.kind === "template") return `template:${selection.path}`;
+  if (selection.kind === "commands") return "commands";
+  return `${selection.kind}:${selection.id}`;
+}
+
+function selectionForEditor(editor: Exclude<EditorState, null>): Selection | null {
+  if (editor.kind === "new-handler" || ("isNew" in editor && editor.isNew)) return null;
+  if (editor.kind === "template") return { kind: "template", path: editor.detail.path };
+  if (editor.kind === "commands") return { kind: "commands" };
+  return { kind: editor.kind, id: editor.detail.id };
+}
+
+function selectionKeyEquals(left: Selection | null, right: Selection): boolean {
+  return left !== null && selectionTabKey(left) === selectionTabKey(right);
+}
+
+function editorTabLabel(editor: Exclude<EditorState, null>): string {
+  if (editor.kind === "new-handler") return "New handler";
+  if (editor.kind === "template") return editor.detail.path || "New template";
+  if (editor.kind === "commands") return "commands.json";
+  return editor.detail.id || `New ${editor.kind}`;
+}
+
+function editorTabSelection(editor: Exclude<EditorState, null>): Selection {
+  const selection = selectionForEditor(editor);
+  if (selection) return selection;
+  if (editor.kind === "commands") return { kind: "commands" };
+  if (editor.kind === "template") return { kind: "template", path: editor.detail.path };
+  if (editor.kind === "new-handler") return { kind: "handler", id: "" };
+  return { kind: editor.kind, id: editor.detail.id };
+}
+
+function editorCategory(editor: Exclude<EditorState, null>): string {
+  if (editor.kind === "new-handler") return "Handler";
+  if (editor.kind === "commands") return "Commands";
+  return editor.kind[0].toUpperCase() + editor.kind.slice(1);
+}
+
+function editorHeaderTitle(editor: Exclude<EditorState, null>): string {
+  if (editor.kind === "new-handler") return "New handler";
+  if (editor.kind === "commands") return "Commands";
+  if (editor.kind === "template") return editor.detail.path || "New template";
+  return editor.detail.id || `New ${editor.kind}`;
 }
 
 function renderEditor(
@@ -348,8 +512,8 @@ function renderEditor(
   select: (selection: Selection) => void,
 ) {
   if (!editor) return null;
-  if (editor.kind === "view") return <ViewEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
-  if (editor.kind === "template") return <TemplateEditor path={editor.detail.path} content={editor.detail.content} isNew={editor.isNew} onPathChange={(path) => { setEditor({ ...editor, detail: { ...editor.detail, path } }); setDirty(true); }} onContentChange={(content) => { setEditor({ ...editor, detail: { ...editor.detail, content } }); setDirty(true); }} />;
+  if (editor.kind === "view") return <ViewEditor value={editor.detail.payload} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onOpenTemplate={(path) => select({ kind: "template", path })} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
+  if (editor.kind === "template") return <TemplateEditor path={editor.detail.path} content={editor.detail.content} onContentChange={(content) => { setEditor({ ...editor, detail: { ...editor.detail, content } }); setDirty(true); }} />;
   if (editor.kind === "flow") return <FlowEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "commands") return <CommandsEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "schedule") return <ScheduleEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
@@ -375,18 +539,23 @@ function isNewEditor(editor: Exclude<EditorState, null>): boolean {
 }
 
 function canDelete(editor: Exclude<EditorState, null>): boolean {
-  return (editor.kind === "view" || editor.kind === "flow" || editor.kind === "schedule") && !editor.isNew;
+  return (editor.kind === "view" || editor.kind === "template" || editor.kind === "flow" || editor.kind === "schedule") && !editor.isNew;
 }
 
-function selectDiagnostic(issue: Diagnostic, select: (selection: Selection) => void) {
-  const source = issue.source_path?.replace(/\\/g, "/");
-  if (!source) return;
-  const file = source.split("/").at(-1)?.replace(/\.json$/, "");
-  if (source.startsWith("views/") && file) select({ kind: "view", id: file });
-  else if (source.startsWith("flows/") && file) select({ kind: "flow", id: file });
-  else if (source.startsWith("schedules/") && file) select({ kind: "schedule", id: file });
-  else if (source === "commands.json") select({ kind: "commands" });
-  else if (source === "handlers.json" && issue.entity_id) select({ kind: "handler", id: issue.entity_id });
+function isSaveableEditor(editor: Exclude<EditorState, null>): boolean {
+  return editor.kind !== "handler" && editor.kind !== "new-handler";
+}
+
+function draftForEditor(editor: EditorState): ExplorerDraft | null {
+  if (!editor) return null;
+  if (editor.kind === "new-handler") return { kind: "handler", label: "New handler" };
+  if (editor.kind === "commands" || editor.kind === "handler") return null;
+  if (!editor.isNew) return null;
+  if (editor.kind === "template") return { kind: "template", label: editor.detail.path || "New template" };
+  if (editor.kind === "view") return { kind: "view", label: editor.detail.payload.id || "New view" };
+  if (editor.kind === "flow") return { kind: "flow", label: editor.detail.payload.id || "New flow" };
+  if (editor.kind === "schedule") return { kind: "schedule", label: editor.detail.payload.id || "New schedule" };
+  return null;
 }
 
 export function emptyCommandsDetail(): CommandsDetail {

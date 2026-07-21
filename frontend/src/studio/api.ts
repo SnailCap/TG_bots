@@ -79,9 +79,11 @@ export interface StudioApiClient {
   getView(projectId: string, id: string): Promise<ViewDetail>;
   createView(projectId: string, id: string, payload: ViewSpec): Promise<ViewDetail>;
   saveView(projectId: string, id: string, payload: ViewSpec, revision: string): Promise<ViewDetail>;
+  renameView(projectId: string, id: string, name: string, revision: string): Promise<ViewDetail>;
   deleteView(projectId: string, id: string, revision: string): Promise<void>;
   getTemplate(projectId: string, path: string): Promise<TemplateDetail>;
   saveTemplate(projectId: string, path: string, content: string, revision?: string): Promise<TemplateDetail>;
+  deleteTemplate(projectId: string, path: string, revision: string): Promise<void>;
   getFlow(projectId: string, id: string): Promise<FlowDetail>;
   createFlow(projectId: string, id: string, payload: FlowSpec): Promise<FlowDetail>;
   saveFlow(projectId: string, id: string, payload: FlowSpec, revision: string): Promise<FlowDetail>;
@@ -135,6 +137,10 @@ export class StudioApi implements StudioApiClient {
     });
   }
 
+  renameView(projectId: string, id: string, name: string, revision: string): Promise<ViewDetail> {
+    return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}/rename`, { method: "POST", body: { id: name, revision } });
+  }
+
   deleteView(projectId: string, id: string, revision: string): Promise<void> {
     return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
   }
@@ -148,6 +154,10 @@ export class StudioApi implements StudioApiClient {
       method: "PUT",
       body: { content, revision },
     });
+  }
+
+  deleteTemplate(projectId: string, path: string, revision: string): Promise<void> {
+    return this.request(`/projects/${projectId}/templates/${this.resourcePath(path)}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
   }
 
   getFlow(projectId: string, id: string): Promise<FlowDetail> {

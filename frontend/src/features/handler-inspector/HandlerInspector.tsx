@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { HandlerDetail, HandlerKind, HandlerUsage } from "../../domain/project";
-import { HandlerStatusBadge } from "../handlers/HandlerControls";
+import { Select } from "../../shared/ui/Select";
 
 export function HandlerInspector({
   handler,
@@ -18,7 +18,6 @@ export function HandlerInspector({
   const canOpen = handler.status !== "missing_file" && Boolean(handler.source_file || handler.inspection?.source?.path);
   return (
     <section className="editor" aria-label="Handler inspector">
-      <header className="editor__header"><div><p className="eyebrow">Custom code</p><h2>{handler.id}</h2><small>{handler.source_file ?? handler.source_path}</small></div><HandlerStatusBadge handler={handler} /></header>
       <dl className="details">
         <dt>Kind</dt><dd>{handler.kind}</dd>
         <dt>Module</dt><dd><code>{handler.module}</code></dd>
@@ -44,11 +43,10 @@ export function NewHandlerEditor({ onCreate }: { onCreate(id: string, kind: Hand
   const [description, setDescription] = useState("");
   return (
     <section className="editor" aria-label="New handler editor">
-      <header className="editor__header"><div><p className="eyebrow">Custom code scaffold</p><h2>New handler</h2></div></header>
       <div className="form-grid">
         <label>Handler name<input value={id} onChange={(event) => setId(event.target.value)} placeholder="checkout.submit" /></label>
         <small className="muted">Use dot-separated words. Studio derives the binding and Python file path from this name.</small>
-        <label>Context kind<select value={kind} onChange={(event) => setKind(event.target.value as HandlerKind)}><option value="button">Button</option><option value="message">Message</option><option value="command">Command</option><option value="lifecycle">Lifecycle</option><option value="task">Task</option></select></label>
+        <label>Context kind<Select ariaLabel="Context kind" value={kind} options={[{ value: "button", label: "Button" }, { value: "message", label: "Message" }, { value: "command", label: "Command" }, { value: "lifecycle", label: "Lifecycle" }, { value: "task", label: "Task" }]} onChange={(next) => setKind(next as HandlerKind)} /></label>
         <label>Additional outcomes, comma-separated<input value={outcomes} onChange={(event) => setOutcomes(event.target.value)} placeholder="invalid, access_denied" /></label>
         <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
         <button type="button" disabled={!id.trim()} onClick={() => void onCreate(id.trim(), kind, outcomes.split(",").map((item) => item.trim()).filter(Boolean), description.trim() || undefined)}>Create handler and open code</button>

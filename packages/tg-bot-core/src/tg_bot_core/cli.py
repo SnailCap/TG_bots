@@ -17,7 +17,7 @@ def validate_command(root: Path) -> int:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m tg_bot_core")
     subcommands = parser.add_subparsers(dest="command", required=True)
-    validate_parser = subcommands.add_parser("validate", help="validate a schema v3 bot project")
+    validate_parser = subcommands.add_parser("validate", help="validate a bot project")
     validate_parser.add_argument("project", nargs="?", default=".")
     arguments = parser.parse_args(argv)
     if arguments.command == "validate":

@@ -56,7 +56,7 @@ describe("open-code security", () => {
 
     const notProject = path.join(parent, "not-project");
     await mkdir(notProject);
-    await expect(assertApprovedProjectRoot(notProject, new Set([parent]))).rejects.toThrow("not a schema v3 bot project");
+    await expect(assertApprovedProjectRoot(notProject, new Set([parent]))).rejects.toThrow("not a bot project");
   });
 });
 

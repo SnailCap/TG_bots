@@ -20,6 +20,9 @@
 14. Breaking project-format change требует явного решения о новой schema version. Не меняйте смысл существующего v3 JSON молча.
 15. Production starter должен pin-ить core на проверенный tag или immutable commit, а не на floating branch.
 16. Все обязательные schema directories должны переживать Git round trip. Не удаляйте starter placeholder `resources/schedules/.gitkeep`, пока loader требует существования пустого schedules directory.
+17. Visual Template Composer не является новым project format: сохраняйте только обычный Jinja-текст, а визуальную document model держите transient во frontend.
+18. Parser/serializer Template Composer должны сохранять исходные данные без потерь. Неизвестные или неподдерживаемые Jinja expressions нельзя удалять либо молча переписывать.
+19. Context fields добавляются через отдельный context catalog, а не hard-coded ветвления внутри editor-компонентов. Visual и Source mode всегда используют одну Jinja-строку как источник состояния.
 
 ## Карта ответственности
 

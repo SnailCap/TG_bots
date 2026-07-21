@@ -1,4 +1,4 @@
-"""Shared schema v3 project model used by both runtime and Studio."""
+"""Shared project model used by both runtime and Studio."""
 
 from .loader import ProjectLoadError, ProjectLoader
 from .inspection import HandlerSourceInspection, inspect_handler_source

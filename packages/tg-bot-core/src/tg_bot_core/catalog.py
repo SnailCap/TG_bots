@@ -25,7 +25,7 @@ class CallbackCodec:
 
     def decode(self, payload: str) -> str:
         if not payload.startswith(self._PREFIX):
-            raise CatalogError("Callback is not a schema v3 action.")
+            raise CatalogError("Callback is not a valid action.")
         action_id = payload.removeprefix(self._PREFIX)
         if not action_id:
             raise CatalogError("Callback action id is empty.")

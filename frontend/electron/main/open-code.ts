@@ -77,7 +77,7 @@ export async function assertApprovedProjectRoot(
   });
   if (!approved) throw new Error("Project root was not approved through the directory picker.");
   const manifest = await stat(path.join(canonicalRoot, "resources", "bot.json")).catch(() => null);
-  if (!manifest?.isFile()) throw new Error("Approved directory is not a schema v3 bot project.");
+  if (!manifest?.isFile()) throw new Error("Approved directory is not a bot project.");
 }
 
 export function buildIdeCommand(target: ResolvedCodeTarget, configuration: IdeConfiguration): IdeCommand {

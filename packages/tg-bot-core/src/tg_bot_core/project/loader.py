@@ -27,7 +27,7 @@ from .models import (
 
 
 class ProjectLoadError(RuntimeError):
-    """The on-disk project cannot be parsed as schema v3."""
+    """The on-disk project cannot be parsed."""
 
 
 class ProjectLoader:

@@ -19,7 +19,6 @@ export function CommandsEditor({
 }) {
   return (
     <section className="editor editor--wide" aria-label="Commands editor">
-      <header className="editor__header"><div><p className="eyebrow">Global routing</p><h2>Commands</h2><small>{sourcePath}</small></div></header>
       <div className="form-grid">
         {value.commands.map((command, index) => (
           <article className="resource-card" key={`${command.name}-${index}`}>

@@ -230,6 +230,13 @@ def test_preview_templates_manifest_and_path_containment(tmp_path: Path) -> None
     assert preview["text"] == saved["content"]
     assert preview["keyboard"][0][0]["id"] == "noop"
 
+    with pytest.raises(ResourceInUse):
+        service.delete_template(project_id, "home.txt", saved["revision"])
+
+    unused = service.save_template(project_id, "unused.txt", "", None)
+    service.delete_template(project_id, "unused.txt", unused["revision"])
+    assert {item["path"] for item in service.describe(project_id)["templates"]} == {"home.txt"}
+
     with pytest.raises(WorkspaceError):
         service.save_template(project_id, "../escape.txt", "no", None)
 
@@ -238,6 +245,20 @@ def test_preview_templates_manifest_and_path_containment(tmp_path: Path) -> None
     invalid["package"] = "other_package"
     with pytest.raises(WorkspaceError, match="Changing"):
         service.save_manifest(project_id, invalid, manifest["revision"])
+
+
+def test_renaming_a_view_updates_project_references(tmp_path: Path) -> None:
+    service = ProjectService()
+    workspace = service.create_starter(parent_path=str(tmp_path), name="Rename Bot")
+    project_id = workspace["project_id"]
+    home = service.get_view(project_id, "home")
+
+    renamed = service.rename_view(project_id, "home", "welcome", home["revision"])
+
+    assert renamed["id"] == "welcome"
+    assert service.get_manifest(project_id)["payload"]["entry_view"] == "welcome"
+    assert service.get_flow(project_id, "home")["payload"]["states"]["home"]["view"] == "welcome"
+    assert [item["id"] for item in service.describe(project_id)["views"]] == ["welcome"]
 
 
 def test_validation_uses_the_shared_project_load_code(tmp_path: Path) -> None:
