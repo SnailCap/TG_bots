@@ -15,7 +15,7 @@ export function ProjectExplorer({
 }) {
   return (
     <nav className="explorer" aria-label="Project resources">
-      <div className="explorer__project"><strong>{workspace.name}</strong><small>{workspace.project_root}</small><span>Schema v{workspace.schema_version}</span></div>
+      <div className="explorer__project"><p className="eyebrow">Current project</p><strong>{workspace.name}</strong><small title={workspace.project_root}>{workspace.project_root}</small><span>Schema v{workspace.schema_version}</span></div>
       <Section title="Views" onAdd={() => onAdd("view")}>
         {workspace.views.map((view) => <ResourceButton key={view.id} active={selection?.kind === "view" && selection.id === view.id} title={view.id} subtitle={view.source_path} onClick={() => onSelect({ kind: "view", id: view.id })} />)}
       </Section>
@@ -48,5 +48,5 @@ function Section({ title, onAdd, children }: { title: string; onAdd?: () => void
 }
 
 function ResourceButton({ active, title, subtitle, onClick }: { active: boolean; title: string; subtitle?: string; onClick(): void }) {
-  return <button type="button" className={active ? "explorer__item explorer__item--active" : "explorer__item"} onClick={onClick}>{title}{subtitle && <small>{subtitle}</small>}</button>;
+  return <button type="button" aria-current={active ? "page" : undefined} className={active ? "explorer__item explorer__item--active" : "explorer__item"} onClick={onClick}><strong>{title}</strong>{subtitle && <small>{subtitle}</small>}</button>;
 }

@@ -212,6 +212,8 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
     templates: workspace.templates.map((item) => item.path),
   }), [editor, workspace]);
 
+  const editorContext = editor ? describeEditor(editor) : "Choose a resource";
+
   const addResource = (kind: CreatableResource) => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     setSelection(null);
@@ -302,21 +304,35 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace }: { api: StudioA
 
   return (
     <main className="studio">
-      <header className="topbar"><div><strong>Telegram Bot Studio</strong><small>{workspace.resource_root}</small></div><BackendStatusCard apiBaseUrl={apiBaseUrl} /><div><button type="button" className="button--quiet" onClick={() => void refreshWorkspace().catch(report)}>Refresh</button><button type="button" onClick={() => void refreshValidation()}>Validate</button></div></header>
-      {error && <p className="global-error"><span>{error}</span>{conflict && <button type="button" onClick={reloadCurrent}>Reload from disk</button>}<button type="button" aria-label="Dismiss error" onClick={() => { setError(""); setConflict(false); }}>×</button></p>}
-      {notice && <p className="global-notice"><span>{notice}</span><button type="button" aria-label="Dismiss notice" onClick={() => setNotice("")}>×</button></p>}
+      <header className="topbar">
+        <div className="topbar__identity"><strong>Telegram Bot Studio</strong><span className="topbar__project">{workspace.name}</span><small title={workspace.resource_root}>{workspace.resource_root}</small></div>
+        <div className="topbar__status"><BackendStatusCard apiBaseUrl={apiBaseUrl} /><span className={dirty ? "save-state save-state--dirty" : "save-state"}>{dirty ? "Unsaved changes" : "All changes saved"}</span></div>
+        <div className="topbar__actions"><button type="button" className="button--secondary" onClick={() => void refreshWorkspace().catch(report)}>Refresh</button><button type="button" onClick={() => void refreshValidation()}>Validate project</button></div>
+      </header>
+      {error && <p className="alert alert--error" role="alert"><span>{error}</span>{conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>}<button type="button" className="button--icon" aria-label="Dismiss error" onClick={() => { setError(""); setConflict(false); }}>×</button></p>}
+      {notice && <p className="alert alert--notice" role="status"><span>{notice}</span><button type="button" className="button--icon" aria-label="Dismiss notice" onClick={() => setNotice("")}>×</button></p>}
       <div className="workspace">
         <ProjectExplorer workspace={workspace} selection={selection} onSelect={select} onAdd={addResource} />
         <section className="workspace__main" aria-busy={busy}>
+          <div className="context-bar" aria-label="Current editor context"><p className="eyebrow">{editor ? "Editing" : "Workspace"}</p><strong>{editorContext}</strong>{editor && <span>{editor.kind === "handler" ? "Custom code binding" : "Schema v3 resource"}</span>}</div>
+          {busy && <div className="loading-line" role="status"><span>Updating workspace…</span></div>}
           {renderEditor(editor, options, handlerActions, setEditor, setDirty, repairHandler, openHandler, findUsages, createAndOpenHandler, select)}
-          {editor && !["handler", "new-handler"].includes(editor.kind) && <footer className="editor__actions"><button type="button" disabled={busy || !canSave(editor)} onClick={() => void save()}>{isNewEditor(editor) ? "Create" : "Save"}</button>{canDelete(editor) && <button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete</button>}{dirty && <span className="dirty-indicator">Unsaved changes</span>}</footer>}
-          {editor?.kind === "handler" && <footer className="editor__actions"><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
-          {!editor && <div className="workspace__empty"><h2>Select a v3 resource</h2><p>Choose an item from the typed project explorer.</p></div>}
+          {editor && !["handler", "new-handler"].includes(editor.kind) && <footer className="editor__actions"><div><span className={dirty ? "dirty-indicator" : "muted"}>{dirty ? "Unsaved changes — save to write this resource to disk." : "No local changes"}</span></div><div className="editor__action-buttons"><button type="button" disabled={busy || !canSave(editor)} onClick={() => void save()}>{isNewEditor(editor) ? "Create resource" : "Save changes"}</button>{canDelete(editor) && <button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete resource</button>}</div></footer>}
+          {editor?.kind === "handler" && <footer className="editor__actions editor__actions--danger"><span>Deleting a binding can break the resources that use it.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
+          {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a v3 resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
         </section>
         <aside className="right-panel"><TelegramPreview preview={preview} /><ValidationPanel issues={issues} onRefresh={() => void refreshValidation()} onSelect={(issue) => selectDiagnostic(issue, select)} /></aside>
       </div>
     </main>
   );
+}
+
+function describeEditor(editor: Exclude<EditorState, null>): string {
+  if (editor.kind === "template") return editor.isNew ? "New template" : editor.detail.path;
+  if (editor.kind === "new-handler") return "New custom handler";
+  if (editor.kind === "commands") return "Commands and fallbacks";
+  if (editor.kind === "handler") return editor.detail.id;
+  return editor.isNew ? `New ${editor.kind}` : editor.detail.id;
 }
 
 function renderEditor(

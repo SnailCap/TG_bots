@@ -6,8 +6,8 @@ export function ValidationPanel({ issues, onRefresh, onSelect }: { issues: Diagn
   return (
     <section className="validation-panel" aria-label="Project validation">
       <header><div><p className="eyebrow">Project graph</p><h2>Validation</h2></div><button type="button" className="button--quiet" onClick={onRefresh}>Refresh</button></header>
-      <p className="validation-summary">{errors} errors · {warnings} warnings</p>
-      {issues.length === 0 && <p className="muted">No issues reported.</p>}
+      <p className="validation-summary" aria-live="polite">{errors} errors · {warnings} warnings</p>
+      {issues.length === 0 && <div className="panel-empty panel-empty--success"><strong>Project graph is valid</strong><p>No issues reported by the schema validator.</p></div>}
       {issues.map((issue, index) => (
         <button type="button" className={`diagnostic diagnostic--${issue.level}`} key={`${issue.code}-${issue.source_path}-${issue.field_path}-${index}`} onClick={() => onSelect(issue)}>
           <strong>{issue.message}</strong>

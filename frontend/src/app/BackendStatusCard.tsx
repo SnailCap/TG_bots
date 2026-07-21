@@ -14,5 +14,5 @@ export function BackendStatusCard({ apiBaseUrl }: { apiBaseUrl: string }) {
     return () => { cancelled = true; };
   }, [apiBaseUrl, attempt]);
   const label = status === "online" ? "Backend online" : status === "connecting" ? "Connecting to local backend…" : "Backend unavailable";
-  return <span className={`connection connection--${status}`}>{label}{status === "unavailable" && <button type="button" onClick={() => setAttempt((item) => item + 1)}>Retry</button>}</span>;
+  return <span className={`connection connection--${status}`} role="status" aria-live="polite"><span aria-hidden="true" className="connection__dot" />{label}{status === "unavailable" && <button type="button" className="button--link" onClick={() => setAttempt((item) => item + 1)}>Retry</button>}</span>;
 }

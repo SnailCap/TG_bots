@@ -151,7 +151,7 @@ describe("schema v3 Studio", () => {
     expect(screen.getByDisplayValue("checkout.submit")).toBeInTheDocument();
     expect(screen.getByText("Unsaved changes")).toBeInTheDocument();
     expect(await screen.findByText(/reference is still only in this draft/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(api.saveView).toHaveBeenCalled());
     await waitFor(() => expect(screen.queryByText(/reference is still only in this draft/)).not.toBeInTheDocument());
   });
@@ -233,7 +233,7 @@ describe("schema v3 Studio", () => {
     fireEvent.click(screen.getByRole("button", { name: /home views\/home.json/ }));
     const text = await screen.findByLabelText("Inline text");
     fireEvent.change(text, { target: { value: "Changed" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Changed outside Studio")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reload from disk" })).toBeInTheDocument();
   });
@@ -244,14 +244,14 @@ describe("schema v3 Studio", () => {
     fireEvent.click(screen.getByRole("button", { name: /home views\/home.json/ }));
 
     fireEvent.change(await screen.findByLabelText("Inline text"), { target: { value: "   " } });
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     expect(screen.getByText("Inline text cannot be empty.")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Inline text"), { target: { value: "Visible" } });
-    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
 
     fireEvent.change(screen.getByLabelText("Text source"), { target: { value: "template" } });
     fireEvent.change(screen.getByLabelText("Template"), { target: { value: "  " } });
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeDisabled();
     expect(screen.getByText("Template path is required.")).toBeInTheDocument();
   });
 
