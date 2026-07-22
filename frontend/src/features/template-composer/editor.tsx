@@ -351,14 +351,16 @@ function restoreCaretOffset(root: HTMLElement, target: number): void {
   };
   for (const child of Array.from(root.childNodes)) visit(child);
   if (restored) return;
-  const fallback = window.document.createTextNode("");
-  root.append(fallback);
-  setCaret(fallback, 0);
+  const emptyTextNode = root.querySelector<HTMLElement>("[data-template-node='text']");
+  if (emptyTextNode) setCaret(emptyTextNode, 0);
 }
 
 function setCaret(node: Node, offset: number): void {
   const range = window.document.createRange();
-  range.setStart(node, Math.min(offset, node.textContent?.length ?? 0));
+  const maximumOffset = node.nodeType === Node.TEXT_NODE
+    ? node.textContent?.length ?? 0
+    : node.childNodes.length;
+  range.setStart(node, Math.min(offset, maximumOffset));
   range.collapse(true);
   const selection = window.getSelection();
   selection?.removeAllRanges();

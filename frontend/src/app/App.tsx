@@ -6,6 +6,7 @@ import { StudioApi, type StudioApiClient } from "../studio/api";
 import { BackendStatusCard } from "./BackendStatusCard";
 
 export const LAST_PROJECT_STORAGE_KEY = "tg-bot-studio.dev.last-project";
+export const RECENT_PROJECTS_STORAGE_KEY = "tg-bot-studio.dev.recent-projects";
 
 function loadLastProjectPath(): string | null {
   if (!import.meta.env.DEV) return null;
@@ -25,6 +26,26 @@ function saveLastProjectPath(path: string): void {
   }
 }
 
+function loadRecentProjectPaths(): string[] {
+  try {
+    const value = window.localStorage.getItem(RECENT_PROJECTS_STORAGE_KEY);
+    const parsed: unknown = value ? JSON.parse(value) : [];
+    return Array.isArray(parsed) ? parsed.filter((path): path is string => typeof path === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveRecentProjectPath(path: string): string[] {
+  const recent = [path, ...loadRecentProjectPaths().filter((item) => item !== path)].slice(0, 6);
+  try {
+    window.localStorage.setItem(RECENT_PROJECTS_STORAGE_KEY, JSON.stringify(recent));
+  } catch {
+    // Recent project links are a development convenience and must not block Studio.
+  }
+  return recent;
+}
+
 export function defaultApiBaseUrl(): string {
   return import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
 }
@@ -38,6 +59,7 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
   const [packageName, setPackageName] = useState("my_bot");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [recentProjects, setRecentProjects] = useState(loadRecentProjectPaths);
   const autoOpenAttempted = useRef(false);
   const autoOpenCancelled = useRef(false);
 
@@ -47,6 +69,7 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
     try {
       const next = await operation();
       saveLastProjectPath(next.project_root);
+      setRecentProjects(saveRecentProjectPath(next.project_root));
       setWorkspace(next);
       setError("");
     } catch (caught) {
@@ -65,6 +88,7 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
       .then((next) => {
         if (autoOpenCancelled.current) return;
         saveLastProjectPath(next.project_root);
+        setRecentProjects(saveRecentProjectPath(next.project_root));
         setWorkspace(next);
       })
       .catch(() => {
@@ -77,7 +101,16 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
     if (value) setValue(value);
   };
 
-  if (workspace) return <StudioPage key={workspace.project_id} api={api} apiBaseUrl={apiBaseUrl} initialWorkspace={workspace} />;
+  const openProjectFromSwitcher = async (path: string) => {
+    if (!path) {
+      const selected = await window.studioDesktop?.selectDirectory();
+      if (selected) await load(() => api.open(selected));
+      return;
+    }
+    await load(() => api.open(path));
+  };
+
+  if (workspace) return <StudioPage key={workspace.project_id} api={api} apiBaseUrl={apiBaseUrl} initialWorkspace={workspace} recentProjects={recentProjects} onOpenProject={(path) => void openProjectFromSwitcher(path)} onNewProject={() => { autoOpenCancelled.current = true; setWorkspace(null); }} />;
   return (
     <main className="welcome" aria-busy={busy}>
       <section className="welcome__content">

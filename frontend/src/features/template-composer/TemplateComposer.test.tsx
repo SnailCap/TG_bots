@@ -64,6 +64,15 @@ describe("visual template composer", () => {
     expect(screen.queryByLabelText("Пользователь: Имя")).not.toBeInTheDocument();
   });
 
+  it("can delete the only token without mutating the React-managed editor DOM", () => {
+    render(<Harness initial="{{ user.first_name }}" />);
+    const token = screen.getByLabelText("Пользователь: Имя");
+    token.focus();
+    fireEvent.keyDown(token, { key: "Backspace" });
+    expect(screen.getByTestId("source-value")).toBeEmptyDOMElement();
+    expect(screen.getByRole("textbox", { name: "Visual template content" }).querySelector("[data-template-node='text']")).toBeInTheDocument();
+  });
+
   it("switches modes and reparses source changes into visual tokens", () => {
     render(<Harness initial="Hello" />);
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));

@@ -25,7 +25,9 @@ import { HandlerInspector, NewHandlerEditor } from "../../features/handler-inspe
 import { ScheduleEditor } from "../../features/schedule-editor/ScheduleEditor";
 import { TemplateEditor } from "../../features/template-editor/TemplateEditor";
 import { ViewEditor } from "../../features/view-editor/ViewEditor";
+import { MainMenu } from "../../shared/ui/MainMenu";
 import { ResourceEditorHeader } from "../../shared/ui/ResourceEditorHeader";
+import { ProjectSwitcher } from "../../shared/ui/ProjectSwitcher";
 import { type StudioApiClient, StudioApiError } from "../../studio/api";
 import { openCode } from "../../studio/desktop";
 import { ProjectExplorer, ResourceIcon, type CreatableResource, type ExplorerDraft } from "../../widgets/project-explorer/ProjectExplorer";
@@ -42,7 +44,7 @@ type EditorState =
 
 type EditorTab = { key: string; editor: Exclude<EditorState, null>; dirty: boolean };
 
-export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace }: { api: StudioApiClient; apiBaseUrl: string; initialWorkspace: Workspace }) {
+export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, recentProjects = [], onOpenProject = () => undefined, onNewProject = () => undefined }: { api: StudioApiClient; apiBaseUrl: string; initialWorkspace: Workspace; recentProjects?: readonly string[]; onOpenProject?(path: string): void; onNewProject?(): void }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
@@ -414,10 +416,31 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace }: {
     void loadSelection(selection).catch(report).finally(() => setBusy(false));
   };
 
+  const switchProject = (path: string) => {
+    if (dirty && !window.confirm("Discard unsaved changes and switch project?")) return;
+    onOpenProject(path);
+  };
+
+  const createProject = () => {
+    if (dirty && !window.confirm("Discard unsaved changes and create a new project?")) return;
+    onNewProject();
+  };
+
   return (
     <main className="studio">
       <header className="topbar">
-        <strong className="topbar__project" title={workspace.name}>{workspace.name}</strong>
+        <div className="topbar__leading">
+          <MainMenu
+            canSave={Boolean(editor && !busy && canSave(editor))}
+            canCloseTab={Boolean(activeTabKey)}
+            onOpenProject={() => switchProject("")}
+            onNewProject={createProject}
+            onSave={() => void save()}
+            onCloseTab={() => { if (activeTabKey) closeTab(activeTabKey); }}
+            onValidate={() => void validateProject()}
+          />
+          <ProjectSwitcher workspace={workspace} recentProjects={recentProjects} onOpenProject={switchProject} onNewProject={createProject} />
+        </div>
         <div className="topbar__actions"><button type="button" onClick={() => void validateProject()}>Validate</button></div>
       </header>
       {error && <p className="alert alert--error" role="alert"><span>{error}</span>{conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>}<button type="button" className="button--icon" aria-label="Dismiss error" onClick={() => { setError(""); setConflict(false); }}>×</button></p>}
@@ -429,7 +452,7 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace }: {
           {tabs.length > 0 && <nav className="editor-tabs" aria-label="Open resources" role="tablist">
             {tabs.map((tab) => <div key={tab.key} className={tab.key === activeTabKey ? "editor-tab editor-tab--active" : "editor-tab"} role="presentation">
               <button type="button" className="editor-tab__select" role="tab" aria-selected={tab.key === activeTabKey} onClick={() => activateTab(tab.key)}><ResourceIcon selection={editorTabSelection(tab.editor)} title={editorTabLabel(tab.editor)} /><span className="editor-tab__label">{editorTabLabel(tab.editor)}</span>{tab.dirty && <span className="editor-tab__dirty" aria-label="Unsaved changes" />}</button>
-              <button type="button" className="editor-tab__close" aria-label={`Close ${editorTabLabel(tab.editor)}`} title="Close tab" onClick={() => closeTab(tab.key)}>×</button>
+              <button type="button" className="editor-tab__close" aria-label={`Close ${editorTabLabel(tab.editor)}`} title="Close tab" onClick={() => closeTab(tab.key)}><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5 5 6 6m0-6-6 6" /></svg></button>
             </div>)}
           </nav>}
           <div key={editorMotionKey(editor)} className="workspace__content">

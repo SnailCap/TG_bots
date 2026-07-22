@@ -94,12 +94,12 @@ async function createWindow(): Promise<void> {
     height: 760,
     minWidth: 800,
     minHeight: 560,
-    backgroundColor: "#111827",
+    backgroundColor: "#24282e",
     title: "Telegram Bot Studio",
     titleBarStyle: "hidden",
     titleBarOverlay: {
-      color: "#272a30",
-      symbolColor: "#9eafc3",
+      color: "#00000000",
+      symbolColor: "#c3ccd6",
       height: 42,
     },
     webPreferences: {
