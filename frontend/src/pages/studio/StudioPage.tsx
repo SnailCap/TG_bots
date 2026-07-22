@@ -24,6 +24,9 @@ import { FlowEditor } from "../../features/flow-editor/FlowEditor";
 import { HandlerInspector, NewHandlerEditor } from "../../features/handler-inspector/HandlerInspector";
 import { ScheduleEditor } from "../../features/schedule-editor/ScheduleEditor";
 import { TemplateEditor } from "../../features/template-editor/TemplateEditor";
+import { createTelegramPreviewModel, type PreviewEditor } from "../../features/telegram-preview/preview-model";
+import { PreviewToolRail } from "../../features/telegram-preview/PreviewToolRail";
+import { TelegramPreview } from "../../features/telegram-preview/TelegramPreview";
 import { ViewEditor } from "../../features/view-editor/ViewEditor";
 import { MainMenu } from "../../shared/ui/MainMenu";
 import { ResourceEditorHeader } from "../../shared/ui/ResourceEditorHeader";
@@ -56,10 +59,30 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [explorerWidth, setExplorerWidth] = useState(262);
   const explorerWidthRef = useRef(explorerWidth);
   const workspaceRef = useRef<HTMLDivElement>(null);
   const nextNewTabId = useRef(1);
+
+  const maximumExplorerWidth = useCallback((workspaceWidth: number) => {
+    const previewWidth = previewOpen ? Math.min(340, Math.max(220, workspaceWidth * 0.27)) : 0;
+    return Math.max(180, workspaceWidth - previewWidth - 281);
+  }, [previewOpen]);
+
+  useEffect(() => {
+    const clampExplorerWidth = () => {
+      const workspaceElement = workspaceRef.current;
+      if (!workspaceElement) return;
+      const width = Math.min(maximumExplorerWidth(workspaceElement.clientWidth), explorerWidthRef.current);
+      if (width === explorerWidthRef.current) return;
+      explorerWidthRef.current = width;
+      setExplorerWidth(width);
+    };
+    clampExplorerWidth();
+    window.addEventListener("resize", clampExplorerWidth);
+    return () => window.removeEventListener("resize", clampExplorerWidth);
+  }, [maximumExplorerWidth]);
 
   const report = useCallback((caught: unknown) => {
     const message = caught instanceof Error ? caught.message : "Unexpected error";
@@ -87,7 +110,7 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
     if (!workspaceElement) return;
     const startX = event.clientX;
     const startWidth = explorerWidthRef.current;
-    const maximumWidth = Math.max(320, workspaceElement.clientWidth - 420);
+    const maximumWidth = maximumExplorerWidth(workspaceElement.clientWidth);
     document.body.classList.add("is-resizing");
 
     const onMove = (moveEvent: globalThis.PointerEvent) => {
@@ -103,17 +126,18 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onEnd, { once: true });
-  }, []);
+  }, [maximumExplorerWidth]);
 
   const resizeExplorerByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
     const direction = event.key === "ArrowLeft" ? -1 : 1;
-    const maximumWidth = Math.max(320, (workspaceRef.current?.clientWidth ?? 0) - 420);
+    const workspaceWidth = workspaceRef.current?.clientWidth ?? 0;
+    const maximumWidth = maximumExplorerWidth(workspaceWidth);
     const width = Math.min(maximumWidth, Math.max(180, explorerWidthRef.current + direction * 16));
     explorerWidthRef.current = width;
     setExplorerWidth(width);
-  }, []);
+  }, [maximumExplorerWidth]);
 
   const loadSelection = useCallback(async (next: Selection, tabKey?: string) => {
     let nextEditor: Exclude<EditorState, null>;
@@ -257,6 +281,7 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
   }), [editor, workspace]);
 
   const explorerDraft = useMemo(() => draftForEditor(editor), [editor]);
+  const previewModel = useMemo(() => createTelegramPreviewModel(workspace, previewEditor(editor)), [editor, workspace]);
 
   const addResource = (kind: CreatableResource) => {
     let nextEditor: Exclude<EditorState, null>;
@@ -445,7 +470,7 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
       </header>
       {error && <p className="alert alert--error" role="alert"><span>{error}</span>{conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>}<button type="button" className="button--icon" aria-label="Dismiss error" onClick={() => { setError(""); setConflict(false); }}>×</button></p>}
       {notice && <p className="alert alert--notice" role="status"><span>{notice}</span><button type="button" className="button--icon" aria-label="Dismiss notice" onClick={() => setNotice("")}>×</button></p>}
-      <div ref={workspaceRef} className="workspace" style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}>
+      <div ref={workspaceRef} className={previewOpen ? "workspace workspace--preview-open" : "workspace"} style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}>
         <ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onAdd={addResource} onDelete={removeFromExplorer} />
         <div className="workspace__resizer" role="separator" aria-label="Resize resource list" aria-orientation="vertical" tabIndex={0} onPointerDown={resizeExplorer} onKeyDown={resizeExplorerByKeyboard} />
         <section className="workspace__main" aria-busy={busy}>
@@ -462,6 +487,8 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
           {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
           </div>
         </section>
+        <TelegramPreview open={previewOpen} model={previewModel} onClose={() => setPreviewOpen(false)} />
+        <PreviewToolRail open={previewOpen} onToggle={() => setPreviewOpen((open) => !open)} />
       </div>
     </main>
   );
@@ -474,6 +501,16 @@ function editorMotionKey(editor: EditorState): string {
   if (editor.kind === "template") return `${editor.kind}:${editor.detail.path}`;
   if (editor.kind === "commands") return editor.kind;
   return `${editor.kind}:${editor.detail.id}`;
+}
+
+function previewEditor(editor: EditorState): PreviewEditor | null {
+  if (!editor || editor.kind === "new-handler") return editor;
+  if (editor.kind === "view") return { kind: "view", payload: editor.detail.payload };
+  if (editor.kind === "flow") return { kind: "flow", payload: editor.detail.payload };
+  if (editor.kind === "schedule") return { kind: "schedule", payload: editor.detail.payload };
+  if (editor.kind === "template") return { kind: "template", detail: editor.detail };
+  if (editor.kind === "commands") return { kind: "commands", payload: editor.detail.payload };
+  return { kind: "handler" };
 }
 
 function selectionTabKey(selection: Selection): string {

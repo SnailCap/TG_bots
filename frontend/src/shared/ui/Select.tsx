@@ -1,8 +1,9 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 export interface SelectOption {
   value: string;
   label: string;
+  icon?: ReactNode;
   disabled?: boolean;
 }
 
@@ -60,10 +61,10 @@ export function Select({ value, options, placeholder, disabled = false, clickOnl
 
   return <div ref={rootRef} className={open ? "select-control select-control--open" : "select-control"}>
     <button id={`${listId}-trigger`} type="button" className="select-control__trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onKeyDown}>
-      <span>{label}</span><span className="select-control__chevron" aria-hidden="true"><ChevronIcon /></span>
+      <span className="select-control__value">{selected?.icon && <span className="select-control__icon" aria-hidden="true">{selected.icon}</span>}<span>{label}</span></span><span className="select-control__chevron" aria-hidden="true"><ChevronIcon /></span>
     </button>
     {open && <div id={listId} className="select-control__menu" role="listbox" aria-labelledby={`${listId}-trigger`}>
-      {options.map((option) => <button key={option.value} type="button" role="option" aria-selected={option.value === value} disabled={option.disabled} className={option.value === value ? "select-control__option select-control__option--selected" : "select-control__option"} onClick={(event) => { event.preventDefault(); event.stopPropagation(); choose(option); }}>{option.label}</button>)}
+      {options.map((option) => <button key={option.value} type="button" role="option" aria-selected={option.value === value} disabled={option.disabled} className={option.value === value ? "select-control__option select-control__option--selected" : "select-control__option"} onClick={(event) => { event.preventDefault(); event.stopPropagation(); choose(option); }}><span className="select-control__option-content">{option.icon && <span className="select-control__icon" aria-hidden="true">{option.icon}</span>}<span>{option.label}</span></span></button>)}
     </div>}
   </div>;
 }
