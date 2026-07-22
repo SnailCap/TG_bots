@@ -11,7 +11,6 @@ export function MainMenu({
   onNewProject,
   onSave,
   onCloseTab,
-  onValidate,
 }: {
   canSave: boolean;
   canCloseTab: boolean;
@@ -19,7 +18,6 @@ export function MainMenu({
   onNewProject(): void;
   onSave(): void;
   onCloseTab(): void;
-  onValidate(): void;
 }) {
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<MenuSection>("File");
@@ -80,8 +78,7 @@ export function MainMenu({
               <MenuItem label="Save" shortcut="Ctrl+S" disabled={!canSave} onSelect={() => run(onSave)} />
             </>}
             {section === "View" && <MenuItem label="Close current tab" shortcut="Ctrl+W" disabled={!canCloseTab} onSelect={() => run(onCloseTab)} />}
-            {section === "Tools" && <MenuItem label="Validate project" onSelect={() => run(onValidate)} />}
-            {section !== "File" && section !== "View" && section !== "Tools" && <p className="main-menu__empty">No actions here yet.</p>}
+            {section !== "File" && section !== "View" && <p className="main-menu__empty">No actions here yet.</p>}
           </div>
         </div>
       )}

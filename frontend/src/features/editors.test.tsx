@@ -156,7 +156,7 @@ describe("flow action scopes", () => {
 describe("view button IDs", () => {
   it("generates stable view-namespaced IDs and advances past existing IDs", () => {
     const onChange = vi.fn();
-    const base: ViewSpec = { schema_version: 3, id: "home", text: { inline: "Home" }, keyboard: [[]] };
+    const base: ViewSpec = { schema_version: 3, id: "home", text: { inline: "Home" }, keyboard: [] };
     const props = {
       revision: "view-one",
       isNew: false,
@@ -165,7 +165,7 @@ describe("view button IDs", () => {
       onChange,
     };
     const { rerender } = render(<ViewEditor {...props} value={base} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add button" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add row" }));
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
       keyboard: [[expect.objectContaining({ id: "home.action_1" })]],
     }));
@@ -175,7 +175,7 @@ describe("view button IDs", () => {
       keyboard: [[{ id: "home.action_1", text: "Existing", action: { type: "noop" } }]],
     };
     rerender(<ViewEditor {...props} value={withExisting} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add button" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add button to row 1" }));
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
       keyboard: [[
         expect.objectContaining({ id: "home.action_1" }),
@@ -184,7 +184,7 @@ describe("view button IDs", () => {
     }));
 
     rerender(<ViewEditor {...props} value={{ ...base, id: "settings" }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Add button" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add row" }));
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({
       keyboard: [[expect.objectContaining({ id: "settings.action_1" })]],
     }));
@@ -192,6 +192,52 @@ describe("view button IDs", () => {
 });
 
 describe("template selection", () => {
+  it("creates a new template from the suggestion list", () => {
+    const onCreateTemplate = vi.fn();
+    render(<ViewEditor
+      value={{ schema_version: 3, id: "home", text: { template: "receipt.txt" }, keyboard: [] }}
+      revision="view-one"
+      isNew={false}
+      options={{ views: ["home"], flows: [], states: [], handlers: [], templates: [] }}
+      handlerActions={handlerActions()}
+      onChange={vi.fn()}
+      onCreateTemplate={onCreateTemplate}
+    />);
+
+    fireEvent.focus(screen.getByLabelText("Template"));
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Create template" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create template" }));
+    expect(onCreateTemplate).toHaveBeenCalledWith("receipt.txt");
+  });
+
+  it("shows recent templates on first focus, then filters after typing", () => {
+    window.localStorage.setItem("tg-bot-studio.recent-templates", JSON.stringify(["recent.txt"]));
+    const onChange = vi.fn();
+    const props = {
+      revision: "view-one",
+      isNew: false,
+      options: { views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "recent.txt", "receipt.txt"] },
+      handlerActions: handlerActions(),
+      onChange,
+    };
+    const { rerender } = render(<ViewEditor
+      value={{ schema_version: 3, id: "home", text: { template: "home.txt" }, keyboard: [] }}
+      {...props}
+    />);
+
+    const input = screen.getByLabelText("Template");
+    fireEvent.focus(input);
+    expect(screen.queryByRole("option", { name: "home.txt" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "recent.txt" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "receipt.txt" })).toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "receipt" } });
+    rerender(<ViewEditor {...props} value={{ schema_version: 3, id: "home", text: { template: "receipt" }, keyboard: [] }} />);
+    expect(screen.queryByRole("option", { name: "recent.txt" })).not.toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "receipt.txt" })).toBeInTheDocument();
+    window.localStorage.removeItem("tg-bot-studio.recent-templates");
+  });
+
   it("allows typing a template name or choosing one from the template picker", () => {
     const onChange = vi.fn();
     render(<ViewEditor

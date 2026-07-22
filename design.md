@@ -53,6 +53,7 @@ Telegram Bot Studio uses **Compact Graphite IDE Minimalism**: a dark, desktop-fi
 - **Dropdowns:** dark elevated surface, blue outline, and a short `160–200 ms` fade/scale entrance.
 - **Action editor:** uses a blue left rail with a faint ambient glow to mark declarative behaviour.
 - **Scrollbars:** thin, dark, and consistent with the interface; the thumb brightens only while used.
+- **Fullscreen overlays:** use the shared `OverlayDialog` primitive for temporary Studio work above the entire workspace. It owns the backdrop, Escape behaviour, focus trap and focus restoration; feature dialogs own only their content. See [project-settings.md](docs/studio/project-settings.md).
 
 ## Type, shape, and motion
 

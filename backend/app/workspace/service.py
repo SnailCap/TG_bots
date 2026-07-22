@@ -36,6 +36,8 @@ from .starter import StarterScaffolder
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 _RESOURCE_KINDS = {"views", "flows", "schedules"}
 _JINJA = Environment()
+_ENV_ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
+_TELEGRAM_TOKEN_MAX_LENGTH = 4096
 
 
 class ProjectService:
@@ -109,6 +111,62 @@ class ProjectService:
                 for path in sorted((workspace.resources / "templates").rglob("*.txt"))
             ],
         }
+
+    # Project runtime settings ---------------------------------------------------------
+
+    def get_project_settings(self, project_id: str) -> dict[str, Any]:
+        """Return project-local runtime setting metadata without exposing secrets."""
+
+        workspace = self.repository.workspace(project_id)
+        path = self.repository.safe_path(workspace.root, ".env")
+        content = self._read_environment(path) if path.exists() else ""
+        token = self._environment_value(content, "BOT_TOKEN")
+        return {
+            "telegram_bot_token_configured": bool(token),
+            "revision": content_revision(path.read_bytes()) if path.exists() else None,
+        }
+
+    def save_project_settings(
+        self,
+        project_id: str,
+        *,
+        telegram_bot_token: str | None,
+        clear_telegram_bot_token: bool,
+        revision: str | None,
+    ) -> dict[str, Any]:
+        if telegram_bot_token is not None and clear_telegram_bot_token:
+            raise WorkspaceError("Set a token or clear it, but not both in one request.")
+        if telegram_bot_token is None and not clear_telegram_bot_token:
+            raise WorkspaceError("Provide a Telegram bot token or choose to clear it.")
+
+        normalized_token = None
+        if telegram_bot_token is not None:
+            normalized_token = self._normalize_telegram_token(telegram_bot_token)
+
+        workspace = self.repository.workspace(project_id)
+        path = self.repository.safe_path(workspace.root, ".env")
+        with self.repository.lock(workspace):
+            if clear_telegram_bot_token and not path.exists():
+                return self.get_project_settings(project_id)
+            self.repository.assert_revision(path, revision, creating=not path.exists())
+            previous = self._read_environment(path) if path.exists() else ""
+            updated = self._replace_environment_value(
+                previous,
+                "BOT_TOKEN",
+                None if clear_telegram_bot_token else normalized_token,
+            )
+            environment_before = path.read_bytes() if path.exists() else None
+            gitignore = self.repository.safe_path(workspace.root, ".gitignore")
+            gitignore_before = gitignore.read_bytes() if gitignore.exists() else None
+            try:
+                self.repository.atomic_write(path, updated.encode("utf-8"))
+                if normalized_token is not None:
+                    self._ensure_environment_is_ignored(gitignore)
+            except BaseException:
+                self.repository.restore(path, environment_before)
+                self.repository.restore(gitignore, gitignore_before)
+                raise
+        return self.get_project_settings(project_id)
 
     # Manifest and aggregate resources -------------------------------------------------
 
@@ -350,6 +408,60 @@ class ProjectService:
                 ]
             )
         return {"text": text, "keyboard": keyboard, "warnings": warnings}
+
+    @staticmethod
+    def _read_environment(path: Path) -> str:
+        try:
+            return path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            raise WorkspaceError("Cannot read the project .env file as UTF-8.") from error
+
+    @staticmethod
+    def _environment_value(content: str, key: str) -> str | None:
+        value: str | None = None
+        for line in content.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            match = _ENV_ASSIGNMENT.match(line)
+            if match is None or match.group(1) != key:
+                continue
+            candidate = match.group(2).strip()
+            if len(candidate) >= 2 and candidate[0] == candidate[-1] and candidate[0] in {"'", '"'}:
+                candidate = candidate[1:-1]
+            value = candidate or None
+        return value
+
+    @staticmethod
+    def _replace_environment_value(content: str, key: str, value: str | None) -> str:
+        lines = [
+            line
+            for line in content.splitlines()
+            if (match := _ENV_ASSIGNMENT.match(line)) is None or match.group(1) != key
+        ]
+        if value is not None:
+            lines.append(f"{key}={value}")
+        return "\n".join(lines) + ("\n" if lines else "")
+
+    @staticmethod
+    def _ensure_environment_is_ignored(path: Path) -> None:
+        try:
+            content = path.read_text(encoding="utf-8") if path.exists() else ""
+        except (OSError, UnicodeError) as error:
+            raise WorkspaceError("Cannot read the project .gitignore file as UTF-8.") from error
+        entries = {line.strip() for line in content.splitlines() if line.strip() and not line.lstrip().startswith("#")}
+        if {".env", "/.env", "*.env"} & entries:
+            return
+        suffix = "" if not content or content.endswith("\n") else "\n"
+        WorkspaceRepository.atomic_write(path, f"{content}{suffix}.env\n".encode("utf-8"))
+
+    @staticmethod
+    def _normalize_telegram_token(value: str) -> str:
+        if value != value.strip() or not value:
+            raise WorkspaceError("Telegram bot token cannot be empty or contain leading/trailing whitespace.")
+        if len(value) > _TELEGRAM_TOKEN_MAX_LENGTH or any(character.isspace() for character in value):
+            raise WorkspaceError("Telegram bot token must be a single non-whitespace value.")
+        return value
 
     # Handlers ------------------------------------------------------------------------
 

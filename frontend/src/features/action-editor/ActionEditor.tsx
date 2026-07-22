@@ -11,26 +11,36 @@ import {
   type OutcomeRoutes,
 } from "../../domain/project";
 import { HandlerControls } from "../handlers/HandlerControls";
+import { ResourceDropTarget, type ResourceDropTargetSpec } from "../resource-dnd";
 import { Select } from "../../shared/ui/Select";
 
 const ACTION_LABELS: Array<{ value: ActionSpec["type"]; label: string }> = [
   { value: "noop", label: "No action" },
-  { value: "view.render", label: "Render view" },
+  { value: "view.render", label: "Go to view" },
   { value: "flow.start", label: "Start flow" },
   { value: "flow.cancel", label: "Cancel flow" },
   { value: "flow.event", label: "Emit flow event" },
   { value: "flow.goto", label: "Go to state" },
   { value: "flow.finish", label: "Finish flow" },
-  { value: "handler.invoke", label: "Custom handler" },
   { value: "task.enqueue", label: "Enqueue task" },
+  { value: "handler.invoke", label: "Custom handler" },
+];
+
+export const VIEW_BUTTON_ACTION_TYPES: ActionSpec["type"][] = [
+  "view.render",
+  "flow.start",
+  "task.enqueue",
+  "handler.invoke",
 ];
 
 export interface ActionScope {
   expectedKind: Exclude<HandlerKind, "task">;
   currentFlow?: string;
+  placement?: "view_button";
 }
 
 export function allowedActions(scope: ActionScope): ActionSpec["type"][] {
+  if (scope.placement === "view_button") return VIEW_BUTTON_ACTION_TYPES;
   return ACTION_LABELS
     .map((item) => item.value)
     .filter((type) => type !== "flow.event" || scope.expectedKind === "button")
@@ -78,6 +88,7 @@ export function ActionEditor({
   scope,
   handlerActions,
   compact = false,
+  hideActionLabel = false,
   createOptions,
 }: {
   action: ActionSpec;
@@ -86,6 +97,7 @@ export function ActionEditor({
   scope: ActionScope;
   handlerActions: HandlerActions;
   compact?: boolean;
+  hideActionLabel?: boolean;
   createOptions?: HandlerCreateOptions;
 }) {
   const listId = useId().replace(/:/g, "");
@@ -107,11 +119,16 @@ export function ActionEditor({
         : action.type === "task.enqueue"
           ? options.handlers.filter((handler) => handler.kind === "task").map((handler) => handler.id)
           : [];
+  const resourceTarget: ResourceDropTargetSpec | null = action.type === "view.render"
+    ? { type: "view-reference" }
+    : action.type === "flow.start"
+      ? { type: "flow-reference" }
+      : null;
 
   return (
     <div className={compact ? "action-editor action-editor--compact" : "action-editor"}>
       <label>
-        Action
+        {!hideActionLabel && "Action"}
         <Select ariaLabel="Action" value={currentActionAllowed ? action.type : ""} placeholder="Choose a valid action" options={ACTION_LABELS.filter((item) => allowed.includes(item.value))} onChange={(value) => onChange(actionFor(value as ActionSpec["type"]))} />
         {!currentActionAllowed && <small className="error">{action.type} is not valid in this slot.</small>}
       </label>
@@ -119,11 +136,19 @@ export function ActionEditor({
       {(action.type === "view.render" || action.type === "flow.start" || action.type === "flow.goto" || action.type === "flow.event") && (
         <label>
           {action.type === "view.render" ? "View" : action.type === "flow.start" ? "Flow" : action.type === "flow.goto" ? "State" : "Event"}
-          <input
-            list={targetOptions.length ? `${listId}-targets` : undefined}
-            value={action.target}
-            onChange={(event) => onChange({ ...action, target: event.target.value })}
-          />
+          {resourceTarget
+            ? <ResourceDropTarget target={resourceTarget} label={`Drop ${resourceTarget.type === "view-reference" ? "view" : "flow"} here`} onDrop={(resource) => onChange({ ...action, target: resource.value })}>
+                <input
+                  list={targetOptions.length ? `${listId}-targets` : undefined}
+                  value={action.target}
+                  onChange={(event) => onChange({ ...action, target: event.target.value })}
+                />
+              </ResourceDropTarget>
+            : <input
+                list={targetOptions.length ? `${listId}-targets` : undefined}
+                value={action.target}
+                onChange={(event) => onChange({ ...action, target: event.target.value })}
+              />}
           {targetOptions.length > 0 && <datalist id={`${listId}-targets`}>{targetOptions.map((item) => <option key={item} value={item} />)}</datalist>}
         </label>
       )}
@@ -131,7 +156,9 @@ export function ActionEditor({
       {(action.type === "flow.cancel" || action.type === "flow.finish") && (
         <label>
           Final view (optional)
-          <input list={`${listId}-views`} value={action.view ?? ""} onChange={(event) => onChange({ ...action, view: event.target.value || undefined })} />
+          <ResourceDropTarget target={{ type: "view-reference" }} label="Drop view here" onDrop={(resource) => onChange({ ...action, view: resource.value })}>
+            <input list={`${listId}-views`} value={action.view ?? ""} onChange={(event) => onChange({ ...action, view: event.target.value || undefined })} />
+          </ResourceDropTarget>
           <datalist id={`${listId}-views`}>{options.views.map((item) => <option key={item} value={item} />)}</datalist>
         </label>
       )}
@@ -140,7 +167,9 @@ export function ActionEditor({
         <>
           <label>
             Handler name
-            <input list={`${listId}-handlers`} value={action.handler} onChange={(event) => onChange({ ...action, handler: event.target.value })} />
+            <ResourceDropTarget target={{ type: "handler-reference", handlerKind: scope.expectedKind }} label={`Drop ${scope.expectedKind} handler here`} onDrop={(resource) => onChange({ ...action, handler: resource.value })}>
+              <input list={`${listId}-handlers`} value={action.handler} onChange={(event) => onChange({ ...action, handler: event.target.value })} />
+            </ResourceDropTarget>
             <datalist id={`${listId}-handlers`}>{compatibleHandlers.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
           </label>
           <small className="muted">Studio uses this stable name for the binding and Python file.</small>
@@ -170,7 +199,9 @@ export function ActionEditor({
         <>
           <label>
             Task handler
-            <input list={`${listId}-tasks`} value={action.target} onChange={(event) => onChange({ ...action, target: event.target.value })} />
+            <ResourceDropTarget target={{ type: "handler-reference", handlerKind: "task" }} label="Drop task handler here" onDrop={(resource) => onChange({ ...action, target: resource.value })}>
+              <input list={`${listId}-tasks`} value={action.target} onChange={(event) => onChange({ ...action, target: event.target.value })} />
+            </ResourceDropTarget>
             <datalist id={`${listId}-tasks`}>{targetOptions.map((item) => <option key={item} value={item} />)}</datalist>
           </label>
           <label>
@@ -179,7 +210,9 @@ export function ActionEditor({
           </label>
           <label>
             View after enqueue (optional)
-            <input list={`${listId}-views`} value={action.view ?? ""} onChange={(event) => onChange({ ...action, view: event.target.value || undefined })} />
+            <ResourceDropTarget target={{ type: "view-reference" }} label="Drop view here" onDrop={(resource) => onChange({ ...action, view: resource.value })}>
+              <input list={`${listId}-views`} value={action.view ?? ""} onChange={(event) => onChange({ ...action, view: event.target.value || undefined })} />
+            </ResourceDropTarget>
             <datalist id={`${listId}-views`}>{options.views.map((item) => <option key={item} value={item} />)}</datalist>
           </label>
           <JsonObjectEditor label="Task payload" value={action.payload ?? {}} onChange={(payload) => onChange({ ...action, payload })} />

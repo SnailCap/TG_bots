@@ -10,6 +10,7 @@ import type {
 } from "../../domain/project";
 import { HandlerControls } from "../handlers/HandlerControls";
 import { OutcomeEditor, type ActionScope, type HandlerActions } from "../action-editor/ActionEditor";
+import { ResourceDropTarget } from "../resource-dnd";
 import { Select } from "../../shared/ui/Select";
 
 const LIFECYCLE_HOOKS: Array<keyof FlowLifecycle> = ["on_start", "on_complete", "on_cancel", "on_error"];
@@ -123,7 +124,9 @@ function StateEditor({
       <header><div><strong>{stateId}</strong><small>{flowId}.{stateId}</small></div>{removable && <button type="button" className="button--danger" onClick={onRemove}>Remove state</button>}</header>
       <label>
         Default view
-        <Select ariaLabel="Default view" value={state.view} options={[{ value: "", label: "Select a view" }, ...options.views.map((viewId) => ({ value: viewId, label: viewId }))]} onChange={(view) => onChange({ ...state, view })} />
+        <ResourceDropTarget target={{ type: "view-reference" }} label="Drop view here" onDrop={(resource) => onChange({ ...state, view: resource.value })}>
+          <Select ariaLabel="Default view" value={state.view} options={[{ value: "", label: "Select a view" }, ...options.views.map((viewId) => ({ value: viewId, label: viewId }))]} onChange={(view) => onChange({ ...state, view })} />
+        </ResourceDropTarget>
       </label>
       <InvocationSlot title="on_enter" invocation={state.on_enter} scope={{ expectedKind: "lifecycle", currentFlow: flowId }} options={options} handlerActions={handlerActions} createOptions={targetRevision ? { attachment: { type: "state_on_enter", flow_id: flowId, state_id: stateId }, target_revision: targetRevision } : undefined} onChange={(on_enter) => onChange({ ...state, on_enter })} />
       <InvocationSlot title="on_message" invocation={state.on_message} scope={{ expectedKind: "message", currentFlow: flowId }} options={options} handlerActions={handlerActions} createOptions={targetRevision ? { attachment: { type: "state_on_message", flow_id: flowId, state_id: stateId }, target_revision: targetRevision } : undefined} onChange={(on_message) => onChange({ ...state, on_message })} />
@@ -179,11 +182,13 @@ function InvocationSlot({
   return (
     <section className="invocation-slot">
       {!invocation
-        ? <button
-          type="button"
-          className="button--quiet"
-          onClick={() => onChange({ handler: "", outcomes: { success: { type: "noop" } } })}
-        >Add {title} handler</button>
+        ? <ResourceDropTarget target={{ type: "handler-reference", handlerKind: scope.expectedKind }} label={`Drop ${scope.expectedKind} handler here`} onDrop={(resource) => onChange({ handler: resource.value, outcomes: { success: { type: "noop" } } })}>
+            <button
+              type="button"
+              className="button--quiet"
+              onClick={() => onChange({ handler: "", outcomes: { success: { type: "noop" } } })}
+            >Add {title} handler</button>
+          </ResourceDropTarget>
         : <>
           <InvocationEditor title={title} invocation={invocation} scope={scope} options={options} handlerActions={handlerActions} createOptions={createOptions} onChange={onChange} />
           <button type="button" className="button--quiet" onClick={() => onChange(undefined)}>Detach {title}</button>
@@ -217,7 +222,9 @@ function InvocationEditor({
       <h4>{title}</h4>
       <label>
         Handler name
-        <input list={`${datalist}-handlers`} value={invocation.handler} onChange={(event) => onChange({ ...invocation, handler: event.target.value })} />
+        <ResourceDropTarget target={{ type: "handler-reference", handlerKind: scope.expectedKind }} label={`Drop ${scope.expectedKind} handler here`} onDrop={(resource) => onChange({ ...invocation, handler: resource.value })}>
+          <input list={`${datalist}-handlers`} value={invocation.handler} onChange={(event) => onChange({ ...invocation, handler: event.target.value })} />
+        </ResourceDropTarget>
         <datalist id={`${datalist}-handlers`}>{compatible.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
       </label>
       <small className="muted">Stable name for this handler's binding and generated Python file.</small>

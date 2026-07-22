@@ -71,7 +71,7 @@ app = BotApp(
 app.run()
 ```
 
-`BotConfig.from_env()` читает `BOT_TOKEN`, а SQLite по умолчанию размещает в `<project>/data/runtime.sqlite3`. Число in-process job workers и предел автоматических переходов задаются аргументами `worker_count` и `max_auto_transitions`. Если передан custom `BotTransport`, token не обязателен.
+`BotConfig.from_env()` сначала читает `BOT_TOKEN` из окружения, а при его отсутствии — из локального `<project>/.env`; SQLite по умолчанию размещается в `<project>/data/runtime.sqlite3`. Число in-process job workers и предел автоматических переходов задаются аргументами `worker_count` и `max_auto_transitions`. Если передан custom `BotTransport`, token не обязателен.
 
 ## Explicit handler binding
 

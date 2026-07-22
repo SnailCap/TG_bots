@@ -46,6 +46,23 @@ describe("StudioApi", () => {
     expect(result).toMatchObject({ created: true, source: { projectRoot: "C:/demo", line: 4 } });
   });
 
+  it("reads and saves redacted project settings with a revision", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ telegram_bot_token_configured: true, revision: "settings-two" }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new StudioApi("http://studio.test");
+
+    await api.saveProjectSettings("project-1", { telegram_bot_token: "123456:token", revision: "settings-one" });
+
+    expect(fetchMock).toHaveBeenCalledWith("http://studio.test/api/v1/projects/project-1/settings", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({ telegram_bot_token: "123456:token", revision: "settings-one" }),
+    }));
+  });
+
   it("preserves backend error codes", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 409, json: async () => ({ detail: { code: "revision_conflict", message: "Changed" } }) }));
     const api = new StudioApi("http://studio.test");

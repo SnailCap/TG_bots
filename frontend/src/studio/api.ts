@@ -60,6 +60,17 @@ interface ErrorEnvelope {
   message?: string;
 }
 
+export interface ProjectSettings {
+  telegram_bot_token_configured: boolean;
+  revision: string | null;
+}
+
+export interface ProjectSettingsUpdate {
+  telegram_bot_token?: string;
+  clear_telegram_bot_token?: boolean;
+  revision: string | null;
+}
+
 export class StudioApiError extends Error {
   constructor(
     readonly status: number,
@@ -76,6 +87,8 @@ export interface StudioApiClient {
   open(rootPath: string): Promise<Workspace>;
   create(parentPath: string, name: string, packageName?: string): Promise<Workspace>;
   describe(projectId: string): Promise<Workspace>;
+  getProjectSettings(projectId: string): Promise<ProjectSettings>;
+  saveProjectSettings(projectId: string, payload: ProjectSettingsUpdate): Promise<ProjectSettings>;
   getView(projectId: string, id: string): Promise<ViewDetail>;
   createView(projectId: string, id: string, payload: ViewSpec): Promise<ViewDetail>;
   saveView(projectId: string, id: string, payload: ViewSpec, revision: string): Promise<ViewDetail>;
@@ -120,6 +133,14 @@ export class StudioApi implements StudioApiClient {
 
   describe(projectId: string): Promise<Workspace> {
     return this.workspace(`/projects/${projectId}`);
+  }
+
+  getProjectSettings(projectId: string): Promise<ProjectSettings> {
+    return this.request(`/projects/${projectId}/settings`);
+  }
+
+  saveProjectSettings(projectId: string, payload: ProjectSettingsUpdate): Promise<ProjectSettings> {
+    return this.request(`/projects/${projectId}/settings`, { method: "PUT", body: payload });
   }
 
   getView(projectId: string, id: string): Promise<ViewDetail> {

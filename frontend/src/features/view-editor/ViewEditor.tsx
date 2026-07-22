@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 
-import type { ActionOptions, ButtonSpec, TextSpec, ViewSpec } from "../../domain/project";
-import { actionFor } from "../../domain/project";
-import { ActionEditor, type HandlerActions } from "../action-editor/ActionEditor";
+import type { ActionOptions, TextSpec, ViewSpec } from "../../domain/project";
+import { type HandlerActions } from "../action-editor/ActionEditor";
+import { KeyboardComposer } from "../keyboard-composer/KeyboardComposer";
+import { ResourceDropTarget } from "../resource-dnd";
+import { OverlayDialog } from "../../shared/ui/OverlayDialog";
 import { Select } from "../../shared/ui/Select";
 
 export function ViewEditor({
@@ -13,6 +15,7 @@ export function ViewEditor({
   handlerActions,
   onChange,
   onOpenTemplate,
+  onCreateTemplate,
 }: {
   value: ViewSpec;
   isNew: boolean;
@@ -21,17 +24,9 @@ export function ViewEditor({
   handlerActions: HandlerActions;
   onChange(value: ViewSpec): void;
   onOpenTemplate?(path: string): void;
+  onCreateTemplate?(suggestedPath: string): void;
 }) {
   const [accessMockup, setAccessMockup] = useState("everyone");
-  const updateButton = (rowIndex: number, buttonIndex: number, button: ButtonSpec) => {
-    onChange({
-      ...value,
-      keyboard: value.keyboard.map((row, currentRow) => currentRow === rowIndex
-        ? row.map((item, currentButton) => currentButton === buttonIndex ? button : item)
-        : row),
-    });
-  };
-  const existingIds = value.keyboard.flat().map((button) => button.id);
   return (
     <section className="editor" aria-label="View editor">
       <div className="form-grid form-grid--view-settings">
@@ -56,53 +51,19 @@ export function ViewEditor({
         </div>
         <div className="text-source-field editor-field">
           <span>Content:</span>
-          <TextSourceControl text={value.text} templates={options.templates ?? []} onChange={(text) => onChange({ ...value, text })} onOpenTemplate={onOpenTemplate} />
+          <TextSourceControl text={value.text} templates={options.templates ?? []} onChange={(text) => onChange({ ...value, text })} onOpenTemplate={onOpenTemplate} onCreateTemplate={onCreateTemplate} />
         </div>
-        <fieldset className="keyboard-editor">
-          <legend>Inline keyboard</legend>
-          {value.keyboard.map((row, rowIndex) => (
-            <div className="keyboard-row" key={rowIndex}>
-              {row.map((button, buttonIndex) => (
-                <section className="button-card" key={button.id || buttonIndex}>
-                  <header><strong>Button {rowIndex + 1}.{buttonIndex + 1}</strong></header>
-                  <label>
-                    Stable action ID
-                    <input value={button.id} onChange={(event) => updateButton(rowIndex, buttonIndex, { ...button, id: event.target.value })} />
-                  </label>
-                  <label>
-                    Text
-                    <input value={button.text} onChange={(event) => updateButton(rowIndex, buttonIndex, { ...button, text: event.target.value })} />
-                  </label>
-                  <ActionEditor
-                    action={button.action}
-                    onChange={(action) => updateButton(rowIndex, buttonIndex, { ...button, action })}
-                    options={options}
-                    scope={{ expectedKind: "button" }}
-                    handlerActions={handlerActions}
-                    createOptions={isNew ? undefined : {
-                      attachment: { type: "view_button", view_id: value.id, button_id: button.id },
-                      target_revision: revision,
-                    }}
-                  />
-                  <button type="button" className="button--quiet" onClick={() => onChange({
-                    ...value,
-                    keyboard: value.keyboard.map((item, current) => current === rowIndex ? item.filter((_, index) => index !== buttonIndex) : item),
-                  })}>Remove button</button>
-                </section>
-              ))}
-              <div className="button-row">
-                <button type="button" className="button--quiet" onClick={() => onChange({
-                  ...value,
-                  keyboard: value.keyboard.map((item, current) => current === rowIndex
-                    ? [...item, { id: nextButtonId(value.id, existingIds), text: "Button", action: actionFor("noop") }]
-                    : item),
-                })}>Add button</button>
-                <button type="button" className="button--quiet" onClick={() => onChange({ ...value, keyboard: value.keyboard.filter((_, index) => index !== rowIndex) })}>Remove row</button>
-              </div>
-            </div>
-          ))}
-          <button type="button" className="button--quiet" onClick={() => onChange({ ...value, keyboard: [...value.keyboard, []] })}>Add row</button>
-        </fieldset>
+        <KeyboardComposer
+          viewId={value.id}
+          keyboard={value.keyboard}
+          options={options}
+          handlerActions={handlerActions}
+          createOptions={isNew ? undefined : {
+            attachment: { type: "view_button", view_id: value.id, button_id: "" },
+            target_revision: revision,
+          }}
+          onChange={(keyboard) => onChange({ ...value, keyboard })}
+        />
       </div>
     </section>
   );
@@ -117,22 +78,25 @@ function AccessIcon({ kind }: { kind: "everyone" | "members" | "admins" }) {
   return <svg viewBox="0 0 16 16" focusable="false">{paths[kind]}</svg>;
 }
 
-function TextSourceControl({ text, templates, onChange, onOpenTemplate }: { text: TextSpec; templates: string[]; onChange(text: TextSpec): void; onOpenTemplate?: (path: string) => void }) {
+function TextSourceControl({ text, templates, onChange, onOpenTemplate, onCreateTemplate }: { text: TextSpec; templates: string[]; onChange(text: TextSpec): void; onOpenTemplate?: (path: string) => void; onCreateTemplate?(suggestedPath: string): void }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(-1);
   const [showAllSuggestions, setShowAllSuggestions] = useState(false);
+  const [hasTypedSinceFocus, setHasTypedSinceFocus] = useState(false);
   const [recentTemplates, setRecentTemplates] = useState<string[]>(readRecentTemplates);
   const isTemplate = "template" in text;
   const templateValue = isTemplate ? text.template ?? "" : "";
   const canOpenTemplate = templates.includes(templateValue.trim());
   const visibleTemplates = templates.filter((template) => template.toLowerCase().includes(filter.trim().toLowerCase()));
-  const query = templateValue.trim().toLowerCase();
+  const normalizedTemplateValue = templateValue.trim().toLowerCase();
+  const query = hasTypedSinceFocus ? templateValue.trim().toLowerCase() : "";
   const availableRecentTemplates = recentTemplates.filter((template) => templates.includes(template));
   const orderedTemplates = query
     ? templates.filter((template) => template.toLowerCase().includes(query) && template.toLowerCase() !== query)
-    : [...availableRecentTemplates, ...templates.filter((template) => !availableRecentTemplates.includes(template))];
+    : [...availableRecentTemplates, ...templates.filter((template) => !availableRecentTemplates.includes(template))]
+      .filter((template) => template.toLowerCase() !== normalizedTemplateValue);
   const templateSuggestions = showAllSuggestions ? orderedTemplates : orderedTemplates.slice(0, 5);
   const hasMoreSuggestions = templateSuggestions.length < orderedTemplates.length;
   const chooseTemplateSuggestion = (template: string) => {
@@ -143,17 +107,10 @@ function TextSourceControl({ text, templates, onChange, onOpenTemplate }: { text
     setSuggestionsOpen(false);
   };
 
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setPickerOpen(false); };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [pickerOpen]);
-
   return <div className="text-source">
     <Select clickOnly ariaLabel="Text source" value={isTemplate ? "template" : "inline"} options={[{ value: "inline", label: "Text" }, { value: "template", label: "Template" }]} onChange={(mode) => onChange(mode === "template" ? { template: "" } : { inline: "" })} />
     {isTemplate
-      ? <div className="text-source__template">
+      ? <ResourceDropTarget target={{ type: "template-reference" }} label="Drop template here" className="text-source__template" onDrop={(resource) => chooseTemplateSuggestion(resource.value)}>
           <input
             aria-label="Template"
             aria-autocomplete="list"
@@ -162,8 +119,8 @@ function TextSourceControl({ text, templates, onChange, onOpenTemplate }: { text
             aria-activedescendant={activeSuggestionIndex >= 0 ? `template-suggestion-${activeSuggestionIndex}` : undefined}
             value={templateValue}
             placeholder="Template name"
-            onFocus={() => { setShowAllSuggestions(false); setSuggestionsOpen(true); }}
-            onBlur={() => { setActiveSuggestionIndex(-1); setShowAllSuggestions(false); setSuggestionsOpen(false); }}
+            onFocus={() => { setHasTypedSinceFocus(false); setShowAllSuggestions(false); setSuggestionsOpen(true); }}
+            onBlur={() => { setHasTypedSinceFocus(false); setActiveSuggestionIndex(-1); setShowAllSuggestions(false); setSuggestionsOpen(false); }}
             onKeyDown={(event) => {
               if (event.key === "Escape") { setActiveSuggestionIndex(-1); setSuggestionsOpen(false); return; }
               if (!templateSuggestions.length || (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter")) return;
@@ -180,25 +137,24 @@ function TextSourceControl({ text, templates, onChange, onOpenTemplate }: { text
                   : (current + templateSuggestions.length - 1) % templateSuggestions.length);
               }
             }}
-            onChange={(event) => { onChange({ template: event.target.value }); setActiveSuggestionIndex(-1); setShowAllSuggestions(false); setSuggestionsOpen(true); }}
+            onChange={(event) => { onChange({ template: event.target.value }); setHasTypedSinceFocus(true); setActiveSuggestionIndex(-1); setShowAllSuggestions(false); setSuggestionsOpen(true); }}
           />
-          {suggestionsOpen && templateSuggestions.length > 0 && <div id="template-suggestions" className="template-suggestions" role="listbox" aria-label="Template suggestions">
+          {suggestionsOpen && <div id="template-suggestions" className="template-suggestions" role="listbox" aria-label="Template suggestions">
             {templateSuggestions.map((template, index) => <button id={`template-suggestion-${index}`} key={template} type="button" role="option" aria-selected={index === activeSuggestionIndex} className={index === activeSuggestionIndex ? "template-suggestions__item template-suggestions__item--active" : "template-suggestions__item"} onMouseDown={(event) => { event.preventDefault(); chooseTemplateSuggestion(template); }}>{template}</button>)}
             {hasMoreSuggestions && <button type="button" className="template-suggestions__more" aria-label="Show more templates" onMouseDown={(event) => event.preventDefault()} onClick={() => { setActiveSuggestionIndex(-1); setShowAllSuggestions(true); }}><ChevronDownIcon /></button>}
+            <button type="button" className="template-suggestions__create" onMouseDown={(event) => event.preventDefault()} onClick={() => { onCreateTemplate?.(canOpenTemplate ? "" : templateValue.trim()); setSuggestionsOpen(false); }}>Create template</button>
           </div>}
           <button type="button" className="text-source__open" aria-label="Open current template" title={canOpenTemplate ? "Open template editor" : "Enter an existing template path to open it"} disabled={!canOpenTemplate} onClick={() => onOpenTemplate?.(templateValue.trim())}><OpenTemplateIcon /></button>
           <button type="button" className="text-source__browse" aria-label="Browse templates" title="Browse templates" onClick={() => { setSuggestionsOpen(false); setFilter(""); setPickerOpen(true); }}><FolderIcon /></button>
-        </div>
+        </ResourceDropTarget>
       : <AutoGrowTextarea value={text.inline} onChange={(inline) => onChange({ inline })} />}
-    {pickerOpen && <div className="template-picker-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setPickerOpen(false); }}>
-      <section className="template-picker" role="dialog" aria-modal="true" aria-label="Choose template">
+    <OverlayDialog open={pickerOpen} label="Choose template" onClose={() => setPickerOpen(false)} className="template-picker">
         <header><div><p className="eyebrow">Templates</p><h3>Choose a template</h3></div><button type="button" className="button--icon" aria-label="Close template picker" onClick={() => setPickerOpen(false)}>×</button></header>
         <input aria-label="Filter templates" autoFocus value={filter} placeholder="Filter templates" onChange={(event) => setFilter(event.target.value)} />
         <div className="template-picker__list">
           {visibleTemplates.length ? visibleTemplates.map((template) => <button key={template} type="button" className={template === text.template ? "template-picker__item template-picker__item--selected" : "template-picker__item"} onClick={() => { onChange({ template }); setPickerOpen(false); }}>{template}</button>) : <p className="muted">No matching templates.</p>}
         </div>
-      </section>
-    </div>}
+    </OverlayDialog>
   </div>;
 }
 
@@ -246,11 +202,4 @@ function AutoGrowTextarea({ value, onChange }: { value: string; onChange(value: 
     return () => window.cancelAnimationFrame(frame);
   }, [value]);
   return <textarea ref={textareaRef} className="text-source__inline" aria-label="Inline text" value={value} rows={1} placeholder="Write the message text" onChange={(event) => onChange(event.target.value)} />;
-}
-
-function nextButtonId(viewId: string, existing: string[]): string {
-  const prefix = `${viewId || "view"}.action`;
-  let suffix = 1;
-  while (existing.includes(`${prefix}_${suffix}`)) suffix += 1;
-  return `${prefix}_${suffix}`;
 }

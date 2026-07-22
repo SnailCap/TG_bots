@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Workspace } from "../domain/project";
 import { StudioPage } from "../pages/studio/StudioPage";
+import { Toast } from "../shared/ui/Toast";
 import { StudioApi, type StudioApiClient } from "../studio/api";
 import { BackendStatusCard } from "./BackendStatusCard";
 
@@ -120,7 +121,7 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
           <p>Open an existing project or create an autonomous Python starter. Studio edits deployable files; it is not part of the bot runtime.</p>
           <BackendStatusCard apiBaseUrl={apiBaseUrl} />
         </header>
-        {error && <p className="alert alert--error" role="alert">{error}</p>}
+        {error && <Toast message={error} tone="error" onDismiss={() => setError("")} />}
         <section className="welcome-card" aria-labelledby="open-project-title">
           <div className="section-heading"><div><p className="eyebrow">Continue working</p><h2 id="open-project-title">Open a project</h2></div><p>Load the folder that contains <code>resources/</code>.</p></div>
           <label>Existing project<input value={openPath} onChange={(event) => setOpenPath(event.target.value)} placeholder="C:\projects\my-bot" /></label>

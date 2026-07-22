@@ -135,6 +135,48 @@ def test_v3_api_resource_and_handler_contract(tmp_path: Path) -> None:
     assert not [item for item in validation["issues"] if item["level"] == "error"]
 
 
+def test_project_settings_store_a_redacted_runtime_token(tmp_path: Path) -> None:
+    client = TestClient(create_app())
+    workspace = client.post(
+        "/api/v1/projects",
+        json={"parent_path": str(tmp_path), "name": "Settings Bot"},
+    ).json()
+    project_id = workspace["project_id"]
+
+    initial = client.get(f"/api/v1/projects/{project_id}/settings")
+    assert initial.status_code == 200
+    assert initial.json() == {"telegram_bot_token_configured": False, "revision": None}
+
+    saved = client.put(
+        f"/api/v1/projects/{project_id}/settings",
+        json={"telegram_bot_token": "123456:project_token", "revision": None},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["telegram_bot_token_configured"] is True
+    assert saved.json()["revision"]
+    assert "project_token" not in saved.text
+    environment_path = Path(workspace["project_root"]) / ".env"
+    assert environment_path.read_text(encoding="utf-8") == "BOT_TOKEN=123456:project_token\n"
+
+    stale = client.put(
+        f"/api/v1/projects/{project_id}/settings",
+        json={"clear_telegram_bot_token": True, "revision": None},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["detail"]["code"] == "revision_conflict"
+
+    current = client.get(f"/api/v1/projects/{project_id}/settings").json()
+    environment_path.write_text("OTHER=value\nBOT_TOKEN=123456:project_token\n", encoding="utf-8")
+    current = client.get(f"/api/v1/projects/{project_id}/settings").json()
+    cleared = client.put(
+        f"/api/v1/projects/{project_id}/settings",
+        json={"clear_telegram_bot_token": True, "revision": current["revision"]},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["telegram_bot_token_configured"] is False
+    assert environment_path.read_text(encoding="utf-8") == "OTHER=value\n"
+
+
 def test_handler_detail_reports_keyword_only_argument_as_invalid_signature(
     tmp_path: Path,
 ) -> None:

@@ -45,6 +45,12 @@ class PreviewRequest(BaseModel):
     payload: dict[str, Any]
 
 
+class ProjectSettingsSaveRequest(BaseModel):
+    telegram_bot_token: str | None = Field(default=None, max_length=4096)
+    clear_telegram_bot_token: bool = False
+    revision: str | None = None
+
+
 class HandlerScaffoldRequest(BaseModel):
     handler_id: str = Field(min_length=1, max_length=128)
     kind: str
@@ -100,6 +106,29 @@ async def create_project(body: CreateProjectRequest, request: Request) -> dict[s
 async def describe(project_id: str, request: Request) -> dict[str, Any]:
     try:
         return service(request).describe(project_id)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.get("/{project_id}/settings")
+async def get_project_settings(project_id: str, request: Request) -> dict[str, Any]:
+    try:
+        return service(request).get_project_settings(project_id)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.put("/{project_id}/settings")
+async def save_project_settings(
+    project_id: str, body: ProjectSettingsSaveRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).save_project_settings(
+            project_id,
+            telegram_bot_token=body.telegram_bot_token,
+            clear_telegram_bot_token=body.clear_telegram_bot_token,
+            revision=body.revision,
+        )
     except WorkspaceError as error:
         fail(error)
 

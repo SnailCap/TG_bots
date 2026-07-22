@@ -260,8 +260,10 @@ python -m {package}
 pytest
 ```
 
-PowerShell equivalent: `$env:BOT_TOKEN="123456:replace-me"`. A copied `.env` file is
-used by Docker's `--env-file` option below; the Python process does not load it itself.
+PowerShell equivalent: `$env:BOT_TOKEN="123456:replace-me"`. You can also save
+`BOT_TOKEN` in a local `.env` file; the runtime reads it automatically, while an
+environment variable from the shell or process manager takes precedence. Docker also
+uses the same file with `--env-file` below.
 If a process manager uses another working directory, set `BOT_PROJECT_ROOT` to this
 project directory (or configure its working directory accordingly).
 

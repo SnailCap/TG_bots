@@ -67,6 +67,25 @@ afterEach(() => {
 });
 
 describe("Studio", () => {
+  it("does not select a resource when its editor is opened through a tab", async () => {
+    const { container } = render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+    const resourceButton = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(".explorer__item"))
+      .find((button) => button.textContent?.trim() === label)!;
+
+    fireEvent.click(resourceButton("home"));
+    await screen.findByLabelText("View editor");
+    fireEvent.click(resourceButton("checkout"));
+    await screen.findByLabelText("Flow editor");
+    expect(resourceButton("checkout")).toHaveAttribute("aria-current", "page");
+
+    const homeTab = Array.from(container.querySelectorAll<HTMLButtonElement>(".editor-tab__select"))
+      .find((button) => button.textContent?.includes("home"))!;
+    fireEvent.click(homeTab);
+
+    expect(container.querySelector(".explorer__item--active")).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("View editor")).toBeInTheDocument();
+  });
+
   it("shows backend health and opens a project", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) }));
     const api = apiMock();
@@ -122,6 +141,21 @@ describe("Studio", () => {
     expect(screen.getAllByRole("button", { name: "commands.json" })[1]).toBeInTheDocument();
   });
 
+  it("opens project settings from the activity rail and saves a bot token", async () => {
+    const api = apiMock();
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(await screen.findByRole("dialog", { name: "Project settings" })).toBeInTheDocument();
+    fireEvent.change(await screen.findByLabelText("Bot token:"), { target: { value: "123456:token" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save token" }));
+
+    await waitFor(() => expect(api.saveProjectSettings).toHaveBeenCalledWith("project-1", {
+      telegram_bot_token: "123456:token",
+      revision: null,
+    }));
+  });
+
   it("creates a missing custom button handler and asks Electron to open it", async () => {
     const missingWorkspace = { ...workspace, handlers: [] };
     const missingView: ViewDetail = {
@@ -142,6 +176,7 @@ describe("Studio", () => {
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={missingWorkspace} />);
     fireEvent.click(screen.getByRole("button", { name: "home" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
     expect(await screen.findByText("Binding missing")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create handler" }));
     await waitFor(() => expect(api.createHandler).toHaveBeenCalledWith("project-1", {
@@ -174,6 +209,7 @@ describe("Studio", () => {
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode: vi.fn().mockResolvedValue(undefined) };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={{ ...workspace, handlers: [] }} />);
     fireEvent.click(screen.getByRole("button", { name: "home" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
     fireEvent.click(await screen.findByLabelText("Action"));
     fireEvent.click(screen.getByRole("option", { name: "Custom handler" }));
     fireEvent.change(screen.getByLabelText("Handler name"), { target: { value: "checkout.submit" } });
@@ -275,13 +311,13 @@ describe("Studio", () => {
     expect(screen.getByRole("button", { name: "Reload from disk" })).toBeInTheDocument();
   });
 
-  it("does not save a view with an empty inline text or template path", async () => {
+  it("allows a view draft to be saved while its content is still empty", async () => {
     const api = apiMock();
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "home" }));
 
     fireEvent.change(await screen.findByLabelText("Inline text"), { target: { value: "   " } });
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(screen.queryByText("Inline text cannot be empty.")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Inline text"), { target: { value: "Visible" } });
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
@@ -294,8 +330,63 @@ describe("Studio", () => {
     fireEvent.mouseDown(screen.getByRole("option", { name: "home.txt" }));
     expect(templateInput).toHaveValue("home.txt");
     fireEvent.change(templateInput, { target: { value: "  " } });
-    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(screen.queryByText("Template path is required.")).not.toBeInTheDocument();
+  });
+
+  it("persists a new resource immediately and adds it to Resources", async () => {
+    const created: ViewDetail = {
+      id: "new-view",
+      source_path: "views/new-view.json",
+      revision: "view-new",
+      payload: { schema_version: 3, id: "new-view", text: { inline: "" }, keyboard: [] },
+    };
+    const api = apiMock({
+      createView: vi.fn().mockResolvedValue(created),
+      describe: vi.fn().mockResolvedValue({ ...workspace, views: [...workspace.views, created] }),
+    });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "views" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New view" }));
+
+    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "new-view", created.payload));
+    expect((await screen.findAllByText("new-view")).length).toBeGreaterThan(0);
+    expect(screen.getByDisplayValue("new-view")).toBeInTheDocument();
+  });
+
+  it("saves a changed view name through the rename operation", async () => {
+    const renamed: ViewDetail = {
+      ...viewDetail,
+      id: "welcome",
+      source_path: "views/welcome.json",
+      revision: "view-renamed",
+      payload: { ...viewDetail.payload, id: "welcome" },
+    };
+    const api = apiMock({ renameView: vi.fn().mockResolvedValue(renamed) });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+
+    fireEvent.change(await screen.findByLabelText("Name:"), { target: { value: "welcome" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(api.renameView).toHaveBeenCalledWith("project-1", "home", "welcome", "view-one"));
+    expect(screen.getByDisplayValue("welcome")).toBeInTheDocument();
+  });
+
+  it("opens a new template tab from the template suggestion list", async () => {
+    const api = apiMock({ saveTemplate: vi.fn().mockResolvedValue({ path: "new-template.txt", content: "", revision: "template-new" }) });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("Inline text");
+    fireEvent.click(screen.getByLabelText("Text source"));
+    fireEvent.click(screen.getByRole("option", { name: "Template" }));
+    fireEvent.focus(screen.getByLabelText("Template"));
+    fireEvent.mouseDown(screen.getByRole("button", { name: "Create template" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create template" }));
+
+    expect(await screen.findByLabelText("Template editor")).toBeInTheDocument();
+    expect(screen.getAllByText("new-template.txt").length).toBeGreaterThan(0);
   });
 
   it("renders stable cross-resource diagnostic fields", () => {
@@ -320,6 +411,8 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     open: vi.fn().mockResolvedValue(workspace),
     create: vi.fn().mockResolvedValue(workspace),
     describe: vi.fn().mockResolvedValue(workspace),
+    getProjectSettings: vi.fn().mockResolvedValue({ telegram_bot_token_configured: false, revision: null }),
+    saveProjectSettings: vi.fn().mockResolvedValue({ telegram_bot_token_configured: true, revision: "settings-one" }),
     getView: vi.fn().mockResolvedValue(viewDetail),
     createView: vi.fn().mockResolvedValue(viewDetail),
     saveView: vi.fn().mockResolvedValue(viewDetail),

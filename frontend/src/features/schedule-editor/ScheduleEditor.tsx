@@ -3,6 +3,7 @@ import { useId } from "react";
 import type { ActionOptions, HandlerUsage, ScheduleSpec } from "../../domain/project";
 import { JsonObjectEditor, type HandlerActions } from "../action-editor/ActionEditor";
 import { HandlerControls } from "../handlers/HandlerControls";
+import { ResourceDropTarget } from "../resource-dnd";
 import { Select } from "../../shared/ui/Select";
 
 export function ScheduleEditor({
@@ -32,7 +33,9 @@ export function ScheduleEditor({
         <label>Interval, seconds<input type="number" min="0.001" step="any" value={value.trigger.seconds} onChange={(event) => onChange({ ...value, trigger: { type: "interval", seconds: Number(event.target.value) } })} /></label>
         <label>
           Task handler
-          <input list={`${listId}-tasks`} value={value.handler} onChange={(event) => onChange({ ...value, handler: event.target.value })} />
+          <ResourceDropTarget target={{ type: "handler-reference", handlerKind: "task" }} label="Drop task handler here" onDrop={(resource) => onChange({ ...value, handler: resource.value })}>
+            <input list={`${listId}-tasks`} value={value.handler} onChange={(event) => onChange({ ...value, handler: event.target.value })} />
+          </ResourceDropTarget>
           <datalist id={`${listId}-tasks`}>{taskHandlers.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
         </label>
         <HandlerControls handlerId={value.handler} kind="task" handlers={options.handlers} onCreate={handlerActions.create} onRepair={handlerActions.repair} onOpen={handlerActions.open} onFindUsages={handlerActions.usages} createOptions={isNew ? undefined : { attachment: { type: "schedule", schedule_id: value.id }, target_revision: revision }} />
