@@ -32,6 +32,12 @@ PTB polling adapter принимает три вида update:
 
 Callback query сначала получает `answer()`. Payload с неверным prefix/пустым ID transport безопасно игнорирует и пишет warning. Dispatcher разрешает action только если button ID существует на текущем сохранённом view; отсутствующий либо принадлежащий другому view callback считается stale/inactive, логируется и приводит только к re-render current view.
 
+## Долгосрочный реестр пользователей
+
+Перед dispatch runtime делает upsert пользователя в таблицу `bot_users` с ключом `(bot_id, user_id)`. Telegram-поля (`username`, имя, фамилия и язык) обновляются при каждом взаимодействии, а управляемые Studio поля (`role`, `blocked`, внутренняя заметка) сохраняются. Допустимые роли: `user`, `trusted`, `moderator`, `administrator`. Событие от заблокированного пользователя прекращается до deduplication и dispatcher. Если transport поддерживает профильные фото, runtime сверяет Telegram `file_id`, загружает изменившийся аватар и хранит его в той же SQLite-базе. У реестра нет автоматического удаления или retention policy.
+
+Studio обращается к этой таблице через `SqliteStore` в автономной `data/runtime.sqlite3`; это runtime data, а не часть декларативного project schema v3.
+
 ## Deduplication и optimistic session
 
 До обработки `BotApp.handle_event()` вставляет `(bot_id, user_id, chat_id, update_id)` в `processed_updates`. Повторная вставка прекращает dispatch. Затем загружается session с ключом `(bot_id, user_id, chat_id)`.
@@ -184,6 +190,10 @@ flowchart LR
 - Task handler получает `TaskContext(job_id, payload, services, logger)`, обязан вернуть success и не имеет outcome routing/session state. Его `HandlerResult.values` не используются.
 
 Lease record сейчас не имеет owner/fencing token. Для одной database рекомендуется один runtime process; concurrency обеспечивают worker coroutines внутри него.
+
+## Runtime logging
+
+Generated entrypoint настраивает стандартный Python logging на уровне `INFO` в stdout. Формат содержит время, уровень, logger name и сообщение, поэтому локальный Studio terminal, PowerShell, Docker logs и production process manager получают один и тот же поток без Studio-specific SDK. Entry point пишет запуск процесса, необработанную ошибку и завершение; `BotApp` пишет начало/готовность runtime, shutdown и ошибки startup/cleanup. Более подробные handler, dispatcher, transport и job diagnostics продолжают использовать обычные module loggers.
 
 ## Shutdown
 

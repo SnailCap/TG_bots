@@ -87,7 +87,8 @@ describe("action editor", () => {
       handlerActions: handlerActions(),
     };
     const { rerender } = render(<ActionEditor {...props} action={{ type: "flow.cancel" }} />);
-    fireEvent.change(screen.getByLabelText("Final view (optional)"), { target: { value: "home" } });
+    fireEvent.click(screen.getByLabelText("Final view (optional)"));
+    fireEvent.click(screen.getByRole("option", { name: "home" }));
     expect(onChange).toHaveBeenLastCalledWith({ type: "flow.cancel", view: "home" });
 
     rerender(<ActionEditor {...props} action={{ type: "handler.invoke", handler: "checkout.submit", outcomes: {} }} />);
@@ -95,8 +96,26 @@ describe("action editor", () => {
     expect(onChange).toHaveBeenLastCalledWith({ type: "handler.invoke", handler: "checkout.submit", outcomes: {}, payload: { order_id: 7 } });
 
     rerender(<ActionEditor {...props} action={{ type: "task.enqueue", target: "jobs.sync" }} />);
-    fireEvent.change(screen.getByLabelText("View after enqueue (optional)"), { target: { value: "home" } });
+    fireEvent.click(screen.getByLabelText("View after enqueue (optional)"));
+    fireEvent.click(screen.getByRole("option", { name: "home" }));
     expect(onChange).toHaveBeenLastCalledWith({ type: "task.enqueue", target: "jobs.sync", view: "home" });
+  });
+
+  it("searches resource choices without accepting arbitrary target text", () => {
+    const onChange = vi.fn();
+    render(<ActionEditor
+      action={{ type: "flow.start", target: "" }}
+      onChange={onChange}
+      options={{ views: [], flows: ["checkout", "support"], states: [], handlers: [] }}
+      scope={{ expectedKind: "button" }}
+      handlerActions={handlerActions()}
+    />);
+
+    fireEvent.click(screen.getByLabelText("Flow"));
+    fireEvent.change(screen.getByLabelText("Search Flow"), { target: { value: "supp" } });
+    expect(screen.queryByRole("option", { name: "checkout" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("option", { name: "support" }));
+    expect(onChange).toHaveBeenLastCalledWith({ type: "flow.start", target: "support" });
   });
 
   it("offers flow.event only to buttons and flow.goto only inside a current flow", () => {

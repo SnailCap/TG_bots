@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
+import type { ProjectProcessEvent } from "../../../electron/contracts";
 import botStudioIcon from "../../assets/bot-studio-logo.svg";
 import {
   SCHEMA_VERSION,
@@ -27,10 +28,12 @@ import { HandlerInspector, NewHandlerEditor } from "../../features/handler-inspe
 import { ProjectSettingsDialog } from "../../features/project-settings/ProjectSettingsDialog";
 import { ScheduleEditor } from "../../features/schedule-editor/ScheduleEditor";
 import { StudioActivityRail, type StudioActivity } from "../../features/studio-activity/StudioActivityRail";
+import { StudioTerminal } from "../../features/studio-terminal/StudioTerminal";
 import { TemplateEditor } from "../../features/template-editor/TemplateEditor";
 import { createTelegramPreviewModel, type PreviewEditor } from "../../features/telegram-preview/preview-model";
 import { PreviewToolRail } from "../../features/telegram-preview/PreviewToolRail";
 import { TelegramPreview } from "../../features/telegram-preview/TelegramPreview";
+import { UsersPage } from "../../features/users/UsersPage";
 import { ViewEditor } from "../../features/view-editor/ViewEditor";
 import { MainMenu } from "../../shared/ui/MainMenu";
 import { ResourceEditorHeader } from "../../shared/ui/ResourceEditorHeader";
@@ -38,7 +41,7 @@ import { ResourceIcon } from "../../shared/ui/ResourceIcon";
 import { ProjectSwitcher } from "../../shared/ui/ProjectSwitcher";
 import { Toast } from "../../shared/ui/Toast";
 import { type ProjectSettings, type StudioApiClient, StudioApiError } from "../../studio/api";
-import { openCode } from "../../studio/desktop";
+import { approveProjectRoot, localProjectStatus, onLocalProjectOutput, openCode, runLocalProject, stopLocalProject } from "../../studio/desktop";
 import { ProjectExplorer, type CreatableResource, type ExplorerDraft } from "../../widgets/project-explorer/ProjectExplorer";
 
 type EditorState =
@@ -52,8 +55,9 @@ type EditorState =
   | null;
 
 type EditorTab = { key: string; editor: Exclude<EditorState, null>; dirty: boolean };
+const MAX_TERMINAL_ENTRIES = 2000;
 
-export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, recentProjects = [], onOpenProject = () => undefined, onNewProject = () => undefined }: { api: StudioApiClient; apiBaseUrl: string; initialWorkspace: Workspace; recentProjects?: readonly string[]; onOpenProject?(path: string): void; onNewProject?(): void }) {
+export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects = [], onOpenProject = () => undefined, onNewProject = () => undefined }: { api: StudioApiClient; apiBaseUrl: string; initialWorkspace: Workspace; recentProjects?: readonly string[]; onOpenProject?(path: string): void; onNewProject?(): void }) {
   const [workspace, setWorkspace] = useState(initialWorkspace);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editor, setEditor] = useState<EditorState>(null);
@@ -64,6 +68,11 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
   const [conflict, setConflict] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [startingLocalRun, setStartingLocalRun] = useState(false);
+  const [stoppingLocalRun, setStoppingLocalRun] = useState(false);
+  const [localRunPid, setLocalRunPid] = useState<number | null>(null);
+  const [terminalOpen, setTerminalOpen] = useState(false);
+  const [terminalEntries, setTerminalEntries] = useState<ProjectProcessEvent[]>([]);
   const [dirty, setDirty] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [activeActivity, setActiveActivity] = useState<StudioActivity>("resources");
@@ -77,6 +86,7 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
   const workspaceRef = useRef<HTMLDivElement>(null);
   const nextNewTabId = useRef(1);
   const firstContentKey = useRef<string | null>(null);
+  const localRunCommandRevision = useRef(0);
   if (!firstContentKey.current && activeTabKey) firstContentKey.current = activeTabKey;
 
   const maximumExplorerWidth = useCallback((workspaceWidth: number) => {
@@ -103,6 +113,33 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
     setError(message);
     setConflict(caught instanceof StudioApiError && caught.code === "revision_conflict");
   }, []);
+
+  useEffect(() => onLocalProjectOutput((event) => {
+    if (!sameProjectRoot(event.projectRoot, workspace.project_root)) return;
+    setTerminalEntries((current) => [...current.slice(-(MAX_TERMINAL_ENTRIES - 1)), event]);
+    if (event.running === true) {
+      setLocalRunPid(event.pid ?? null);
+      setStoppingLocalRun(false);
+    } else if (event.running === false) {
+      setLocalRunPid(null);
+      setStoppingLocalRun(false);
+    }
+  }), [workspace.project_root]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!window.studioDesktop?.projectRunStatus) return undefined;
+    const revision = localRunCommandRevision.current;
+    void approveProjectRoot(workspace.project_root)
+      .then(() => localProjectStatus(workspace.project_root))
+      .then((runStatus) => {
+        if (!cancelled && revision === localRunCommandRevision.current) {
+          setLocalRunPid(runStatus.running ? runStatus.pid : null);
+        }
+      })
+      .catch(() => undefined);
+    return () => { cancelled = true; };
+  }, [workspace.project_root]);
 
   const refreshWorkspace = useCallback(async () => {
     const next = await api.describe(workspace.project_id);
@@ -528,6 +565,57 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
     })().catch(report).finally(() => setBusy(false));
   };
 
+  const renameFromExplorer = useCallback(async (next: Exclude<Selection, { kind: "commands" }>, name: string) => {
+    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    setBusy(true);
+    try {
+      let nextSelection: Exclude<Selection, { kind: "commands" }>;
+      let nextEditor: Exclude<EditorState, null>;
+      if (next.kind === "view") {
+        const detail = await api.getView(workspace.project_id, next.id);
+        const renamed = await api.renameView(workspace.project_id, next.id, name, detail.revision);
+        nextSelection = { kind: "view", id: renamed.id };
+        nextEditor = { kind: "view", detail: renamed, isNew: false };
+      } else if (next.kind === "template") {
+        const detail = await api.getTemplate(workspace.project_id, next.path);
+        const renamed = await api.renameTemplate(workspace.project_id, next.path, name, detail.revision);
+        nextSelection = { kind: "template", path: renamed.path };
+        nextEditor = { kind: "template", detail: renamed, isNew: false };
+      } else if (next.kind === "flow") {
+        const detail = await api.getFlow(workspace.project_id, next.id);
+        const renamed = await api.renameFlow(workspace.project_id, next.id, name, detail.revision);
+        nextSelection = { kind: "flow", id: renamed.id };
+        nextEditor = { kind: "flow", detail: renamed, isNew: false };
+      } else if (next.kind === "schedule") {
+        const detail = await api.getSchedule(workspace.project_id, next.id);
+        const renamed = await api.renameSchedule(workspace.project_id, next.id, name, detail.revision);
+        nextSelection = { kind: "schedule", id: renamed.id };
+        nextEditor = { kind: "schedule", detail: renamed, isNew: false };
+      } else {
+        const detail = await api.getHandler(workspace.project_id, next.id);
+        const renamed = await api.renameHandler(workspace.project_id, next.id, name, detail.revision);
+        nextSelection = { kind: "handler", id: renamed.id };
+        nextEditor = { kind: "handler", detail: renamed };
+      }
+      const previousTabKey = selectionTabKey(next);
+      const nextTabKey = selectionTabKey(nextSelection);
+      setTabs((current) => current.map((tab) => selectionKeyEquals(selectionForEditor(tab.editor), next)
+        ? { ...tab, key: nextTabKey, editor: nextEditor, dirty: false }
+        : tab));
+      if (activeTabKey === previousTabKey) {
+        setActiveTabKey(nextTabKey);
+        setEditor(nextEditor);
+        setDirty(false);
+      }
+      setSelection(nextSelection);
+      await refreshWorkspace();
+    } catch (caught) {
+      report(caught);
+    } finally {
+      setBusy(false);
+    }
+  }, [activeTabKey, api, dirty, refreshWorkspace, report, selection, workspace.project_id]);
+
   const reloadCurrent = () => {
     if (!selection) return;
     setNotice("");
@@ -544,6 +632,48 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
     if (dirty && !window.confirm("Discard unsaved changes and create a new project?")) return;
     onNewProject();
   };
+  const runProject = useCallback(async () => {
+    if (dirty || busy || saving || startingLocalRun) return;
+    localRunCommandRevision.current += 1;
+    setTerminalOpen(true);
+    setStartingLocalRun(true);
+    try {
+      await approveProjectRoot(workspace.project_root);
+      const result = await runLocalProject({ projectRoot: workspace.project_root, packageName: workspace.package });
+      setLocalRunPid(result.pid || null);
+      setNotice(result.alreadyRunning ? "Local bot is already running." : `Local bot started (PID ${result.pid}).`);
+      setError("");
+    } catch (caught) {
+      report(caught);
+    } finally {
+      setStartingLocalRun(false);
+    }
+  }, [busy, dirty, report, saving, startingLocalRun, workspace.package, workspace.project_root]);
+  const stopProject = useCallback(async () => {
+    if (!localRunPid || stoppingLocalRun) return;
+    localRunCommandRevision.current += 1;
+    setTerminalOpen(true);
+    setStoppingLocalRun(true);
+    try {
+      await stopLocalProject(workspace.project_root);
+    } catch (caught) {
+      setStoppingLocalRun(false);
+      report(caught);
+    }
+  }, [localRunPid, report, stoppingLocalRun, workspace.project_root]);
+  const localRunActive = localRunPid !== null;
+  const canRunLocalProject = Boolean(window.studioDesktop?.runProject && window.studioDesktop?.stopProject);
+  const status = error
+    ? { label: "Error", tone: "error" }
+    : saving
+      ? { label: "Saving…", tone: "working" }
+      : busy
+        ? { label: "Working…", tone: "working" }
+        : dirty
+          ? { label: "Unsaved changes", tone: "dirty" }
+          : editor
+            ? { label: "Saved", tone: "saved" }
+            : { label: "Ready", tone: "ready" };
 
   return (
     <ResourceDragProvider>
@@ -561,12 +691,25 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
           />
           <ProjectSwitcher workspace={workspace} recentProjects={recentProjects} onOpenProject={switchProject} onNewProject={createProject} />
         </div>
+        <div className="topbar__actions">
+          <button
+            type="button"
+            className={localRunActive ? "topbar__run topbar__run--stop" : "topbar__run"}
+            aria-label={localRunActive ? "Stop local bot" : "Run local bot"}
+            aria-busy={startingLocalRun || stoppingLocalRun || undefined}
+            disabled={!canRunLocalProject || startingLocalRun || stoppingLocalRun || (!localRunActive && (dirty || busy || saving))}
+            title={!canRunLocalProject ? "Local run is available in the desktop Studio application" : localRunActive ? `Stop local bot${localRunPid ? ` (PID ${localRunPid})` : ""}` : dirty ? "Save changes before running" : "Run local bot"}
+            onClick={() => void (localRunActive ? stopProject() : runProject())}
+          >
+            {localRunActive ? <StopIcon /> : <RunIcon />}
+          </button>
+        </div>
       </header>
       {error && <Toast message={error} tone="error" action={conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>} onDismiss={() => { setError(""); setConflict(false); }} />}
       {notice && <Toast message={notice} tone="notice" onDismiss={() => setNotice("")} />}
-      <div ref={workspaceRef} className={previewOpen ? "workspace workspace--preview-open" : "workspace"} style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}>
-        <StudioActivityRail active={activeActivity} onSelect={setActiveActivity} settingsOpen={settingsOpen} onOpenSettings={openProjectSettings} />
-        <ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onAdd={addResource} onDelete={removeFromExplorer} />
+      <div ref={workspaceRef} className={`workspace${activeActivity === "users" ? " workspace--users" : ""}${activeActivity === "resources" && previewOpen ? " workspace--preview-open" : ""}${terminalOpen ? " workspace--terminal-open" : ""}`} style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}>
+        <StudioActivityRail active={activeActivity} onSelect={setActiveActivity} terminalOpen={terminalOpen} onToggleTerminal={() => setTerminalOpen((open) => !open)} settingsOpen={settingsOpen} onOpenSettings={openProjectSettings} />
+        {activeActivity === "resources" && <><ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onAdd={addResource} onRename={renameFromExplorer} onDelete={removeFromExplorer} />
         <div className="workspace__resizer" role="separator" aria-label="Resize resource list" aria-orientation="vertical" tabIndex={0} onPointerDown={resizeExplorer} onKeyDown={resizeExplorerByKeyboard} />
         <section className="workspace__main" aria-busy={busy}>
           {tabs.length > 0 && <nav className="editor-tabs" aria-label="Open resources" role="tablist">
@@ -583,12 +726,47 @@ export function StudioPage({ api, apiBaseUrl: _apiBaseUrl, initialWorkspace, rec
           </div>
         </section>
         <TelegramPreview open={previewOpen} model={previewModel} onClose={() => setPreviewOpen(false)} />
-        <PreviewToolRail open={previewOpen} onToggle={() => setPreviewOpen((open) => !open)} />
+        <PreviewToolRail open={previewOpen} onToggle={() => setPreviewOpen((open) => !open)} /></>}
+        {activeActivity === "users" && <UsersPage api={api} apiBaseUrl={apiBaseUrl} projectId={workspace.project_id} />}
+        {terminalOpen && <StudioTerminal entries={terminalEntries} running={localRunActive} pid={localRunPid} onClose={() => setTerminalOpen(false)} />}
       </div>
+      <footer className="studio-statusbar" aria-label="Studio status">
+        <div className="studio-statusbar__group">
+          <span className={`studio-statusbar__state studio-statusbar__state--${status.tone}`} role="status" aria-live="polite">
+            <span className="studio-statusbar__dot" aria-hidden="true" />
+            {status.label}
+          </span>
+          {activeActivity === "resources" && editor && <span className="studio-statusbar__resource" title={`${editorCategory(editor)}: ${editorHeaderTitle(editor)}`}>
+            <ResourceIcon selection={editorTabSelection(editor)} title={editorTabLabel(editor)} />
+            <span>{editorCategory(editor)} · {editorHeaderTitle(editor)}</span>
+          </span>}
+        </div>
+        <div className="studio-statusbar__group studio-statusbar__group--end">
+          <span className="studio-statusbar__item" title={workspace.project_root}>{workspace.name}</span>
+          <span className="studio-statusbar__item">Schema v{workspace.schema_version}</span>
+        </div>
+      </footer>
       <ProjectSettingsDialog open={settingsOpen} settings={projectSettings} loading={settingsLoading} saving={settingsSaving} onClose={() => setSettingsOpen(false)} onSave={saveProjectSettings} onClear={clearProjectSettings} />
     </main>
     </ResourceDragProvider>
   );
+}
+
+function RunIcon() {
+  return (
+    <svg className="topbar__run-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+      <path d="m6.25 3.9 9.1 6.1-9.1 6.1V3.9Z" />
+    </svg>
+  );
+}
+
+function StopIcon() {
+  return <svg className="topbar__stop-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="5.2" y="5.2" width="9.6" height="9.6" rx=".8" /></svg>;
+}
+
+function sameProjectRoot(left: string, right: string): boolean {
+  const normalize = (value: string) => value.replaceAll("\\", "/").replace(/\/$/, "").toLowerCase();
+  return normalize(left) === normalize(right);
 }
 
 function previewEditor(editor: EditorState): PreviewEditor | null {

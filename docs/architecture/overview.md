@@ -133,6 +133,14 @@ Backend читает и сохраняет manifest, views/templates, flows, com
 
 Electron открывает только существующий `.py` внутри canonical project root. Поддерживаются system association, VS Code, JetBrains и configurable executable; frontend не передаёт shell command.
 
+### Local test run
+
+Electron может запустить созданного бота для локальной проверки по кнопке Run. Запуск принадлежит только privileged Electron main process: renderer передаёт лишь путь к уже открытому в Studio project root и имя package. Перед первым запуском main process canonicalizes путь и добавляет его в approved roots только после проверки `resources/bot.json`; при запуске он повторно проверяет approved root и `src/<package>/__main__.py`, а затем выполняет только фиксированную команду `python -m <package>` без shell. Предпочитается project-local `.venv`; процесс принудительно завершается вместе со Studio.
+
+Это локальная оркестрация для тестов, а не embedded runtime: запущенный бот по-прежнему импортирует только свои `resources/`, `src/` и зависимости. Он не получает зависимости от Studio, Electron или backend.
+
+Electron main владеет stdin/stdout/stderr локального процесса и передаёт renderer только типизированные output events. Нижняя terminal panel показывает lifecycle Studio и сырой stdout/stderr бота; закрытие панели не останавливает процесс. Stop отправляется отдельным IPC-вызовом только найденному процессу текущего approved project root.
+
 ## Фактические ограничения
 
 - Только Telegram text messages, commands и callbacks; media/location/member events не моделируются.

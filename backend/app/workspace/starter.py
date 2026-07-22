@@ -174,11 +174,25 @@ where = ["src"]
         return '''from __future__ import annotations
 
 import argparse
+import logging
 import os
+import sys
 from pathlib import Path
 
 from tg_bot_core import BotApp, BotConfig
 from tg_bot_core.project import ProjectLoader, validate_project
+
+
+log = logging.getLogger(__name__)
+
+
+def configure_logging() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s] %(levelname)s %(name)s: %(message)s",
+        datefmt="%H:%M:%S",
+        stream=sys.stdout,
+    )
 
 
 def project_root() -> Path:
@@ -209,10 +223,18 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate", action="store_true", help="validate resources and handler bindings")
     args = parser.parse_args(argv)
+    configure_logging()
     root = project_root()
     if args.validate:
         return validate(root)
-    BotApp(config=BotConfig.from_env(project_root=root), services=[]).run()
+    log.info("Starting bot project from %s", root)
+    try:
+        BotApp(config=BotConfig.from_env(project_root=root), services=[]).run()
+    except Exception:
+        log.exception("Bot process stopped because of an unhandled error.")
+        return 1
+    finally:
+        log.info("Bot process finished.")
     return 0
 
 

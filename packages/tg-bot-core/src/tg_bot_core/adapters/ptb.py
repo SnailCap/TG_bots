@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+from io import BytesIO
+from pathlib import PurePosixPath
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 from ..catalog import CallbackCodec, CatalogError
 from ..events import Actor, CallbackEvent, CommandEvent, MessageEvent
-from ..transport import BotTransport, EventHandler, OutboundMessage
+from ..transport import BotTransport, EventHandler, OutboundMessage, UserProfileAvatar
 
 
 log = logging.getLogger(__name__)
@@ -61,6 +63,25 @@ class PtbTransport(BotTransport):
             reply_markup=keyboard,
         )
 
+    async def fetch_user_avatar(
+        self, user_id: int, current_file_id: str | None
+    ) -> UserProfileAvatar:
+        photos = await self._app.bot.get_user_profile_photos(user_id=user_id, limit=1)
+        if not photos.photos:
+            return UserProfileAvatar(file_id=None)
+        photo = max(photos.photos[0], key=lambda item: item.width * item.height)
+        if photo.file_id == current_file_id:
+            return UserProfileAvatar(file_id=photo.file_id)
+        telegram_file = await self._app.bot.get_file(photo.file_id)
+        output = BytesIO()
+        await telegram_file.download_to_memory(out=output)
+        suffix = PurePosixPath(telegram_file.file_path or "").suffix.lower()
+        mime_type = {
+            ".png": "image/png",
+            ".webp": "image/webp",
+        }.get(suffix, "image/jpeg")
+        return UserProfileAvatar(photo.file_id, output.getvalue(), mime_type)
+
     async def _on_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if self._handler:
             await self._handler(
@@ -104,4 +125,11 @@ class PtbTransport(BotTransport):
         user, chat = update.effective_user, update.effective_chat
         if user is None or chat is None:
             raise RuntimeError("Core accepts only updates with a user and chat.")
-        return Actor(user.id, chat.id, user.username, user.first_name, user.last_name)
+        return Actor(
+            user.id,
+            chat.id,
+            user.username,
+            user.first_name,
+            user.last_name,
+            language_code=user.language_code,
+        )

@@ -6,18 +6,21 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from jinja2 import Environment, TemplateSyntaxError
+from tg_bot_core.events import UserRole
 from tg_bot_core.project import (
     ProjectLoadError,
     ProjectLoader,
     load_and_validate_project,
     validate_project,
 )
+from tg_bot_core.store import BotUser, SqliteStore, StoredUserAvatar
 
 from .handlers import (
     HandlerInspector,
     handler_template,
     handler_usages,
     scaffold_target,
+    validate_handler_id,
 )
 from .repository import (
     ResourceConflict,
@@ -111,6 +114,40 @@ class ProjectService:
                 for path in sorted((workspace.resources / "templates").rglob("*.txt"))
             ],
         }
+
+    async def list_users(self, project_id: str) -> list[dict[str, Any]]:
+        workspace, bot_id, store = await self._user_store(project_id)
+        del workspace
+        return [self._user_detail(user) for user in await store.list_users(bot_id)]
+
+    async def update_user(
+        self,
+        project_id: str,
+        user_id: int,
+        *,
+        role: UserRole,
+        blocked: bool,
+        note: str,
+    ) -> dict[str, Any]:
+        _workspace, bot_id, store = await self._user_store(project_id)
+        try:
+            user = await store.update_user(
+                bot_id, user_id, role=role, blocked=blocked, note=note
+            )
+        except ValueError as error:
+            raise WorkspaceError(str(error)) from error
+        if user is None:
+            raise ResourceNotFound(f"User '{user_id}' does not exist.")
+        return self._user_detail(user)
+
+    async def get_user_avatar(
+        self, project_id: str, user_id: int
+    ) -> StoredUserAvatar:
+        _workspace, bot_id, store = await self._user_store(project_id)
+        avatar = await store.get_user_avatar(bot_id, user_id)
+        if avatar is None:
+            raise ResourceNotFound(f"User '{user_id}' does not have a profile photo.")
+        return avatar
 
     # Project runtime settings ---------------------------------------------------------
 
@@ -294,10 +331,81 @@ class ProjectService:
     ) -> dict[str, Any]:
         return self._save_resource(project_id, "flows", flow_id, payload, revision)
 
+    def rename_flow(
+        self, project_id: str, flow_id: str, new_id: str, revision: str
+    ) -> dict[str, Any]:
+        self._validate_resource_id(new_id)
+        if flow_id == new_id:
+            return self.get_flow(project_id, flow_id)
+        workspace = self.repository.workspace(project_id)
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            source = self._entity_path(workspace, project, "flows", flow_id)
+            target = self.repository.safe_path(
+                workspace.resources, Path("flows") / f"{new_id}.json", suffix=".json"
+            )
+            if new_id in project.flows or target.exists():
+                raise ResourceConflict(f"Flow '{new_id}' already exists.")
+            self.repository.assert_revision(source, revision)
+            documents = [
+                workspace.resources / "bot.json",
+                workspace.resources / "commands.json",
+                *(self._entity_path(workspace, project, "views", item.id) for item in project.views.values()),
+                *(self._entity_path(workspace, project, "flows", item.id) for item in project.flows.values()),
+            ]
+            payloads = {path: self.repository.read_json(path) for path in documents}
+            payloads[source]["id"] = new_id
+            manifest = payloads[workspace.resources / "bot.json"]
+            if manifest.get("start", {}).get("flow") == flow_id:
+                manifest["start"]["flow"] = new_id
+            for payload in payloads.values():
+                self._replace_flow_reference(payload, flow_id, new_id)
+            before = {path: path.read_bytes() for path in payloads}
+            try:
+                for path, payload in payloads.items():
+                    self.repository.atomic_write_json(target if path == source else path, payload)
+                source.unlink()
+                self._load(workspace)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                for path, content in before.items():
+                    self.repository.restore(path, content)
+                raise
+        return self.get_flow(project_id, new_id)
+
     def save_schedule(
         self, project_id: str, schedule_id: str, payload: dict[str, Any], revision: str
     ) -> dict[str, Any]:
         return self._save_resource(project_id, "schedules", schedule_id, payload, revision)
+
+    def rename_schedule(
+        self, project_id: str, schedule_id: str, new_id: str, revision: str
+    ) -> dict[str, Any]:
+        self._validate_resource_id(new_id)
+        if schedule_id == new_id:
+            return self.get_schedule(project_id, schedule_id)
+        workspace = self.repository.workspace(project_id)
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            source = self._entity_path(workspace, project, "schedules", schedule_id)
+            target = self.repository.safe_path(
+                workspace.resources, Path("schedules") / f"{new_id}.json", suffix=".json"
+            )
+            if new_id in project.schedules or target.exists():
+                raise ResourceConflict(f"Schedule '{new_id}' already exists.")
+            self.repository.assert_revision(source, revision)
+            payload = self.repository.read_json(source)
+            payload["id"] = new_id
+            before = source.read_bytes()
+            try:
+                self.repository.atomic_write_json(target, payload)
+                source.unlink()
+                self._load(workspace)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                self.repository.restore(source, before)
+                raise
+        return self.get_schedule(project_id, new_id)
 
     def delete_view(self, project_id: str, view_id: str, revision: str) -> None:
         self._delete_resource(project_id, "views", view_id, revision)
@@ -336,6 +444,47 @@ class ProjectService:
             self.repository.assert_revision(target, revision, creating=creating)
             self.repository.atomic_write(target, content.encode("utf-8"))
         return self.get_template(project_id, path)
+
+    def rename_template(
+        self, project_id: str, path: str, new_path: str, revision: str
+    ) -> dict[str, Any]:
+        workspace = self.repository.workspace(project_id)
+        source = self.repository.safe_path(
+            workspace.resources / "templates", path, suffix=".txt"
+        )
+        target = self.repository.safe_path(
+            workspace.resources / "templates", new_path, suffix=".txt"
+        )
+        if path == new_path:
+            return self.get_template(project_id, path)
+        with self.repository.lock(workspace):
+            self.repository.assert_revision(source, revision)
+            if not source.is_file():
+                raise ResourceNotFound(f"Template '{path}' does not exist.")
+            if target.exists():
+                raise ResourceConflict(f"Template '{new_path}' already exists.")
+            project = self._load(workspace)
+            documents = [
+                self._entity_path(workspace, project, "views", view.id)
+                for view in project.views.values()
+                if view.text.template == path
+            ]
+            payloads = {item: self.repository.read_json(item) for item in documents}
+            for payload in payloads.values():
+                payload["text"]["template"] = new_path
+            before = {source: source.read_bytes(), **{item: item.read_bytes() for item in payloads}}
+            try:
+                self.repository.atomic_write(target, before[source])
+                for item, payload in payloads.items():
+                    self.repository.atomic_write_json(item, payload)
+                source.unlink()
+                self._load(workspace)
+            except BaseException:
+                target.unlink(missing_ok=True)
+                for item, content in before.items():
+                    self.repository.restore(item, content)
+                raise
+        return self.get_template(project_id, new_path)
 
     def delete_template(self, project_id: str, path: str, revision: str) -> None:
         workspace = self.repository.workspace(project_id)
@@ -490,6 +639,52 @@ class ProjectService:
             "inspection": self.inspector.inspect(workspace, binding, usages),
             "usages": usages,
         }
+
+    def rename_handler(
+        self, project_id: str, handler_id: str, new_id: str, revision: str
+    ) -> dict[str, Any]:
+        validate_handler_id(new_id)
+        if handler_id == new_id:
+            return self.get_handler(project_id, handler_id)
+        workspace = self.repository.workspace(project_id)
+        registry_path = workspace.resources / "handlers.json"
+        with self.repository.lock(workspace):
+            self.repository.assert_revision(registry_path, revision)
+            project = self._load(workspace)
+            if handler_id not in project.handlers:
+                raise ResourceNotFound(f"Handler '{handler_id}' does not exist.")
+            if new_id in project.handlers:
+                raise ResourceConflict(f"Handler '{new_id}' already exists.")
+            documents = [
+                registry_path,
+                workspace.resources / "commands.json",
+                *(self._entity_path(workspace, project, "views", item.id) for item in project.views.values()),
+                *(self._entity_path(workspace, project, "flows", item.id) for item in project.flows.values()),
+                *(self._entity_path(workspace, project, "schedules", item.id) for item in project.schedules.values()),
+            ]
+            payloads = {path: self.repository.read_json(path) for path in documents}
+            bindings = payloads[registry_path].get("handlers")
+            if not isinstance(bindings, list):
+                raise WorkspaceError("handlers.json: handlers must be an array.")
+            for binding in bindings:
+                if isinstance(binding, dict) and binding.get("id") == handler_id:
+                    binding["id"] = new_id
+                    break
+            else:
+                raise ResourceNotFound(f"Handler '{handler_id}' does not exist.")
+            for path, payload in payloads.items():
+                if path != registry_path:
+                    self._replace_handler_reference(payload, handler_id, new_id)
+            before = {path: path.read_bytes() for path in payloads}
+            try:
+                for path, payload in payloads.items():
+                    self.repository.atomic_write_json(path, payload)
+                self._load(workspace)
+            except BaseException:
+                for path, content in before.items():
+                    self.repository.restore(path, content)
+                raise
+        return self.get_handler(project_id, new_id)
 
     def handler_usages(self, project_id: str, handler_id: str) -> list[dict[str, Any]]:
         detail = self.get_handler(project_id, handler_id)
@@ -886,6 +1081,29 @@ class ProjectService:
         except ProjectLoadError as error:
             raise WorkspaceError(str(error)) from error
 
+    async def _user_store(
+        self, project_id: str
+    ) -> tuple[Workspace, str, SqliteStore]:
+        workspace = self.repository.workspace(project_id)
+        project = self._load(workspace)
+        store = SqliteStore(workspace.root / "data" / "runtime.sqlite3")
+        await store.initialize()
+        return workspace, project.manifest.id, store
+
+    @staticmethod
+    def _user_detail(user: BotUser) -> dict[str, Any]:
+        return {
+            "telegram_id": str(user.user_id),
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "language_code": user.language_code,
+            "role": user.role,
+            "status": "blocked" if user.blocked else "active",
+            "note": user.note,
+            "avatar_version": user.avatar_file_id,
+        }
+
     @staticmethod
     def _normalize_entity(payload: dict[str, Any], entity_id: str) -> dict[str, Any]:
         supplied_id = payload.get("id")
@@ -1278,6 +1496,32 @@ class ProjectService:
             value["target"] = new_id
         for item in value.values():
             ProjectService._replace_view_reference(item, old_id, new_id)
+
+    @staticmethod
+    def _replace_flow_reference(value: Any, old_id: str, new_id: str) -> None:
+        if isinstance(value, list):
+            for item in value:
+                ProjectService._replace_flow_reference(item, old_id, new_id)
+            return
+        if not isinstance(value, dict):
+            return
+        if value.get("type") == "flow.start" and value.get("target") == old_id:
+            value["target"] = new_id
+        for item in value.values():
+            ProjectService._replace_flow_reference(item, old_id, new_id)
+
+    @staticmethod
+    def _replace_handler_reference(value: Any, old_id: str, new_id: str) -> None:
+        if isinstance(value, list):
+            for item in value:
+                ProjectService._replace_handler_reference(item, old_id, new_id)
+            return
+        if not isinstance(value, dict):
+            return
+        if value.get("handler") == old_id:
+            value["handler"] = new_id
+        for item in value.values():
+            ProjectService._replace_handler_reference(item, old_id, new_id)
 
 
 __all__ = [

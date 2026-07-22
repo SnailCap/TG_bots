@@ -91,6 +91,33 @@ def test_scaffold_creates_one_file_binding_attachment_status_and_usages(
         service.get_handler(project_id, "checkout.submit")
 
 
+def test_renaming_handler_updates_all_resource_references(tmp_path: Path) -> None:
+    service = ProjectService()
+    workspace = service.create_starter(parent_path=str(tmp_path), name="Rename Handler")
+    project_id = workspace["project_id"]
+    view = add_button(service, project_id)
+    created = service.scaffold_handler(
+        project_id,
+        handler_id="checkout.submit",
+        kind="button",
+        outcomes=[],
+        description=None,
+        registry_revision=service.list_handlers(project_id)["revision"],
+        attachment={"type": "view_button", "view_id": "home", "button_id": "run_custom"},
+        target_revision=view["revision"],
+        routes={"success": {"type": "noop"}},
+    )
+
+    renamed = service.rename_handler(
+        project_id, "checkout.submit", "checkout.process", created["revision"]
+    )
+
+    assert renamed["id"] == "checkout.process"
+    assert service.get_view(project_id, "home")["payload"]["keyboard"][0][0]["action"]["handler"] == "checkout.process"
+    assert service.get_handler(project_id, "checkout.process")["inspection"]["status"] == "ready"
+    assert not [issue for issue in service.validate(project_id) if issue["level"] == "error"]
+
+
 def test_scaffold_never_overwrites_existing_handler_file(tmp_path: Path) -> None:
     service = ProjectService()
     workspace = service.create_starter(parent_path=str(tmp_path), name="Existing Handler")

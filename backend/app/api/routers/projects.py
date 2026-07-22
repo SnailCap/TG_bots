@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
@@ -41,6 +41,11 @@ class TemplateSaveRequest(BaseModel):
     revision: str | None = None
 
 
+class TemplateRenameRequest(BaseModel):
+    path: str = Field(min_length=1, max_length=512)
+    revision: str
+
+
 class PreviewRequest(BaseModel):
     payload: dict[str, Any]
 
@@ -49,6 +54,12 @@ class ProjectSettingsSaveRequest(BaseModel):
     telegram_bot_token: str | None = Field(default=None, max_length=4096)
     clear_telegram_bot_token: bool = False
     revision: str | None = None
+
+
+class UserUpdateRequest(BaseModel):
+    role: Literal["user", "trusted", "moderator", "administrator"]
+    blocked: bool
+    note: str = Field(default="", max_length=10000)
 
 
 class HandlerScaffoldRequest(BaseModel):
@@ -106,6 +117,45 @@ async def create_project(body: CreateProjectRequest, request: Request) -> dict[s
 async def describe(project_id: str, request: Request) -> dict[str, Any]:
     try:
         return service(request).describe(project_id)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.get("/{project_id}/users")
+async def list_users(project_id: str, request: Request) -> list[dict[str, Any]]:
+    try:
+        return await service(request).list_users(project_id)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.put("/{project_id}/users/{user_id}")
+async def update_user(
+    project_id: str, user_id: int, body: UserUpdateRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return await service(request).update_user(
+            project_id,
+            user_id,
+            role=body.role,
+            blocked=body.blocked,
+            note=body.note,
+        )
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.get("/{project_id}/users/{user_id}/avatar")
+async def get_user_avatar(
+    project_id: str, user_id: int, request: Request
+) -> Response:
+    try:
+        avatar = await service(request).get_user_avatar(project_id, user_id)
+        return Response(
+            content=avatar.data,
+            media_type=avatar.mime_type,
+            headers={"Cache-Control": "public, max-age=31536000, immutable"},
+        )
     except WorkspaceError as error:
         fail(error)
 
@@ -262,6 +312,16 @@ async def save_flow(
         fail(error)
 
 
+@router.post("/{project_id}/flows/{flow_id}/rename")
+async def rename_flow(
+    project_id: str, flow_id: str, body: ResourceRenameRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).rename_flow(project_id, flow_id, body.id, body.revision)
+    except WorkspaceError as error:
+        fail(error)
+
+
 @router.delete("/{project_id}/flows/{flow_id}")
 async def delete_flow(
     project_id: str, flow_id: str, revision: str, request: Request
@@ -337,6 +397,18 @@ async def save_schedule(
     try:
         return service(request).save_schedule(
             project_id, schedule_id, body.payload, body.revision
+        )
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.post("/{project_id}/schedules/{schedule_id}/rename")
+async def rename_schedule(
+    project_id: str, schedule_id: str, body: ResourceRenameRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).rename_schedule(
+            project_id, schedule_id, body.id, body.revision
         )
     except WorkspaceError as error:
         fail(error)
@@ -464,6 +536,18 @@ async def get_handler(
         fail(error)
 
 
+@router.post("/{project_id}/handlers/{handler_id}/rename")
+async def rename_handler(
+    project_id: str, handler_id: str, body: ResourceRenameRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).rename_handler(
+            project_id, handler_id, body.id, body.revision
+        )
+    except WorkspaceError as error:
+        fail(error)
+
+
 @router.delete("/{project_id}/handlers/{handler_id}")
 async def delete_handler(
     project_id: str, handler_id: str, revision: str, request: Request
@@ -476,6 +560,18 @@ async def delete_handler(
 
 
 # Templates, preview and validation ----------------------------------------------------
+
+
+@router.post("/{project_id}/templates/{path:path}/rename")
+async def rename_template(
+    project_id: str, path: str, body: TemplateRenameRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).rename_template(
+            project_id, path, body.path, body.revision
+        )
+    except WorkspaceError as error:
+        fail(error)
 
 
 @router.get("/{project_id}/templates/{path:path}")

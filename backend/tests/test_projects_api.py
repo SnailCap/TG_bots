@@ -1,10 +1,78 @@
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from app.api.app import create_app
+from tg_bot_core import Actor
+from tg_bot_core.store import SqliteStore
+
+
+def test_users_api_reads_and_updates_the_durable_runtime_registry(tmp_path: Path) -> None:
+    client = TestClient(create_app())
+    workspace = client.post(
+        "/api/v1/projects",
+        json={"parent_path": str(tmp_path), "name": "Users API Bot"},
+    ).json()
+    project_id = workspace["project_id"]
+    root = Path(workspace["project_root"])
+    bot_id = json.loads((root / "resources" / "bot.json").read_text(encoding="utf-8"))["id"]
+
+    async def seed_user() -> None:
+        store = SqliteStore(root / "data" / "runtime.sqlite3")
+        await store.initialize()
+        await store.upsert_user(
+            bot_id,
+            Actor(123456, 77, "ada", "Ada", "Lovelace", language_code="en"),
+        )
+        await store.update_user_avatar(
+            bot_id,
+            123456,
+            file_id="avatar-v1",
+            data=b"avatar-bytes",
+            mime_type="image/jpeg",
+        )
+
+    asyncio.run(seed_user())
+
+    listed = client.get(f"/api/v1/projects/{project_id}/users")
+    assert listed.status_code == 200
+    assert listed.json() == [
+        {
+            "telegram_id": "123456",
+            "username": "ada",
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "language_code": "en",
+            "role": "user",
+            "status": "active",
+            "note": "",
+            "avatar_version": "avatar-v1",
+        }
+    ]
+
+    updated = client.put(
+        f"/api/v1/projects/{project_id}/users/123456",
+        json={"role": "administrator", "blocked": True, "note": "Owner"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["role"] == "administrator"
+    assert updated.json()["status"] == "blocked"
+    assert updated.json()["note"] == "Owner"
+
+    avatar = client.get(f"/api/v1/projects/{project_id}/users/123456/avatar")
+    assert avatar.status_code == 200
+    assert avatar.content == b"avatar-bytes"
+    assert avatar.headers["content-type"] == "image/jpeg"
+
+    missing = client.put(
+        f"/api/v1/projects/{project_id}/users/999",
+        json={"role": "user", "blocked": False, "note": ""},
+    )
+    assert missing.status_code == 404
 
 
 def test_v3_api_resource_and_handler_contract(tmp_path: Path) -> None:
@@ -133,6 +201,63 @@ def test_v3_api_resource_and_handler_contract(tmp_path: Path) -> None:
         f"/api/v1/projects/{project_id}/validation"
     ).json()
     assert not [item for item in validation["issues"] if item["level"] == "error"]
+
+
+def test_resource_rename_routes_cover_every_named_resource(tmp_path: Path) -> None:
+    client = TestClient(create_app())
+    workspace = client.post(
+        "/api/v1/projects", json={"parent_path": str(tmp_path), "name": "Rename API Bot"}
+    ).json()
+    project_id = workspace["project_id"]
+
+    view = client.get(f"/api/v1/projects/{project_id}/views/home").json()
+    renamed_view = client.post(
+        f"/api/v1/projects/{project_id}/views/home/rename",
+        json={"id": "welcome", "revision": view["revision"]},
+    )
+    assert renamed_view.status_code == 200
+    assert renamed_view.json()["id"] == "welcome"
+
+    flow = client.get(f"/api/v1/projects/{project_id}/flows/home").json()
+    renamed_flow = client.post(
+        f"/api/v1/projects/{project_id}/flows/home/rename",
+        json={"id": "launch", "revision": flow["revision"]},
+    )
+    assert renamed_flow.status_code == 200
+    assert renamed_flow.json()["id"] == "launch"
+
+    template = client.get(f"/api/v1/projects/{project_id}/templates/home.txt").json()
+    renamed_template = client.post(
+        f"/api/v1/projects/{project_id}/templates/home.txt/rename",
+        json={"path": "welcome.txt", "revision": template["revision"]},
+    )
+    assert renamed_template.status_code == 200
+    assert renamed_template.json()["path"] == "welcome.txt"
+
+    handlers = client.get(f"/api/v1/projects/{project_id}/handlers").json()
+    handler = client.post(
+        f"/api/v1/projects/{project_id}/handlers",
+        json={"handler_id": "api.run", "kind": "task", "registry_revision": handlers["revision"]},
+    )
+    assert handler.status_code == 200, handler.text
+
+    schedule = client.post(
+        f"/api/v1/projects/{project_id}/schedules",
+        json={"id": "daily", "payload": {"handler": "api.run", "trigger": {"type": "interval", "seconds": 60}, "payload": {}}},
+    ).json()
+    renamed_schedule = client.post(
+        f"/api/v1/projects/{project_id}/schedules/daily/rename",
+        json={"id": "nightly", "revision": schedule["revision"]},
+    )
+    assert renamed_schedule.status_code == 200
+    assert renamed_schedule.json()["id"] == "nightly"
+
+    renamed_handler = client.post(
+        f"/api/v1/projects/{project_id}/handlers/api.run/rename",
+        json={"id": "api.execute", "revision": handler.json()["revision"]},
+    )
+    assert renamed_handler.status_code == 200
+    assert renamed_handler.json()["id"] == "api.execute"
 
 
 def test_project_settings_store_a_redacted_runtime_token(tmp_path: Path) -> None:

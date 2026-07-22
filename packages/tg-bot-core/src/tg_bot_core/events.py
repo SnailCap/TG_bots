@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 
+UserRole = Literal["user", "trusted", "moderator", "administrator"]
+
+
 @dataclass(frozen=True, slots=True)
 class Actor:
     user_id: int
@@ -11,6 +14,8 @@ class Actor:
     username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    role: UserRole = "user"
+    language_code: str | None = None
 
 
 @dataclass(frozen=True, slots=True)

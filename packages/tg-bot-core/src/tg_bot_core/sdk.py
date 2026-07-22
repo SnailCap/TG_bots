@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Mapping
 
-from .events import CallbackEvent, CommandEvent, InteractionEvent, LifecycleEvent, MessageEvent
+from .events import CallbackEvent, CommandEvent, InteractionEvent, LifecycleEvent, MessageEvent, UserRole
 
 _OUTCOME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 
@@ -41,6 +41,7 @@ class UserInfo:
     username: str | None = None
     first_name: str | None = None
     last_name: str | None = None
+    role: UserRole = "user"
 
 
 @dataclass(frozen=True, slots=True)

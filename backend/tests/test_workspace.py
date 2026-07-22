@@ -68,6 +68,9 @@ def test_starter_is_atomic_autonomous_v3_project(
     assert "app.workspace" not in generated_python
     assert "backend" not in generated_python
     assert "BotModule" not in generated_python
+    assert "logging.basicConfig" in generated_python
+    assert "stream=sys.stdout" in generated_python
+    assert "Bot process stopped because of an unhandled error" in generated_python
 
     monkeypatch.syspath_prepend(str(root / "src"))
     entrypoint = importlib.import_module("my_v3_bot.__main__")
@@ -259,6 +262,40 @@ def test_renaming_a_view_updates_project_references(tmp_path: Path) -> None:
     assert service.get_manifest(project_id)["payload"]["entry_view"] == "welcome"
     assert service.get_flow(project_id, "home")["payload"]["states"]["home"]["view"] == "welcome"
     assert [item["id"] for item in service.describe(project_id)["views"]] == ["welcome"]
+
+
+def test_renaming_flow_template_and_schedule_updates_resources(tmp_path: Path) -> None:
+    service = ProjectService()
+    workspace = service.create_starter(parent_path=str(tmp_path), name="Rename Resources")
+    project_id = workspace["project_id"]
+
+    commands = service.get_commands(project_id)
+    service.save_commands(
+        project_id,
+        {"commands": [{"name": "begin", "action": {"type": "flow.start", "target": "home"}}]},
+        commands["revision"],
+    )
+    flow = service.get_flow(project_id, "home")
+    renamed_flow = service.rename_flow(project_id, "home", "welcome", flow["revision"])
+    assert renamed_flow["id"] == "welcome"
+    assert service.get_manifest(project_id)["payload"]["start"]["flow"] == "welcome"
+    assert service.get_commands(project_id)["payload"]["commands"][0]["action"]["target"] == "welcome"
+
+    template = service.get_template(project_id, "home.txt")
+    renamed_template = service.rename_template(
+        project_id, "home.txt", "welcome.txt", template["revision"]
+    )
+    assert renamed_template["path"] == "welcome.txt"
+    assert service.get_view(project_id, "home")["payload"]["text"]["template"] == "welcome.txt"
+
+    schedule = service.create_schedule(
+        project_id,
+        "daily",
+        {"handler": "tasks.daily", "trigger": {"type": "interval", "seconds": 60}, "payload": {}},
+    )
+    renamed_schedule = service.rename_schedule(project_id, "daily", "nightly", schedule["revision"])
+    assert renamed_schedule["id"] == "nightly"
+    assert [item["id"] for item in service.list_schedules(project_id)] == ["nightly"]
 
 
 def test_validation_uses_the_shared_project_load_code(tmp_path: Path) -> None:

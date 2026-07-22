@@ -71,6 +71,39 @@ export interface ProjectSettingsUpdate {
   revision: string | null;
 }
 
+export type UserRole = "user" | "trusted" | "moderator" | "administrator";
+export type UserStatus = "active" | "blocked";
+
+export interface ManagedUser {
+  telegramId: string;
+  username: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  languageCode: string | null;
+  role: UserRole;
+  status: UserStatus;
+  note: string;
+  avatarVersion: string | null;
+}
+
+export interface ManagedUserUpdate {
+  role: UserRole;
+  blocked: boolean;
+  note: string;
+}
+
+interface ManagedUserWire {
+  telegram_id: string;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  language_code: string | null;
+  role: UserRole;
+  status: UserStatus;
+  note: string;
+  avatar_version: string | null;
+}
+
 export class StudioApiError extends Error {
   constructor(
     readonly status: number,
@@ -89,6 +122,8 @@ export interface StudioApiClient {
   describe(projectId: string): Promise<Workspace>;
   getProjectSettings(projectId: string): Promise<ProjectSettings>;
   saveProjectSettings(projectId: string, payload: ProjectSettingsUpdate): Promise<ProjectSettings>;
+  listUsers(projectId: string): Promise<ManagedUser[]>;
+  updateUser(projectId: string, telegramId: string, payload: ManagedUserUpdate): Promise<ManagedUser>;
   getView(projectId: string, id: string): Promise<ViewDetail>;
   createView(projectId: string, id: string, payload: ViewSpec): Promise<ViewDetail>;
   saveView(projectId: string, id: string, payload: ViewSpec, revision: string): Promise<ViewDetail>;
@@ -96,18 +131,22 @@ export interface StudioApiClient {
   deleteView(projectId: string, id: string, revision: string): Promise<void>;
   getTemplate(projectId: string, path: string): Promise<TemplateDetail>;
   saveTemplate(projectId: string, path: string, content: string, revision?: string): Promise<TemplateDetail>;
+  renameTemplate(projectId: string, path: string, name: string, revision: string): Promise<TemplateDetail>;
   deleteTemplate(projectId: string, path: string, revision: string): Promise<void>;
   getFlow(projectId: string, id: string): Promise<FlowDetail>;
   createFlow(projectId: string, id: string, payload: FlowSpec): Promise<FlowDetail>;
   saveFlow(projectId: string, id: string, payload: FlowSpec, revision: string): Promise<FlowDetail>;
+  renameFlow(projectId: string, id: string, name: string, revision: string): Promise<FlowDetail>;
   deleteFlow(projectId: string, id: string, revision: string): Promise<void>;
   getCommands(projectId: string): Promise<CommandsDetail>;
   saveCommands(projectId: string, payload: CommandsSpec, revision: string): Promise<CommandsDetail>;
   getSchedule(projectId: string, id: string): Promise<ScheduleDetail>;
   createSchedule(projectId: string, id: string, payload: ScheduleSpec): Promise<ScheduleDetail>;
   saveSchedule(projectId: string, id: string, payload: ScheduleSpec, revision: string): Promise<ScheduleDetail>;
+  renameSchedule(projectId: string, id: string, name: string, revision: string): Promise<ScheduleDetail>;
   deleteSchedule(projectId: string, id: string, revision: string): Promise<void>;
   getHandler(projectId: string, id: string): Promise<HandlerDetail>;
+  renameHandler(projectId: string, id: string, name: string, revision: string): Promise<HandlerDetail>;
   createHandler(projectId: string, input: CreateHandlerRequest): Promise<HandlerScaffoldResult>;
   repairHandlerSource(projectId: string, id: string, registryRevision: string): Promise<HandlerScaffoldResult>;
   deleteHandler(projectId: string, id: string, revision: string): Promise<void>;
@@ -141,6 +180,19 @@ export class StudioApi implements StudioApiClient {
 
   saveProjectSettings(projectId: string, payload: ProjectSettingsUpdate): Promise<ProjectSettings> {
     return this.request(`/projects/${projectId}/settings`, { method: "PUT", body: payload });
+  }
+
+  async listUsers(projectId: string): Promise<ManagedUser[]> {
+    const users = await this.request<ManagedUserWire[]>(`/projects/${projectId}/users`);
+    return users.map(normalizeManagedUser);
+  }
+
+  async updateUser(projectId: string, telegramId: string, payload: ManagedUserUpdate): Promise<ManagedUser> {
+    const user = await this.request<ManagedUserWire>(`/projects/${projectId}/users/${encodeURIComponent(telegramId)}`, {
+      method: "PUT",
+      body: payload,
+    });
+    return normalizeManagedUser(user);
   }
 
   getView(projectId: string, id: string): Promise<ViewDetail> {
@@ -177,6 +229,10 @@ export class StudioApi implements StudioApiClient {
     });
   }
 
+  renameTemplate(projectId: string, path: string, name: string, revision: string): Promise<TemplateDetail> {
+    return this.request(`/projects/${projectId}/templates/${this.resourcePath(path)}/rename`, { method: "POST", body: { path: name, revision } });
+  }
+
   deleteTemplate(projectId: string, path: string, revision: string): Promise<void> {
     return this.request(`/projects/${projectId}/templates/${this.resourcePath(path)}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
   }
@@ -194,6 +250,10 @@ export class StudioApi implements StudioApiClient {
       method: "PUT",
       body: { payload, revision },
     });
+  }
+
+  renameFlow(projectId: string, id: string, name: string, revision: string): Promise<FlowDetail> {
+    return this.request(`/projects/${projectId}/flows/${encodeURIComponent(id)}/rename`, { method: "POST", body: { id: name, revision } });
   }
 
   deleteFlow(projectId: string, id: string, revision: string): Promise<void> {
@@ -223,12 +283,20 @@ export class StudioApi implements StudioApiClient {
     });
   }
 
+  renameSchedule(projectId: string, id: string, name: string, revision: string): Promise<ScheduleDetail> {
+    return this.request(`/projects/${projectId}/schedules/${encodeURIComponent(id)}/rename`, { method: "POST", body: { id: name, revision } });
+  }
+
   deleteSchedule(projectId: string, id: string, revision: string): Promise<void> {
     return this.request(`/projects/${projectId}/schedules/${encodeURIComponent(id)}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
   }
 
   async getHandler(projectId: string, id: string): Promise<HandlerDetail> {
     return normalizeHandler(await this.request<HandlerWire>(`/projects/${projectId}/handlers/${encodeURIComponent(id)}`));
+  }
+
+  async renameHandler(projectId: string, id: string, name: string, revision: string): Promise<HandlerDetail> {
+    return normalizeHandler(await this.request<HandlerWire>(`/projects/${projectId}/handlers/${encodeURIComponent(id)}/rename`, { method: "POST", body: { id: name, revision } }));
   }
 
   async createHandler(projectId: string, input: CreateHandlerRequest): Promise<HandlerScaffoldResult> {
@@ -352,5 +420,19 @@ function normalizeOpenTarget(value: OpenCodeWire): OpenCodeTarget {
     filePath: value.file_path,
     line: value.line,
     column: value.column,
+  };
+}
+
+function normalizeManagedUser(value: ManagedUserWire): ManagedUser {
+  return {
+    telegramId: value.telegram_id,
+    username: value.username,
+    firstName: value.first_name,
+    lastName: value.last_name,
+    languageCode: value.language_code,
+    role: value.role,
+    status: value.status,
+    note: value.note,
+    avatarVersion: value.avatar_version,
   };
 }

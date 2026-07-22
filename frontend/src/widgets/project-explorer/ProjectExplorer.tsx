@@ -1,7 +1,8 @@
-import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
 
 import type { HandlerKind, Selection, Workspace } from "../../domain/project";
 import { useResourceDraggable, type DraggableResource } from "../../features/resource-dnd";
+import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ResourceIcon } from "../../shared/ui/ResourceIcon";
 
 export type CreatableResource = "view" | "template" | "flow" | "handler" | "schedule";
@@ -9,35 +10,74 @@ export type ExplorerDraft = { kind: CreatableResource; label: string };
 type ResourceSection = "views" | "templates" | "flows" | "handlers" | "commands" | "schedules";
 type ContextTarget = { x: number; y: number; kind?: CreatableResource; selection?: Selection } | null;
 
-export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, onDelete = () => undefined }: {
+export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, onRename = () => undefined, onDelete = () => undefined }: {
   workspace: Workspace;
   selection: Selection | null;
   draft?: ExplorerDraft | null;
   onSelect(selection: Selection): void;
   onAdd(kind: CreatableResource): void;
+  onRename?(selection: Selection, name: string): Promise<void> | void;
   onDelete?(selection: Selection): void;
 }) {
   const [openSections, setOpenSections] = useState<Set<ResourceSection>>(() => new Set());
   const [context, setContext] = useState<ContextTarget>(null);
+  const [renaming, setRenaming] = useState<Selection | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const cancelRename = useRef(false);
   useEffect(() => {
     const section = draft && draftSection(draft.kind);
     if (!section) return;
     setOpenSections((current) => current.has(section) ? current : new Set(current).add(section));
   }, [draft?.kind]);
   useEffect(() => {
-    if (!context) return;
-    const close = () => setContext(null);
-    window.addEventListener("pointerdown", close);
-    window.addEventListener("keydown", close);
-    return () => { window.removeEventListener("pointerdown", close); window.removeEventListener("keydown", close); };
-  }, [context]);
+    const beginSelectedRename = (event: globalThis.KeyboardEvent) => {
+      const target = event.target;
+      if (event.key !== "F2" || !isRenamable(selection) || renaming || target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return;
+      event.preventDefault();
+      setRenameValue(resourceName(selection));
+      setRenaming(selection);
+    };
+    window.addEventListener("keydown", beginSelectedRename);
+    return () => window.removeEventListener("keydown", beginSelectedRename);
+  }, [renaming, selection]);
   const toggle = (section: ResourceSection) => setOpenSections((current) => {
     const next = new Set(current); if (next.has(section)) next.delete(section); else next.add(section); return next;
   });
   const openContext = (event: MouseEvent, target: Omit<NonNullable<ContextTarget>, "x" | "y">) => {
     event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, ...target });
   };
-  const item = (next: Selection, title: string, handlerKind?: HandlerKind) => <ResourceButton key={title} active={selection?.kind === next.kind && (("id" in next && "id" in selection && next.id === selection.id) || ("path" in next && "path" in selection && next.path === selection.path))} selection={next} title={title} resource={dragResource(next, title, handlerKind)} onClick={() => onSelect(next)} onContextMenu={(event) => openContext(event, { selection: next })} />;
+  const beginRename = (next: Selection) => {
+    if (!isRenamable(next)) return;
+    cancelRename.current = false;
+    setRenameValue(resourceName(next));
+    setRenaming(next);
+  };
+  const finishRename = (next: Selection) => {
+    if (cancelRename.current) {
+      cancelRename.current = false;
+      setRenaming(null);
+      return;
+    }
+    if (!isRenamable(next)) return;
+    const name = renameValue.trim();
+    setRenaming(null);
+    if (!name || name === resourceName(next)) return;
+    void Promise.resolve(onRename(next, name));
+  };
+  const contextItems: ContextMenuItem[] = [];
+  if (context?.kind) {
+    const kind = context.kind;
+    contextItems.push({ id: `new-${kind}`, label: `New ${kind}`, onSelect: () => onAdd(kind) });
+  }
+  if (context?.selection && isRenamable(context.selection)) {
+    const selected = context.selection;
+    contextItems.push({ id: "rename", label: "Rename", onSelect: () => beginRename(selected) });
+  }
+  if (context?.selection && context.selection.kind !== "commands") {
+    const selected = context.selection;
+    contextItems.push({ id: "delete", label: "Delete", danger: true, onSelect: () => onDelete(selected) });
+  }
+  const item = (next: Selection, title: string, handlerKind?: HandlerKind) => <ResourceButton key={title} active={selection?.kind === next.kind && (("id" in next && "id" in selection && next.id === selection.id) || ("path" in next && "path" in selection && next.path === selection.path))} selection={next} title={title} editing={selectionKeyEquals(renaming, next)} renameValue={renameValue} resource={dragResource(next, title, handlerKind)} onRenameChange={setRenameValue} onRenameFinish={() => finishRename(next)} onRenameKeyDown={(event) => { if (event.key === "Escape") { cancelRename.current = true; event.currentTarget.blur(); } if (event.key === "Enter") event.currentTarget.blur(); }} onClick={() => onSelect(next)} onContextMenu={(event) => { event.stopPropagation(); onSelect(next); openContext(event, { selection: next }); }} />;
   return <nav className="explorer explorer--ide" aria-label="Project resources" onContextMenu={(event) => { if (event.target === event.currentTarget) openContext(event, { kind: "view" }); }}>
     <Section id="views" title="views" open={openSections.has("views")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "view" })}>{draft?.kind === "view" && <DraftResource label={draft.label} kind="view" />}{workspace.views.map((view) => item({ kind: "view", id: view.id }, view.id))}</Section>
     <Section id="templates" title="templates" open={openSections.has("templates")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "template" })}>{draft?.kind === "template" && <DraftResource label={draft.label} kind="template" />}{workspace.templates.map((template) => item({ kind: "template", path: template.path }, template.path))}</Section>
@@ -45,10 +85,7 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, 
     <Section id="handlers" title="handlers" open={openSections.has("handlers")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "handler" })}>{draft?.kind === "handler" && <DraftResource label={draft.label} kind="handler" />}{workspace.handlers.map((handler) => item({ kind: "handler", id: handler.id }, handler.id, handler.kind))}</Section>
     <Section id="commands" title="commands.json" open={openSections.has("commands")} onToggle={toggle}>{item({ kind: "commands" }, "commands.json")}</Section>
     <Section id="schedules" title="schedules" open={openSections.has("schedules")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "schedule" })}>{draft?.kind === "schedule" && <DraftResource label={draft.label} kind="schedule" />}{workspace.schedules.map((schedule) => item({ kind: "schedule", id: schedule.id }, schedule.id))}</Section>
-    {context && <div className="explorer__context-menu" role="menu" style={{ left: context.x, top: context.y }} onPointerDown={(event) => event.stopPropagation()}>
-      {context.kind && <button type="button" role="menuitem" onClick={() => { onAdd(context.kind!); setContext(null); }}>New {context.kind}</button>}
-      {context.selection && context.selection.kind !== "commands" && <button type="button" role="menuitem" className="explorer__context-danger" onClick={() => { onDelete(context.selection!); setContext(null); }}>Delete</button>}
-    </div>}
+    {context && <ContextMenu x={context.x} y={context.y} label="Resource actions" items={contextItems} onClose={() => setContext(null)} />}
   </nav>;
 }
 
@@ -60,9 +97,10 @@ function Section({ id, title, open, onToggle, onContextMenu, children }: { id: R
   </section>;
 }
 
-function ResourceButton({ active, selection, title, resource, onClick, onContextMenu }: { active: boolean; selection: Selection; title: string; resource: DraggableResource | null; onClick(): void; onContextMenu(event: MouseEvent): void }) {
-  const dragProps = useResourceDraggable(resource);
+function ResourceButton({ active, selection, title, editing, renameValue, resource, onRenameChange, onRenameFinish, onRenameKeyDown, onClick, onContextMenu }: { active: boolean; selection: Selection; title: string; editing: boolean; renameValue: string; resource: DraggableResource | null; onRenameChange(value: string): void; onRenameFinish(): void; onRenameKeyDown(event: KeyboardEvent<HTMLInputElement>): void; onClick(): void; onContextMenu(event: MouseEvent): void }) {
+  const dragProps = useResourceDraggable(editing ? null : resource);
   const className = ["explorer__item", active ? "explorer__item--active" : "", resource ? "explorer__item--draggable" : ""].filter(Boolean).join(" ");
+  if (editing) return <div className={className} aria-current={active ? "page" : undefined} onContextMenu={onContextMenu}><ResourceIcon selection={selection} title={title} /><input className="explorer__rename-input" aria-label={`Rename ${title}`} autoFocus value={renameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onRenameChange(event.target.value)} onBlur={onRenameFinish} onKeyDown={onRenameKeyDown} /></div>;
   return <button type="button" aria-current={active ? "page" : undefined} className={className} onClick={onClick} onContextMenu={onContextMenu} onPointerDown={dragProps.onPointerDown} onClickCapture={dragProps.onClickCapture}><ResourceIcon selection={selection} title={title} /> <strong>{title}</strong></button>;
 }
 
@@ -99,4 +137,19 @@ function dragResource(selection: Selection, label: string, handlerKind?: Handler
     selection,
     handlerKind,
   };
+}
+
+function isRenamable(selection: Selection | null): selection is Exclude<Selection, { kind: "commands" }> {
+  return selection !== null && selection.kind !== "commands";
+}
+
+function resourceName(selection: Exclude<Selection, { kind: "commands" }>): string {
+  return selection.kind === "template" ? selection.path : selection.id;
+}
+
+function selectionKeyEquals(left: Selection | null, right: Selection): boolean {
+  if (!left || left.kind !== right.kind) return false;
+  if (left.kind === "commands" || right.kind === "commands") return left.kind === right.kind;
+  if (left.kind === "template" && right.kind === "template") return left.path === right.path;
+  return "id" in left && "id" in right && left.id === right.id;
 }

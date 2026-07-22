@@ -79,7 +79,11 @@ export function ContextMenu({ x, y, label, items, onClose }: {
       {items.map((item) => <button
         type="button"
         role="menuitem"
-        className={item.danger ? "context-menu__item context-menu__item--danger" : "context-menu__item"}
+        className={[
+          "context-menu__item",
+          item.danger ? "context-menu__item--danger" : "",
+          item.icon ? "" : "context-menu__item--iconless",
+        ].filter(Boolean).join(" ")}
         disabled={item.disabled}
         key={item.id}
         onClick={() => { item.onSelect(); onClose(); }}

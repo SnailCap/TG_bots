@@ -4,6 +4,7 @@ import asyncio
 import logging
 import signal
 from collections.abc import Sequence
+from dataclasses import replace
 
 from .catalog import ProjectCatalog
 from .config import BotConfig
@@ -15,7 +16,7 @@ from .jobs import DurableJobQueue, JobRuntime
 from .project import ProjectDefinition, ProjectValidationError, load_and_validate_project
 from .services import ServiceContainer, ServiceProvider
 from .store import SessionConflict, SqliteStore
-from .transport import BotTransport
+from .transport import BotTransport, UserProfileProvider
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class BotApp:
     async def start(self) -> None:
         if self._started:
             return
+        log.info("Starting bot runtime from %s", self.config.project_root)
         self._stop.clear()
         try:
             project, diagnostics = load_and_validate_project(
@@ -98,11 +100,19 @@ class BotApp:
                 for index in range(self.config.worker_count)
             )
             self._started = True
+            log.info(
+                "Bot runtime started: bot_id=%s workers=%d schedules=%d",
+                project.manifest.id,
+                self.config.worker_count,
+                len(project.schedules),
+            )
         except Exception:
+            log.exception("Bot runtime failed during startup.")
             await self.stop()
             raise
 
     async def stop(self) -> None:
+        log.info("Stopping bot runtime.")
         self._stop.set()
         if self.jobs:
             self.jobs.stop()
@@ -125,11 +135,40 @@ class BotApp:
         except Exception:
             log.exception("Service shutdown failed.")
         self._started = False
+        log.info("Bot runtime stopped.")
 
     async def handle_event(self, event: InteractionEvent) -> None:
         if self.project is None or self.dispatcher is None:
             raise RuntimeError("BotApp is not started.")
         bot_id = self.project.manifest.id
+        managed_user = await self.store.upsert_user(bot_id, event.actor)
+        if managed_user.blocked:
+            log.info("Ignoring update from blocked user: bot_id=%s user_id=%s", bot_id, event.actor.user_id)
+            return
+        if isinstance(self.transport, UserProfileProvider):
+            try:
+                avatar = await self.transport.fetch_user_avatar(
+                    event.actor.user_id, managed_user.avatar_file_id
+                )
+                if avatar.file_id != managed_user.avatar_file_id:
+                    await self.store.update_user_avatar(
+                        bot_id,
+                        event.actor.user_id,
+                        file_id=avatar.file_id,
+                        data=avatar.data,
+                        mime_type=avatar.mime_type,
+                    )
+            except Exception:
+                # User management must not make normal bot interactions depend on
+                # Telegram's profile-photo endpoint being available.
+                log.warning(
+                    "Could not refresh Telegram profile photo: bot_id=%s user_id=%s",
+                    bot_id,
+                    event.actor.user_id,
+                    exc_info=True,
+                )
+        if event.actor.role != managed_user.role:
+            event = replace(event, actor=replace(event.actor, role=managed_user.role))
         if not await self.store.mark_update_once(bot_id, event.actor, event.update_id):
             return
         for _ in range(2):
@@ -145,6 +184,7 @@ class BotApp:
         loop = asyncio.get_running_loop()
         loop_handlers: list[signal.Signals] = []
         fallback_handlers: dict[signal.Signals, object] = {}
+        started = False
 
         def request_stop(*_args: object) -> None:
             loop.call_soon_threadsafe(self._stop.set)
@@ -165,9 +205,13 @@ class BotApp:
                 fallback_handlers.pop(signum, None)
         try:
             await self.start()
+            started = True
             await self._stop.wait()
         finally:
-            await self.stop()
+            # ``start`` already performs its own cleanup on failure. Avoid a
+            # second shutdown pass (and duplicate lifecycle log messages).
+            if started:
+                await self.stop()
             for signum in loop_handlers:
                 loop.remove_signal_handler(signum)
             for signum, previous in fallback_handlers.items():

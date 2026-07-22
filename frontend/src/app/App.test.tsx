@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
@@ -67,6 +67,73 @@ afterEach(() => {
 });
 
 describe("Studio", () => {
+  it("starts and stops the local bot while streaming its output to the terminal", async () => {
+    const runProject = vi.fn().mockResolvedValue({ pid: 4210, alreadyRunning: false });
+    const stopProject = vi.fn().mockResolvedValue(undefined);
+    const approveProjectRoot = vi.fn().mockResolvedValue(undefined);
+    let outputListener: ((event: import("../../electron/contracts").ProjectProcessEvent) => void) | undefined;
+    window.studioDesktop = {
+      backendInfo: vi.fn(),
+      selectDirectory: vi.fn(),
+      openCode: vi.fn(),
+      approveProjectRoot,
+      runProject,
+      stopProject,
+      projectRunStatus: vi.fn().mockResolvedValue({ running: false, pid: null }),
+      onProjectOutput: vi.fn((listener) => { outputListener = listener; return vi.fn(); }),
+    };
+    render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Run local bot" }));
+
+    await waitFor(() => expect(runProject).toHaveBeenCalledWith({ projectRoot: "C:/demo", packageName: "demo" }));
+    expect(approveProjectRoot).toHaveBeenCalledWith("C:/demo");
+    expect(await screen.findByText("Local bot started (PID 4210).")).toBeInTheDocument();
+    expect(screen.getByLabelText("Bot terminal")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop local bot" })).toBeInTheDocument();
+
+    act(() => outputListener?.({
+      sequence: 1,
+      projectRoot: "C:/demo",
+      stream: "stdout",
+      text: "Bot is ready\n",
+      timestamp: new Date().toISOString(),
+      running: true,
+      pid: 4210,
+    }));
+    expect(screen.getByRole("log")).toHaveTextContent("Bot is ready");
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop local bot" }));
+    await waitFor(() => expect(stopProject).toHaveBeenCalledWith("C:/demo"));
+    act(() => outputListener?.({
+      sequence: 2,
+      projectRoot: "C:/demo",
+      stream: "lifecycle",
+      text: "[studio] Bot stopped.\n",
+      timestamp: new Date().toISOString(),
+      running: false,
+      pid: null,
+    }));
+    expect(screen.getByRole("button", { name: "Run local bot" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close terminal" }));
+    expect(screen.queryByLabelText("Bot terminal")).not.toBeInTheDocument();
+  });
+
+  it("shows live editor information in the application status bar", async () => {
+    render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+    expect(screen.getByRole("status")).toHaveTextContent("Ready");
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    expect(screen.getByRole("status")).toHaveTextContent("Saved");
+    expect(screen.getByText("View · home")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Inline text"), { target: { value: "Changed" } });
+    expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
+    expect(screen.getByText("Schema v3")).toBeInTheDocument();
+  });
+
   it("does not select a resource when its editor is opened through a tab", async () => {
     const { container } = render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     const resourceButton = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(".explorer__item"))
@@ -374,6 +441,48 @@ describe("Studio", () => {
     expect(screen.getByDisplayValue("welcome")).toBeInTheDocument();
   });
 
+  it("renames a view from its resource context menu", async () => {
+    const renamed: ViewDetail = { ...viewDetail, id: "welcome", source_path: "views/welcome.json", revision: "view-renamed", payload: { ...viewDetail.payload, id: "welcome" } };
+    const api = apiMock({ renameView: vi.fn().mockResolvedValue(renamed) });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "home" }));
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = await screen.findByLabelText("Rename home");
+    fireEvent.change(input, { target: { value: "welcome" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(api.renameView).toHaveBeenCalledWith("project-1", "home", "welcome", "view-one"));
+  });
+
+  it("renames every resource type inline, including with F2", async () => {
+    const api = apiMock({
+      renameTemplate: vi.fn().mockResolvedValue({ path: "welcome.txt", content: "Hello", revision: "template-renamed" }),
+      renameFlow: vi.fn().mockResolvedValue({ id: "purchase", source_path: "flows/purchase.json", revision: "flow-renamed", payload: { schema_version: 3, id: "purchase", initial_state: "start", lifecycle: {}, states: { start: { view: "home", events: {} } } } }),
+      renameSchedule: vi.fn().mockResolvedValue({ id: "nightly", source_path: "schedules/nightly.json", revision: "schedule-renamed", payload: { schema_version: 3, id: "nightly", handler: "task.daily", trigger: { type: "interval", seconds: 60 }, payload: {} } }),
+      renameHandler: vi.fn().mockResolvedValue({ ...handler, id: "checkout.process" }),
+    });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    const rename = async (label: string, name: string) => {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      fireEvent.keyDown(window, { key: "F2" });
+      const input = await screen.findByLabelText(`Rename ${label}`);
+      fireEvent.change(input, { target: { value: name } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    };
+    await rename("home.txt", "welcome.txt");
+    await waitFor(() => expect(api.renameTemplate).toHaveBeenCalledWith("project-1", "home.txt", "welcome.txt", "template-one"));
+    await rename("checkout", "purchase");
+    await waitFor(() => expect(api.renameFlow).toHaveBeenCalledWith("project-1", "checkout", "purchase", "flow-one"));
+    await rename("daily", "nightly");
+    await waitFor(() => expect(api.renameSchedule).toHaveBeenCalledWith("project-1", "daily", "nightly", "schedule-one"));
+    await rename("checkout.submit", "checkout.process");
+    await waitFor(() => expect(api.renameHandler).toHaveBeenCalledWith("project-1", "checkout.submit", "checkout.process", "handler-one"));
+  });
+
   it("opens a new template tab from the template suggestion list", async () => {
     const api = apiMock({ saveTemplate: vi.fn().mockResolvedValue({ path: "new-template.txt", content: "", revision: "template-new" }) });
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
@@ -413,6 +522,8 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     describe: vi.fn().mockResolvedValue(workspace),
     getProjectSettings: vi.fn().mockResolvedValue({ telegram_bot_token_configured: false, revision: null }),
     saveProjectSettings: vi.fn().mockResolvedValue({ telegram_bot_token_configured: true, revision: "settings-one" }),
+    listUsers: vi.fn().mockResolvedValue([]),
+    updateUser: vi.fn(),
     getView: vi.fn().mockResolvedValue(viewDetail),
     createView: vi.fn().mockResolvedValue(viewDetail),
     saveView: vi.fn().mockResolvedValue(viewDetail),
@@ -420,18 +531,22 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     deleteView: vi.fn().mockResolvedValue(undefined),
     getTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
     saveTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
+    renameTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
     deleteTemplate: vi.fn().mockResolvedValue(undefined),
     getFlow: vi.fn().mockResolvedValue({ id: "checkout", source_path: "flows/checkout.json", revision: "flow-one", payload: { schema_version: 3, id: "checkout", initial_state: "start", lifecycle: {}, states: { start: { view: "home", events: {} } } } }),
     createFlow: vi.fn(),
     saveFlow: vi.fn(),
+    renameFlow: vi.fn(),
     deleteFlow: vi.fn(),
     getCommands: vi.fn().mockResolvedValue({ source_path: "commands.json", revision: "commands-one", payload: { schema_version: 3, commands: [] } }),
     saveCommands: vi.fn(),
     getSchedule: vi.fn().mockResolvedValue({ id: "daily", source_path: "schedules/daily.json", revision: "schedule-one", payload: { schema_version: 3, id: "daily", handler: "task.daily", trigger: { type: "interval", seconds: 60 }, payload: {} } }),
     createSchedule: vi.fn(),
     saveSchedule: vi.fn(),
+    renameSchedule: vi.fn(),
     deleteSchedule: vi.fn(),
     getHandler: vi.fn().mockResolvedValue(handler),
+    renameHandler: vi.fn(),
     createHandler: vi.fn(),
     repairHandlerSource: vi.fn(),
     deleteHandler: vi.fn(),

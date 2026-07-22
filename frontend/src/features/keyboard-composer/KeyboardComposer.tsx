@@ -213,7 +213,7 @@ export function KeyboardComposer({
   return <fieldset className="keyboard-composer" aria-label="Telegram keyboard builder">
     <legend>Inline keyboard</legend>
     <div className="keyboard-composer__workspace keyboard-composer__workspace--editing">
-      <section className="keyboard-composer__canvas" onContextMenu={(event) => openContext(event, { kind: "canvas" })}>
+      <section className={rows.length === 0 ? "keyboard-composer__canvas keyboard-composer__canvas--empty" : "keyboard-composer__canvas"} onContextMenu={(event) => openContext(event, { kind: "canvas" })}>
         <div ref={gridRef} className="keyboard-composer__grid" aria-label="Keyboard rows">
           {rows.map((row, rowIndex) => <div
             className={dropTarget?.row === rowIndex ? "keyboard-composer__row keyboard-composer__row--drop-active" : "keyboard-composer__row"}

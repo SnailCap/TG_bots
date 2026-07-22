@@ -1,23 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title description">
   <title id="title">Bot Studio</title>
-  <desc id="description">Gradient BS monogram inside a chat frame with a cursor.</desc>
+  <desc id="description">A steel-blue paper plane carrying a small bot.</desc>
   <defs>
-    <linearGradient id="brand" x1="25" y1="128" x2="235" y2="128" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#7a2cff"/>
-      <stop offset=".42" stop-color="#7545ff"/>
-      <stop offset=".72" stop-color="#2998f5"/>
-      <stop offset="1" stop-color="#16bdf1"/>
-    </linearGradient>
-    <linearGradient id="cursor" x1="154" y1="166" x2="200" y2="220" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#23b8f6"/>
-      <stop offset="1" stop-color="#168ff2"/>
+    <linearGradient id="mark" x1="42" y1="54" x2="220" y2="211" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7199ca"/>
+      <stop offset=".5" stop-color="#4f7fb6"/>
+      <stop offset="1" stop-color="#365674"/>
     </linearGradient>
   </defs>
 
-  <path d="M59 34h138c22.6 0 41 18.4 41 41v118c0 22.6-18.4 41-41 41h-61l-28 27v-27H59c-22.6 0-41-18.4-41-41V75c0-22.6 18.4-41 41-41Z" fill="none" stroke="url(#brand)" stroke-width="15" stroke-linejoin="round"/>
+  <path d="M45.8 119.4 203.2 50c9.1-4 17.5 2.9 15.9 12.8l-20.4 126.6c-1.5 9.1-12.5 12.7-19 6.2l-38.2-38-28.8 25.1c-5.7 5-14.6.4-13.8-7.2l3.2-31.8 84.6-67.6-104.8 61c-7.4 4.3-16.3 5.2-24.4 2.3l-10.8-3.8c-7.6-2.7-8.3-12.9-.9-16.2Z" fill="url(#mark)"/>
 
-  <path fill="url(#brand)" fill-rule="evenodd" d="M54 91h59c24 0 41 14.2 41 35.7 0 14.1-7.7 25.2-20.3 31.1 14 5.5 22.8 17.3 22.8 32.5 0 23.2-18.1 38.7-45.8 38.7H54V91Zm26 22v35h29.5c12.1 0 19.1-6.5 19.1-17.5 0-10.8-7.4-17.5-19.4-17.5H80Zm0 56v37h30.1c13 0 20.5-6.8 20.5-18.2 0-11.6-7.7-18.8-20.8-18.8H80Z"/>
-  <path d="M211 111h-34.5c-15.4 0-24.5 8.6-24.5 21.1 0 12.2 8.7 20.3 23.4 20.3h12.1c21.1 0 35 13.5 35 33.6 0 21-15.6 35-39.1 35H153" fill="none" stroke="url(#brand)" stroke-width="25" stroke-linecap="square" stroke-linejoin="round"/>
-
-  <path d="m154 166 48 38-24.6.3-13.9 18.9L154 166Z" fill="url(#cursor)" stroke="#071018" stroke-width="6" stroke-linejoin="miter"/>
+  <path d="M174 130v10" fill="none" stroke="url(#mark)" stroke-width="7" stroke-linecap="round"/>
+  <circle cx="174" cy="126" r="8" fill="url(#mark)"/>
+  <path d="M151 137h47c14.4 0 26 11.6 26 26v14c0 14.4-11.6 26-26 26h-47c-14.4 0-26-11.6-26-26v-14c0-14.4 11.6-26 26-26Z" fill="#eef3f8" stroke="url(#mark)" stroke-width="7"/>
+  <circle cx="155" cy="170" r="6.5" fill="url(#mark)"/>
+  <circle cx="194" cy="170" r="6.5" fill="url(#mark)"/>
+  <path d="m144 198-9 16 22-11" fill="#eef3f8" stroke="url(#mark)" stroke-width="6" stroke-linejoin="round"/>
 </svg>

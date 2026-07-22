@@ -246,7 +246,7 @@ class FlowEngine:
         state = StateValues(session.variables or {})
         actor = event.actor
         common = {
-            "user": UserInfo(actor.user_id, actor.username, actor.first_name, actor.last_name),
+            "user": UserInfo(actor.user_id, actor.username, actor.first_name, actor.last_name, actor.role),
             "chat": ChatInfo(actor.chat_id),
             "event": event,
             "payload": dict(payload or {}),
@@ -348,6 +348,7 @@ class FlowEngine:
                 "username": actor.username,
                 "first_name": actor.first_name,
                 "last_name": actor.last_name,
+                "role": actor.role,
             },
         }
         text, keyboard = self.catalog.render(view_id, values)

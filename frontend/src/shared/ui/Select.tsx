@@ -7,20 +7,25 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
-export function Select({ value, options, placeholder, disabled = false, clickOnly = false, ariaLabel, onChange }: {
+export function Select({ value, options, placeholder, disabled = false, clickOnly = false, searchable = false, ariaLabel, onChange }: {
   value: string;
   options: SelectOption[];
   placeholder?: string;
   disabled?: boolean;
   clickOnly?: boolean;
+  searchable?: boolean;
   ariaLabel: string;
   onChange(value: string): void;
 }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId().replace(/:/g, "");
   const selected = options.find((option) => option.value === value);
   const label = selected?.label ?? placeholder ?? value;
+  const visibleOptions = searchable
+    ? options.filter((option) => option.label.toLowerCase().includes(query.trim().toLowerCase()))
+    : options;
 
   useEffect(() => {
     if (!open) return;
@@ -51,20 +56,25 @@ export function Select({ value, options, placeholder, disabled = false, clickOnl
     }
     if (event.key === " " || event.key === "Enter" || event.key === "ArrowDown") {
       event.preventDefault();
+      setQuery("");
       setOpen(true);
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
+      setQuery("");
       setOpen(true);
     }
   };
 
   return <div ref={rootRef} className={open ? "select-control select-control--open" : "select-control"}>
-    <button id={`${listId}-trigger`} type="button" className="select-control__trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} disabled={disabled} onClick={() => setOpen((current) => !current)} onKeyDown={onKeyDown}>
+    <button id={`${listId}-trigger`} type="button" className="select-control__trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} disabled={disabled} onClick={() => setOpen((current) => { if (!current) setQuery(""); return !current; })} onKeyDown={onKeyDown}>
       <span className="select-control__value">{selected?.icon && <span className="select-control__icon" aria-hidden="true">{selected.icon}</span>}<span>{label}</span></span><span className="select-control__chevron" aria-hidden="true"><ChevronIcon /></span>
     </button>
     {open && <div id={listId} className="select-control__menu" role="listbox" aria-labelledby={`${listId}-trigger`}>
-      {options.map((option) => <button key={option.value} type="button" role="option" aria-selected={option.value === value} disabled={option.disabled} className={option.value === value ? "select-control__option select-control__option--selected" : "select-control__option"} onClick={(event) => { event.preventDefault(); event.stopPropagation(); choose(option); }}><span className="select-control__option-content">{option.icon && <span className="select-control__icon" aria-hidden="true">{option.icon}</span>}<span>{option.label}</span></span></button>)}
+      {searchable && <input className="select-control__search" aria-label={`Search ${ariaLabel}`} autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search…" />}
+      {visibleOptions.length
+        ? visibleOptions.map((option) => <button key={option.value} type="button" role="option" aria-selected={option.value === value} disabled={option.disabled} className={option.value === value ? "select-control__option select-control__option--selected" : "select-control__option"} onClick={(event) => { event.preventDefault(); event.stopPropagation(); choose(option); }}><span className="select-control__option-content">{option.icon && <span className="select-control__icon" aria-hidden="true">{option.icon}</span>}<span>{option.label}</span></span></button>)
+        : <p className="select-control__empty">No matching options.</p>}
     </div>}
   </div>;
 }

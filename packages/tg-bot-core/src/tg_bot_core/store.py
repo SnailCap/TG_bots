@@ -8,7 +8,10 @@ from typing import Any
 
 import aiosqlite
 
-from .events import Actor
+from .events import Actor, UserRole
+
+
+USER_ROLES = frozenset({"user", "trusted", "moderator", "administrator"})
 
 
 def utc_now() -> datetime:
@@ -30,6 +33,26 @@ class FlowSession:
     status: str = "idle"
     revision: int = 0
     updated_at: datetime | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class BotUser:
+    bot_id: str
+    user_id: int
+    username: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    language_code: str | None = None
+    role: UserRole = "user"
+    blocked: bool = False
+    note: str = ""
+    avatar_file_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class StoredUserAvatar:
+    data: bytes
+    mime_type: str
 
 
 class SessionConflict(RuntimeError):
@@ -73,6 +96,23 @@ class SqliteStore:
                     processed_at REAL NOT NULL,
                     PRIMARY KEY (bot_id, user_id, chat_id, update_id)
                 );
+                CREATE TABLE IF NOT EXISTS bot_users (
+                    bot_id TEXT NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    username TEXT,
+                    first_name TEXT,
+                    last_name TEXT,
+                    language_code TEXT,
+                    role TEXT NOT NULL DEFAULT 'user',
+                    blocked INTEGER NOT NULL DEFAULT 0,
+                    note TEXT NOT NULL DEFAULT '',
+                    avatar_file_id TEXT,
+                    avatar_mime_type TEXT,
+                    avatar_data BLOB,
+                    PRIMARY KEY (bot_id, user_id),
+                    CHECK (role IN ('user', 'trusted', 'moderator', 'administrator')),
+                    CHECK (blocked IN (0, 1))
+                );
                 CREATE TABLE IF NOT EXISTS jobs (
                     id TEXT PRIMARY KEY,
                     handler_id TEXT NOT NULL,
@@ -106,6 +146,7 @@ class SqliteStore:
                 );
                 """
             )
+            await self._ensure_bot_user_columns(connection)
             await connection.commit()
 
     async def load_session(self, bot_id: str, actor: Actor) -> FlowSession:
@@ -121,7 +162,15 @@ class SqliteStore:
             return FlowSession(bot_id=bot_id, actor=actor, variables={}, updated_at=utc_now())
         return FlowSession(
             bot_id=bot_id,
-            actor=Actor(actor.user_id, actor.chat_id, row["username"], row["first_name"], row["last_name"]),
+            actor=Actor(
+                actor.user_id,
+                actor.chat_id,
+                row["username"],
+                row["first_name"],
+                row["last_name"],
+                actor.role,
+                actor.language_code,
+            ),
             flow_id=row["flow_id"],
             state_id=row["state_id"],
             view_id=row["view_id"],
@@ -200,3 +249,160 @@ class SqliteStore:
                 return False
             await connection.commit()
         return True
+
+    async def upsert_user(self, bot_id: str, actor: Actor) -> BotUser:
+        """Refresh Telegram identity fields while preserving Studio-managed fields."""
+
+        async with aiosqlite.connect(self.path) as connection:
+            connection.row_factory = aiosqlite.Row
+            await connection.execute(
+                """INSERT INTO bot_users
+                (bot_id, user_id, username, first_name, last_name, language_code, role, blocked, note)
+                VALUES (?, ?, ?, ?, ?, ?, 'user', 0, '')
+                ON CONFLICT(bot_id, user_id) DO UPDATE SET
+                    username=excluded.username,
+                    first_name=excluded.first_name,
+                    last_name=excluded.last_name,
+                    language_code=excluded.language_code""",
+                (
+                    bot_id,
+                    actor.user_id,
+                    actor.username,
+                    actor.first_name,
+                    actor.last_name,
+                    actor.language_code,
+                ),
+            )
+            row = await (
+                await connection.execute(
+                    "SELECT * FROM bot_users WHERE bot_id=? AND user_id=?",
+                    (bot_id, actor.user_id),
+                )
+            ).fetchone()
+            await connection.commit()
+        if row is None:  # Defensive: the upsert and select share one connection.
+            raise RuntimeError("User upsert did not produce a row.")
+        return self._user_from_row(row)
+
+    async def list_users(self, bot_id: str) -> list[BotUser]:
+        async with aiosqlite.connect(self.path) as connection:
+            connection.row_factory = aiosqlite.Row
+            rows = await (
+                await connection.execute(
+                    """SELECT * FROM bot_users WHERE bot_id=?
+                    ORDER BY lower(coalesce(first_name, '')), lower(coalesce(last_name, '')), user_id""",
+                    (bot_id,),
+                )
+            ).fetchall()
+        return [self._user_from_row(row) for row in rows]
+
+    async def update_user(
+        self,
+        bot_id: str,
+        user_id: int,
+        *,
+        role: UserRole,
+        blocked: bool,
+        note: str,
+    ) -> BotUser | None:
+        if role not in USER_ROLES:
+            raise ValueError(f"Unsupported user role: {role}")
+        async with aiosqlite.connect(self.path) as connection:
+            connection.row_factory = aiosqlite.Row
+            result = await connection.execute(
+                """UPDATE bot_users SET role=?, blocked=?, note=?
+                WHERE bot_id=? AND user_id=?""",
+                (role, int(blocked), note, bot_id, user_id),
+            )
+            if result.rowcount != 1:
+                return None
+            row = await (
+                await connection.execute(
+                    "SELECT * FROM bot_users WHERE bot_id=? AND user_id=?",
+                    (bot_id, user_id),
+                )
+            ).fetchone()
+            await connection.commit()
+        return self._user_from_row(row) if row is not None else None
+
+    async def update_user_avatar(
+        self,
+        bot_id: str,
+        user_id: int,
+        *,
+        file_id: str | None,
+        data: bytes | None,
+        mime_type: str | None,
+    ) -> BotUser | None:
+        """Replace or clear a cached profile photo without touching managed fields."""
+
+        if file_id is not None and (not data or not mime_type):
+            raise ValueError("A changed profile photo requires data and a MIME type.")
+        async with aiosqlite.connect(self.path) as connection:
+            connection.row_factory = aiosqlite.Row
+            result = await connection.execute(
+                """UPDATE bot_users
+                SET avatar_file_id=?, avatar_data=?, avatar_mime_type=?
+                WHERE bot_id=? AND user_id=?""",
+                (file_id, data, mime_type, bot_id, user_id),
+            )
+            if result.rowcount != 1:
+                return None
+            row = await (
+                await connection.execute(
+                    "SELECT * FROM bot_users WHERE bot_id=? AND user_id=?",
+                    (bot_id, user_id),
+                )
+            ).fetchone()
+            await connection.commit()
+        return self._user_from_row(row) if row is not None else None
+
+    async def get_user_avatar(self, bot_id: str, user_id: int) -> StoredUserAvatar | None:
+        async with aiosqlite.connect(self.path) as connection:
+            connection.row_factory = aiosqlite.Row
+            row = await (
+                await connection.execute(
+                    """SELECT avatar_data, avatar_mime_type FROM bot_users
+                    WHERE bot_id=? AND user_id=?""",
+                    (bot_id, user_id),
+                )
+            ).fetchone()
+        if row is None or row["avatar_data"] is None:
+            return None
+        return StoredUserAvatar(
+            data=bytes(row["avatar_data"]),
+            mime_type=row["avatar_mime_type"] or "image/jpeg",
+        )
+
+    @staticmethod
+    async def _ensure_bot_user_columns(connection: aiosqlite.Connection) -> None:
+        """Migrate early user-registry databases without discarding durable users."""
+
+        rows = await (await connection.execute("PRAGMA table_info(bot_users)")).fetchall()
+        existing = {row[1] for row in rows}
+        additions = {
+            "language_code": "TEXT",
+            "avatar_file_id": "TEXT",
+            "avatar_mime_type": "TEXT",
+            "avatar_data": "BLOB",
+        }
+        for name, declaration in additions.items():
+            if name not in existing:
+                await connection.execute(
+                    f"ALTER TABLE bot_users ADD COLUMN {name} {declaration}"
+                )
+
+    @staticmethod
+    def _user_from_row(row: aiosqlite.Row) -> BotUser:
+        return BotUser(
+            bot_id=row["bot_id"],
+            user_id=row["user_id"],
+            username=row["username"],
+            first_name=row["first_name"],
+            last_name=row["last_name"],
+            language_code=row["language_code"],
+            role=row["role"],
+            blocked=bool(row["blocked"]),
+            note=row["note"],
+            avatar_file_id=row["avatar_file_id"],
+        )

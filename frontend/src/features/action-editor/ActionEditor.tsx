@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   actionFor,
@@ -100,7 +100,6 @@ export function ActionEditor({
   hideActionLabel?: boolean;
   createOptions?: HandlerCreateOptions;
 }) {
-  const listId = useId().replace(/:/g, "");
   const compatibleHandlers = options.handlers.filter((handler) => handler.kind === scope.expectedKind);
   const defaultHandlerName = suggestedHandlerName(createOptions, scope.expectedKind);
   useEffect(() => {
@@ -128,49 +127,39 @@ export function ActionEditor({
   return (
     <div className={compact ? "action-editor action-editor--compact" : "action-editor"}>
       <label>
-        {!hideActionLabel && "Action"}
-        <Select ariaLabel="Action" value={currentActionAllowed ? action.type : ""} placeholder="Choose a valid action" options={ACTION_LABELS.filter((item) => allowed.includes(item.value))} onChange={(value) => onChange(actionFor(value as ActionSpec["type"]))} />
-        {!currentActionAllowed && <small className="error">{action.type} is not valid in this slot.</small>}
+        {!hideActionLabel && <span className="action-editor__label">Action</span>}
+        <Select searchable ariaLabel="Action" value={currentActionAllowed ? action.type : ""} placeholder="Choose a valid action" options={ACTION_LABELS.filter((item) => allowed.includes(item.value))} onChange={(value) => onChange(actionFor(value as ActionSpec["type"]))} />
       </label>
 
       {(action.type === "view.render" || action.type === "flow.start" || action.type === "flow.goto" || action.type === "flow.event") && (
         <label>
-          {action.type === "view.render" ? "View" : action.type === "flow.start" ? "Flow" : action.type === "flow.goto" ? "State" : "Event"}
+          <span className="action-editor__label">{action.type === "view.render" ? "View" : action.type === "flow.start" ? "Flow" : action.type === "flow.goto" ? "State" : "Event"}</span>
           {resourceTarget
             ? <ResourceDropTarget target={resourceTarget} label={`Drop ${resourceTarget.type === "view-reference" ? "view" : "flow"} here`} onDrop={(resource) => onChange({ ...action, target: resource.value })}>
-                <input
-                  list={targetOptions.length ? `${listId}-targets` : undefined}
-                  value={action.target}
-                  onChange={(event) => onChange({ ...action, target: event.target.value })}
-                />
+                <Select searchable ariaLabel={action.type === "view.render" ? "View" : "Flow"} value={action.target} placeholder={`Choose a ${action.type === "view.render" ? "view" : "flow"}`} options={targetOptions.map((value) => ({ value, label: value }))} onChange={(target) => onChange({ ...action, target })} />
               </ResourceDropTarget>
-            : <input
-                list={targetOptions.length ? `${listId}-targets` : undefined}
-                value={action.target}
-                onChange={(event) => onChange({ ...action, target: event.target.value })}
-              />}
-          {targetOptions.length > 0 && <datalist id={`${listId}-targets`}>{targetOptions.map((item) => <option key={item} value={item} />)}</datalist>}
+            : action.type === "flow.event"
+              ? <input value={action.target} onChange={(event) => onChange({ ...action, target: event.target.value })} />
+              : <Select searchable ariaLabel="State" value={action.target} placeholder="Choose a state" options={targetOptions.map((value) => ({ value, label: value }))} onChange={(target) => onChange({ ...action, target })} />}
         </label>
       )}
 
       {(action.type === "flow.cancel" || action.type === "flow.finish") && (
         <label>
-          Final view (optional)
+          <span className="action-editor__label">Final view (optional)</span>
           <ResourceDropTarget target={{ type: "view-reference" }} label="Drop view here" onDrop={(resource) => onChange({ ...action, view: resource.value })}>
-            <input list={`${listId}-views`} value={action.view ?? ""} onChange={(event) => onChange({ ...action, view: event.target.value || undefined })} />
+            <Select searchable ariaLabel="Final view (optional)" value={action.view ?? ""} placeholder="Choose a view" options={options.views.map((value) => ({ value, label: value }))} onChange={(view) => onChange({ ...action, view: view || undefined })} />
           </ResourceDropTarget>
-          <datalist id={`${listId}-views`}>{options.views.map((item) => <option key={item} value={item} />)}</datalist>
         </label>
       )}
 
       {action.type === "handler.invoke" && (
         <>
           <label>
-            Handler name
+            <span className="action-editor__label">Handler name</span>
             <ResourceDropTarget target={{ type: "handler-reference", handlerKind: scope.expectedKind }} label={`Drop ${scope.expectedKind} handler here`} onDrop={(resource) => onChange({ ...action, handler: resource.value })}>
-              <input list={`${listId}-handlers`} value={action.handler} onChange={(event) => onChange({ ...action, handler: event.target.value })} />
+              <input value={action.handler} onChange={(event) => onChange({ ...action, handler: event.target.value })} />
             </ResourceDropTarget>
-            <datalist id={`${listId}-handlers`}>{compatibleHandlers.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
           </label>
           <small className="muted">Studio uses this stable name for the binding and Python file.</small>
           <HandlerControls
@@ -198,22 +187,20 @@ export function ActionEditor({
       {action.type === "task.enqueue" && (
         <>
           <label>
-            Task handler
+            <span className="action-editor__label">Task handler</span>
             <ResourceDropTarget target={{ type: "handler-reference", handlerKind: "task" }} label="Drop task handler here" onDrop={(resource) => onChange({ ...action, target: resource.value })}>
-              <input list={`${listId}-tasks`} value={action.target} onChange={(event) => onChange({ ...action, target: event.target.value })} />
+              <Select searchable ariaLabel="Task handler" value={action.target} placeholder="Choose a task handler" options={targetOptions.map((value) => ({ value, label: value }))} onChange={(target) => onChange({ ...action, target })} />
             </ResourceDropTarget>
-            <datalist id={`${listId}-tasks`}>{targetOptions.map((item) => <option key={item} value={item} />)}</datalist>
           </label>
           <label>
-            Delay, seconds
+            <span className="action-editor__label">Delay, seconds</span>
             <input type="number" min="0" value={action.delay_seconds ?? 0} onChange={(event) => onChange({ ...action, delay_seconds: Number(event.target.value) })} />
           </label>
           <label>
-            View after enqueue (optional)
+            <span className="action-editor__label">View after enqueue (optional)</span>
             <ResourceDropTarget target={{ type: "view-reference" }} label="Drop view here" onDrop={(resource) => onChange({ ...action, view: resource.value })}>
-              <input list={`${listId}-views`} value={action.view ?? ""} onChange={(event) => onChange({ ...action, view: event.target.value || undefined })} />
+              <Select searchable ariaLabel="View after enqueue (optional)" value={action.view ?? ""} placeholder="Choose a view" options={options.views.map((value) => ({ value, label: value }))} onChange={(view) => onChange({ ...action, view: view || undefined })} />
             </ResourceDropTarget>
-            <datalist id={`${listId}-views`}>{options.views.map((item) => <option key={item} value={item} />)}</datalist>
           </label>
           <JsonObjectEditor label="Task payload" value={action.payload ?? {}} onChange={(payload) => onChange({ ...action, payload })} />
         </>
