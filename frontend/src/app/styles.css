@@ -790,7 +790,7 @@ h2 { font-size: 1.12rem; font-weight: 550; }
 }
 
 /* Telegram keyboard builder: a direct manipulation canvas with a focused inspector. */
-.keyboard-composer { --keyboard-motion-fast: 140ms; --keyboard-motion-base: 220ms; --keyboard-motion-enter: cubic-bezier(.2, .8, .2, 1); --keyboard-motion-press: cubic-bezier(.3, .7, .4, 1); --keyboard-row-actions-width: 72px; min-width: 0; margin-top: 24px; padding: 0 13px 13px; border: 1px solid #414852; border-radius: 5px; background: #20242a; box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%); }
+.keyboard-composer { --keyboard-motion-fast: 140ms; --keyboard-motion-base: 220ms; --keyboard-motion-enter: cubic-bezier(.2, .8, .2, 1); --keyboard-motion-press: cubic-bezier(.3, .7, .4, 1); --keyboard-row-actions-width: 66px; min-width: 0; margin-top: 24px; padding: 0 13px 13px; border: 1px solid #414852; border-radius: 5px; background: #20242a; box-shadow: inset 0 1px 0 rgb(255 255 255 / 2%); }
 .keyboard-composer > legend { margin-left: 7px; padding: 0 6px; color: #dfe5ec; font-size: .82rem; font-weight: 600; }
 .keyboard-composer__inspector-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .keyboard-composer h3 { margin: 2px 0 0; color: #dfe5ec; font-size: .92rem; font-weight: 600; }
@@ -807,10 +807,10 @@ h2 { font-size: 1.12rem; font-weight: 550; }
 .keyboard-composer__canvas--empty .keyboard-composer__add-row svg { width: 18px; height: 18px; }
 .keyboard-composer__grid { display: grid; min-width: 0; grid-column: 1 / -1; gap: 6px; padding: 7px; border: 1px solid #404751; border-radius: 5px; background: #1c2025; }
 .keyboard-composer__grid:empty { display: none; }
-.keyboard-composer__row { display: grid; min-width: 0; min-height: 42px; grid-template-columns: minmax(0, 1fr) var(--keyboard-row-actions-width); align-items: center; gap: 6px; border-radius: 4px; transition: background-color var(--keyboard-motion-fast) ease, box-shadow var(--keyboard-motion-fast) ease; }
+.keyboard-composer__row { display: grid; min-width: 0; min-height: 42px; grid-template-columns: minmax(0, 1fr) var(--keyboard-row-actions-width); align-items: center; border-radius: 4px; transition: background-color var(--keyboard-motion-fast) ease, box-shadow var(--keyboard-motion-fast) ease; }
 .keyboard-composer__row--drop-active { background: #202d3a; box-shadow: inset 0 0 0 1px rgb(111 158 205 / 18%); }
 .keyboard-composer__button-list { display: grid; min-width: 0; grid-auto-columns: minmax(0, 1fr); grid-auto-flow: column; align-items: center; gap: 6px; overflow: hidden; }
-.keyboard-composer__row-actions { display: flex; min-height: 42px; align-items: center; }
+.keyboard-composer__row-actions { display: grid; min-height: 42px; grid-template-columns: 42px 24px; align-items: center; }
 .keyboard-composer__button-slot { position: relative; display: grid; min-width: 0; }
 .keyboard-composer__button-slot--dragging > .keyboard-composer__button { opacity: 0; pointer-events: none; }
 .keyboard-composer__append-slot { flex: 0 0 42px; }
@@ -852,8 +852,8 @@ h2 { font-size: 1.12rem; font-weight: 550; }
 .keyboard-composer__icon-button:hover:not(:disabled) { border-color: #718397; color: #e5eff9; background: #39444f; box-shadow: none; }
 .keyboard-composer__icon-button:active:not(:disabled) { transform: scale(.9); }
 .keyboard-composer__icon-button--danger:hover:not(:disabled) { border-color: #a8676e; color: #ffdce0; background: #553a40; }
-.keyboard-composer__row-delete-control { display: flex; height: 42px; flex: 0 0 30px; align-items: center; justify-content: center; border-left: 1px solid #414852; }
-.keyboard-composer__row-delete, .keyboard-composer__row-delete:hover:not(:disabled) { width: 30px; min-width: 30px; height: 42px; min-height: 42px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.keyboard-composer__row-delete-control { display: flex; height: 42px; flex: 0 0 24px; align-items: center; justify-content: center; border-left: 1px solid #414852; }
+.keyboard-composer__row-delete, .keyboard-composer__row-delete:hover:not(:disabled) { width: 24px; min-width: 24px; height: 42px; min-height: 42px; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 .keyboard-composer__row-delete:hover:not(:disabled) { color: #ffd2d6; background: radial-gradient(circle, rgb(184 89 99 / 16%) 0 10px, transparent 11px); }
 .keyboard-composer__row-delete:hover:not(:disabled) svg { transform: scale(1.1); }
 .keyboard-composer__row-delete svg { transition: transform var(--keyboard-motion-fast) var(--keyboard-motion-enter); }
@@ -873,7 +873,7 @@ h2 { font-size: 1.12rem; font-weight: 550; }
 @media (max-width: 560px) {
   .keyboard-composer__row { align-items: stretch; }
   .keyboard-composer__icon-button { width: 38px; min-width: 38px; height: 38px; min-height: 38px; }
-  .keyboard-composer__row-delete { width: 30px; min-width: 30px; height: 42px; min-height: 42px; }
+  .keyboard-composer__row-delete { width: 24px; min-width: 24px; height: 42px; min-height: 42px; }
 }
 
 @keyframes keyboard-empty-icon-in { from { opacity: 0; transform: translateY(4px) scale(.9); } to { opacity: 1; transform: translateY(0) scale(1); } }
