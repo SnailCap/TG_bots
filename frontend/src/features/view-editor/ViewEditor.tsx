@@ -4,6 +4,7 @@ import type { ActionOptions, TextSpec, ViewSpec } from "../../domain/project";
 import { type HandlerActions } from "../action-editor/ActionEditor";
 import { KeyboardComposer } from "../keyboard-composer/KeyboardComposer";
 import { ResourceDropTarget } from "../resource-dnd";
+import { FormControlGroup, FormField, FormGrid, type FormControlProps } from "../../shared/ui/Form";
 import { OverlayDialog } from "../../shared/ui/OverlayDialog";
 import { Select } from "../../shared/ui/Select";
 
@@ -29,15 +30,16 @@ export function ViewEditor({
   const [accessMockup, setAccessMockup] = useState("everyone");
   return (
     <section className="editor" aria-label="View editor">
-      <div className="form-grid form-grid--view-settings">
-        <div className="view-settings__primary">
-          <label className="editor-field editor-field--name">
-            <span>Name:</span>
-            <input value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} />
-          </label>
-          <label className="editor-field editor-field--access">
-            <span>Access:</span>
+      <FormGrid columns={2} className="view-settings">
+        <FormField label="Name:">
+          {(controlProps) => (
+            <input {...controlProps} value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} />
+          )}
+        </FormField>
+        <FormField label="Access:">
+          {(controlProps) => (
             <Select
+              {...controlProps}
               ariaLabel="Page access"
               value={accessMockup}
               options={[
@@ -47,12 +49,13 @@ export function ViewEditor({
               ]}
               onChange={setAccessMockup}
             />
-          </label>
-        </div>
-        <div className="text-source-field editor-field">
-          <span>Content:</span>
-          <TextSourceControl text={value.text} templates={options.templates ?? []} onChange={(text) => onChange({ ...value, text })} onOpenTemplate={onOpenTemplate} onCreateTemplate={onCreateTemplate} />
-        </div>
+          )}
+        </FormField>
+        <FormField label="Content:" span="full">
+          {(controlProps) => (
+            <TextSourceControl controlProps={controlProps} text={value.text} templates={options.templates ?? []} onChange={(text) => onChange({ ...value, text })} onOpenTemplate={onOpenTemplate} onCreateTemplate={onCreateTemplate} />
+          )}
+        </FormField>
         <KeyboardComposer
           viewId={value.id}
           keyboard={value.keyboard}
@@ -64,7 +67,7 @@ export function ViewEditor({
           }}
           onChange={(keyboard) => onChange({ ...value, keyboard })}
         />
-      </div>
+      </FormGrid>
     </section>
   );
 }
@@ -78,7 +81,7 @@ function AccessIcon({ kind }: { kind: "everyone" | "members" | "admins" }) {
   return <svg viewBox="0 0 16 16" focusable="false">{paths[kind]}</svg>;
 }
 
-function TextSourceControl({ text, templates, onChange, onOpenTemplate, onCreateTemplate }: { text: TextSpec; templates: string[]; onChange(text: TextSpec): void; onOpenTemplate?: (path: string) => void; onCreateTemplate?(suggestedPath: string): void }) {
+function TextSourceControl({ controlProps, text, templates, onChange, onOpenTemplate, onCreateTemplate }: { controlProps: FormControlProps; text: TextSpec; templates: string[]; onChange(text: TextSpec): void; onOpenTemplate?: (path: string) => void; onCreateTemplate?(suggestedPath: string): void }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [filter, setFilter] = useState("");
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
@@ -107,10 +110,10 @@ function TextSourceControl({ text, templates, onChange, onOpenTemplate, onCreate
     setSuggestionsOpen(false);
   };
 
-  return <div className="text-source">
-    <Select clickOnly ariaLabel="Text source" value={isTemplate ? "template" : "inline"} options={[{ value: "inline", label: "Text" }, { value: "template", label: "Template" }]} onChange={(mode) => onChange(mode === "template" ? { template: "" } : { inline: "" })} />
+  return <FormControlGroup layout="split" className="text-source">
+    <Select {...controlProps} clickOnly ariaLabel="Text source" value={isTemplate ? "template" : "inline"} options={[{ value: "inline", label: "Text" }, { value: "template", label: "Template" }]} onChange={(mode) => onChange(mode === "template" ? { template: "" } : { inline: "" })} />
     {isTemplate
-      ? <ResourceDropTarget target={{ type: "template-reference" }} label="Drop template here" className="text-source__template" onDrop={(resource) => chooseTemplateSuggestion(resource.value)}>
+      ? <ResourceDropTarget target={{ type: "template-reference" }} label="Drop template here" className="form-control-group form-control-group--attached text-source__template" onDrop={(resource) => chooseTemplateSuggestion(resource.value)}>
           <input
             aria-label="Template"
             aria-autocomplete="list"
@@ -144,8 +147,10 @@ function TextSourceControl({ text, templates, onChange, onOpenTemplate, onCreate
             {hasMoreSuggestions && <button type="button" className="template-suggestions__more" aria-label="Show more templates" onMouseDown={(event) => event.preventDefault()} onClick={() => { setActiveSuggestionIndex(-1); setShowAllSuggestions(true); }}><ChevronDownIcon /></button>}
             <button type="button" className="template-suggestions__create" onMouseDown={(event) => event.preventDefault()} onClick={() => { onCreateTemplate?.(canOpenTemplate ? "" : templateValue.trim()); setSuggestionsOpen(false); }}>Create template</button>
           </div>}
-          <button type="button" className="text-source__open" aria-label="Open current template" title={canOpenTemplate ? "Open template editor" : "Enter an existing template path to open it"} disabled={!canOpenTemplate} onClick={() => onOpenTemplate?.(templateValue.trim())}><OpenTemplateIcon /></button>
-          <button type="button" className="text-source__browse" aria-label="Browse templates" title="Browse templates" onClick={() => { setSuggestionsOpen(false); setFilter(""); setPickerOpen(true); }}><FolderIcon /></button>
+          <div className="form-control-group__actions">
+            <button type="button" className="text-source__open" aria-label="Open current template" title={canOpenTemplate ? "Open template editor" : "Enter an existing template path to open it"} disabled={!canOpenTemplate} onClick={() => onOpenTemplate?.(templateValue.trim())}><OpenTemplateIcon /></button>
+            <button type="button" className="text-source__browse" aria-label="Browse templates" title="Browse templates" onClick={() => { setSuggestionsOpen(false); setFilter(""); setPickerOpen(true); }}><FolderIcon /></button>
+          </div>
         </ResourceDropTarget>
       : <AutoGrowTextarea value={text.inline} onChange={(inline) => onChange({ inline })} />}
     <OverlayDialog open={pickerOpen} label="Choose template" onClose={() => setPickerOpen(false)} className="template-picker">
@@ -155,7 +160,7 @@ function TextSourceControl({ text, templates, onChange, onOpenTemplate, onCreate
           {visibleTemplates.length ? visibleTemplates.map((template) => <button key={template} type="button" className={template === text.template ? "template-picker__item template-picker__item--selected" : "template-picker__item"} onClick={() => { onChange({ template }); setPickerOpen(false); }}>{template}</button>) : <p className="muted">No matching templates.</p>}
         </div>
     </OverlayDialog>
-  </div>;
+  </FormControlGroup>;
 }
 
 const RECENT_TEMPLATES_KEY = "tg-bot-studio.recent-templates";
@@ -195,8 +200,9 @@ function AutoGrowTextarea({ value, onChange }: { value: string; onChange(value: 
     const textarea = textareaRef.current;
     if (!textarea) return;
     const currentHeight = textarea.getBoundingClientRect().height;
+    const minimumHeight = Number.parseFloat(window.getComputedStyle(textarea).minHeight) || 32;
     textarea.style.height = "auto";
-    const nextHeight = Math.max(30, Math.min(textarea.scrollHeight, 180));
+    const nextHeight = Math.max(minimumHeight, Math.min(textarea.scrollHeight, 180));
     textarea.style.height = `${currentHeight}px`;
     const frame = window.requestAnimationFrame(() => { textarea.style.height = `${nextHeight}px`; });
     return () => window.cancelAnimationFrame(frame);

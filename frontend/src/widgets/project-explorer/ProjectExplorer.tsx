@@ -5,7 +5,7 @@ import { useResourceDraggable, type DraggableResource } from "../../features/res
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ResourceIcon } from "../../shared/ui/ResourceIcon";
 
-export type CreatableResource = "view" | "template" | "flow" | "handler" | "schedule";
+export type CreatableResource = "view" | "template" | "flow" | "handler" | "command" | "schedule";
 export type ExplorerDraft = { kind: CreatableResource; label: string };
 type ResourceSection = "views" | "templates" | "flows" | "handlers" | "commands" | "schedules";
 type ContextTarget = { x: number; y: number; kind?: CreatableResource; selection?: Selection } | null;
@@ -29,6 +29,11 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, 
     if (!section) return;
     setOpenSections((current) => current.has(section) ? current : new Set(current).add(section));
   }, [draft?.kind]);
+  useEffect(() => {
+    const section = selection && selectionSection(selection);
+    if (!section) return;
+    setOpenSections((current) => current.has(section) ? current : new Set(current).add(section));
+  }, [selection]);
   useEffect(() => {
     const beginSelectedRename = (event: globalThis.KeyboardEvent) => {
       const target = event.target;
@@ -77,13 +82,16 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, 
     const selected = context.selection;
     contextItems.push({ id: "delete", label: "Delete", danger: true, onSelect: () => onDelete(selected) });
   }
-  const item = (next: Selection, title: string, handlerKind?: HandlerKind) => <ResourceButton key={title} active={selection?.kind === next.kind && (("id" in next && "id" in selection && next.id === selection.id) || ("path" in next && "path" in selection && next.path === selection.path))} selection={next} title={title} editing={selectionKeyEquals(renaming, next)} renameValue={renameValue} resource={dragResource(next, title, handlerKind)} onRenameChange={setRenameValue} onRenameFinish={() => finishRename(next)} onRenameKeyDown={(event) => { if (event.key === "Escape") { cancelRename.current = true; event.currentTarget.blur(); } if (event.key === "Enter") event.currentTarget.blur(); }} onClick={() => onSelect(next)} onContextMenu={(event) => { event.stopPropagation(); onSelect(next); openContext(event, { selection: next }); }} />;
+  const item = (next: Selection, title: string, handlerKind?: HandlerKind) => <ResourceButton key={`${next.kind}:${title}`} active={selectionKeyEquals(selection, next)} selection={next} title={title} editing={selectionKeyEquals(renaming, next)} renameValue={renameValue} resource={dragResource(next, title, handlerKind)} onRenameChange={setRenameValue} onRenameFinish={() => finishRename(next)} onRenameKeyDown={(event) => { if (event.key === "Escape") { cancelRename.current = true; event.currentTarget.blur(); } if (event.key === "Enter") event.currentTarget.blur(); }} onClick={() => onSelect(next)} onContextMenu={(event) => { event.stopPropagation(); onSelect(next); openContext(event, { selection: next }); }} />;
   return <nav className="explorer explorer--ide" aria-label="Project resources" onContextMenu={(event) => { if (event.target === event.currentTarget) openContext(event, { kind: "view" }); }}>
     <Section id="views" title="views" open={openSections.has("views")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "view" })}>{draft?.kind === "view" && <DraftResource label={draft.label} kind="view" />}{workspace.views.map((view) => item({ kind: "view", id: view.id }, view.id))}</Section>
     <Section id="templates" title="templates" open={openSections.has("templates")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "template" })}>{draft?.kind === "template" && <DraftResource label={draft.label} kind="template" />}{workspace.templates.map((template) => item({ kind: "template", path: template.path }, template.path))}</Section>
     <Section id="flows" title="flows" open={openSections.has("flows")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "flow" })}>{draft?.kind === "flow" && <DraftResource label={draft.label} kind="flow" />}{workspace.flows.map((flow) => item({ kind: "flow", id: flow.id }, flow.id))}</Section>
     <Section id="handlers" title="handlers" open={openSections.has("handlers")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "handler" })}>{draft?.kind === "handler" && <DraftResource label={draft.label} kind="handler" />}{workspace.handlers.map((handler) => item({ kind: "handler", id: handler.id }, handler.id, handler.kind))}</Section>
-    <Section id="commands" title="commands.json" open={openSections.has("commands")} onToggle={toggle}>{item({ kind: "commands" }, "commands.json")}</Section>
+    <Section id="commands" title="commands" open={openSections.has("commands")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "command" })}>
+      {workspace.commands.items.map((command) => item({ kind: "command", name: command.name }, `/${command.name}`))}
+      {item({ kind: "commands" }, "fallbacks")}
+    </Section>
     <Section id="schedules" title="schedules" open={openSections.has("schedules")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "schedule" })}>{draft?.kind === "schedule" && <DraftResource label={draft.label} kind="schedule" />}{workspace.schedules.map((schedule) => item({ kind: "schedule", id: schedule.id }, schedule.id))}</Section>
     {context && <ContextMenu x={context.x} y={context.y} label="Resource actions" items={contextItems} onClose={() => setContext(null)} />}
   </nav>;
@@ -105,7 +113,12 @@ function ResourceButton({ active, selection, title, editing, renameValue, resour
 }
 
 function DraftResource({ kind, label }: ExplorerDraft) {
-  return <div className="explorer__item explorer__item--active explorer__item--draft" aria-current="page"><ResourceIcon selection={kind === "template" ? { kind, path: label } : { kind, id: label }} title={label} /><strong>{label}</strong><span className="explorer__draft-indicator">new</span></div>;
+  const selection: Selection = kind === "template"
+    ? { kind, path: label }
+    : kind === "command"
+      ? { kind, name: label }
+      : { kind, id: label };
+  return <div className="explorer__item explorer__item--active explorer__item--draft" aria-current="page"><ResourceIcon selection={selection} title={label} /><strong>{label}</strong><span className="explorer__draft-indicator">new</span></div>;
 }
 
 function ChevronIcon() {
@@ -125,11 +138,19 @@ function CategoryIcon({ category }: { category: ResourceSection }) {
 }
 
 function draftSection(kind: CreatableResource): ResourceSection {
+  if (kind === "command") return "commands";
   return kind === "schedule" ? "schedules" : `${kind}s` as ResourceSection;
 }
 
+function selectionSection(selection: Selection): ResourceSection {
+  if (selection.kind === "template") return "templates";
+  if (selection.kind === "command" || selection.kind === "commands") return "commands";
+  if (selection.kind === "schedule") return "schedules";
+  return `${selection.kind}s` as ResourceSection;
+}
+
 function dragResource(selection: Selection, label: string, handlerKind?: HandlerKind): DraggableResource | null {
-  if (selection.kind === "commands") return null;
+  if (selection.kind === "commands" || selection.kind === "command") return null;
   return {
     kind: selection.kind,
     value: "path" in selection ? selection.path : selection.id,
@@ -144,12 +165,15 @@ function isRenamable(selection: Selection | null): selection is Exclude<Selectio
 }
 
 function resourceName(selection: Exclude<Selection, { kind: "commands" }>): string {
-  return selection.kind === "template" ? selection.path : selection.id;
+  if (selection.kind === "template") return selection.path;
+  if (selection.kind === "command") return selection.name;
+  return selection.id;
 }
 
 function selectionKeyEquals(left: Selection | null, right: Selection): boolean {
   if (!left || left.kind !== right.kind) return false;
   if (left.kind === "commands" || right.kind === "commands") return left.kind === right.kind;
   if (left.kind === "template" && right.kind === "template") return left.path === right.path;
+  if (left.kind === "command" && right.kind === "command") return left.name === right.name;
   return "id" in left && "id" in right && left.id === right.id;
 }

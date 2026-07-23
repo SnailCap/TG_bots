@@ -51,6 +51,7 @@ flowchart TD
     Loader --> Catalog["ProjectCatalog"]
     App --> Services["ServiceContainer"]
     App --> Store["SqliteStore"]
+    App --> Analytics["AnalyticsRecorder"]
     App --> Resolver["HandlerResolver / HandlerExecutor"]
     App --> Jobs["DurableJobQueue / JobRuntime"]
     App --> Dispatcher["EventDispatcher"]
@@ -61,6 +62,8 @@ flowchart TD
     Engine --> Store
     Engine --> Jobs
     Engine --> Transport
+    Engine --> Analytics
+    Resolver --> Analytics
     Resolver --> Bindings["resources/handlers.json"]
     Resolver --> Handlers["Custom Python handlers"]
     Handlers --> Services
@@ -76,10 +79,14 @@ flowchart TD
 | `FlowEngine` | Владеет lifecycle, actions, outcome routing, checkpoints и rendering |
 | `HandlerResolver` | Разрешает только explicit module/symbol bindings и кеширует callables |
 | `HandlerExecutor` | Разрешает binding, проверяет kind/result и добавляет structured log context; flow error boundary принадлежит dispatcher/engine |
-| `SqliteStore` | Sessions, optimistic revisions и processed update deduplication |
+| `SqliteStore` | Sessions, optimistic revisions, processed update deduplication и инициализация runtime tables |
+| `AnalyticsRecorder` | Best-effort append-only запись структурированных runtime events в SQLite |
 | `JobRuntime` | Materialization schedules, durable claim/lease/retry/history и task handlers |
 | `BotTransport` | Граница входящих events и исходящих messages; production adapter использует PTB polling |
 | `ServiceContainer` | Последовательное создание и обратное закрытие project services |
+
+Контракт append-only событий, privacy rules и каталог имён описаны в
+[analytics events](analytics-events.md).
 
 ## Поток интерактивного события
 
@@ -135,7 +142,9 @@ Electron открывает только существующий `.py` внут
 
 ### Local test run
 
-Electron может запустить созданного бота для локальной проверки по кнопке Run. Запуск принадлежит только privileged Electron main process: renderer передаёт лишь путь к уже открытому в Studio project root и имя package. Перед первым запуском main process canonicalizes путь и добавляет его в approved roots только после проверки `resources/bot.json`; при запуске он повторно проверяет approved root и `src/<package>/__main__.py`, а затем выполняет только фиксированную команду `python -m <package>` без shell. Предпочитается project-local `.venv`; процесс принудительно завершается вместе со Studio.
+Electron может запустить созданного бота для локальной проверки по кнопке Run. Запуск принадлежит только privileged Electron main process: renderer передаёт лишь путь к уже открытому в Studio project root и имя package. Перед первым запуском main process canonicalizes путь и добавляет его в approved roots только после проверки `resources/bot.json`; при запуске он повторно проверяет approved root и `src/<package>/__main__.py`.
+
+После создания starter Electron автоматически выбирает совместимый Python 3.12/3.13, создаёт project-local `.venv` и устанавливает проект с dev-зависимостями. Хеш `pyproject.toml` хранится в служебном marker внутри `.venv`: при изменении зависимостей окружение обновляется перед следующим Run. Отсутствующее или несовместимое окружение восстанавливается автоматически. Для ранее сгенерированных starter известный несуществующий pin `core-v3.0.0` атомарно заменяется опубликованным immutable commit; остальные dependency declarations сохраняются. Сам запуск всегда выполняет фиксированную команду `.venv/python -m <package>` без shell; процесс принудительно завершается вместе со Studio.
 
 Это локальная оркестрация для тестов, а не embedded runtime: запущенный бот по-прежнему импортирует только свои `resources/`, `src/` и зависимости. Он не получает зависимости от Studio, Electron или backend.
 

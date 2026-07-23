@@ -1,8 +1,8 @@
-import { existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 import { assertApprovedProjectRoot } from "./open-code";
+import { projectEnvironmentPython } from "./project-environment";
 import type { RunProjectInput } from "../contracts";
 
 const PACKAGE_NAME = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
@@ -39,13 +39,8 @@ export async function resolveRunProject(
 }
 
 export function buildLocalRunCommand(target: ResolvedRunProject): LocalRunCommand {
-  const virtualEnvironmentPython = process.platform === "win32"
-    ? path.join(target.projectRoot, ".venv", "Scripts", "python.exe")
-    : path.join(target.projectRoot, ".venv", "bin", "python");
-  if (existsSync(virtualEnvironmentPython)) {
-    return { executable: virtualEnvironmentPython, args: ["-m", target.packageName] };
-  }
-  return process.platform === "win32"
-    ? { executable: "py", args: ["-3.12", "-m", target.packageName] }
-    : { executable: "python3", args: ["-m", target.packageName] };
+  return {
+    executable: projectEnvironmentPython(target.projectRoot),
+    args: ["-m", target.packageName],
+  };
 }

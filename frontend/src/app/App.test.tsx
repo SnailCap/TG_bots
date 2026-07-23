@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  CommandsDetail,
   Diagnostic,
   HandlerDetail,
   HandlerScaffoldResult,
@@ -42,7 +43,7 @@ const workspace: Workspace = {
   flows: [{ id: "checkout", source_path: "flows/checkout.json", revision: "flow-one" }],
   handlers: [handler],
   handlers_revision: "handlers-one",
-  commands: { source_path: "commands.json", revision: "commands-one" },
+  commands: { source_path: "commands.json", revision: "commands-one", items: [] },
   schedules: [{ id: "daily", source_path: "schedules/daily.json", revision: "schedule-one" }],
 };
 
@@ -67,6 +68,16 @@ afterEach(() => {
 });
 
 describe("Studio", () => {
+  it("toggles the terminal with Ctrl+`", () => {
+    render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.keyDown(window, { key: "`", code: "Backquote", ctrlKey: true });
+    expect(screen.getByLabelText("Bot terminal")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "`", code: "Backquote", ctrlKey: true });
+    expect(screen.queryByLabelText("Bot terminal")).not.toBeInTheDocument();
+  });
+
   it("starts and stops the local bot while streaming its output to the terminal", async () => {
     const runProject = vi.fn().mockResolvedValue({ pid: 4210, alreadyRunning: false });
     const stopProject = vi.fn().mockResolvedValue(undefined);
@@ -88,7 +99,7 @@ describe("Studio", () => {
 
     await waitFor(() => expect(runProject).toHaveBeenCalledWith({ projectRoot: "C:/demo", packageName: "demo" }));
     expect(approveProjectRoot).toHaveBeenCalledWith("C:/demo");
-    expect(await screen.findByText("Local bot started (PID 4210).")).toBeInTheDocument();
+    expect(screen.queryByText("Local bot started (PID 4210).")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Bot terminal")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stop local bot" })).toBeInTheDocument();
 
@@ -115,6 +126,7 @@ describe("Studio", () => {
       pid: null,
     }));
     expect(screen.getByRole("button", { name: "Run local bot" })).toBeInTheDocument();
+    expect(screen.queryByText("Stopped")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Close terminal" }));
     expect(screen.queryByLabelText("Bot terminal")).not.toBeInTheDocument();
@@ -165,6 +177,29 @@ describe("Studio", () => {
     expect(window.localStorage.getItem(LAST_PROJECT_STORAGE_KEY)).toBe("C:/demo");
   });
 
+  it("prepares a managed Python environment while creating a project", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) }));
+    const approveProjectRoot = vi.fn().mockResolvedValue(undefined);
+    const prepareProject = vi.fn().mockResolvedValue({ python: "C:/demo/.venv/Scripts/python.exe" });
+    window.studioDesktop = {
+      backendInfo: vi.fn(),
+      selectDirectory: vi.fn(),
+      openCode: vi.fn(),
+      approveProjectRoot,
+      prepareProject,
+    };
+    const api = apiMock();
+    render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
+
+    fireEvent.change(screen.getByLabelText("Parent directory"), { target: { value: "C:/bots" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create project" }));
+
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith("C:/bots", "my-bot", "my_bot"));
+    expect(approveProjectRoot).toHaveBeenCalledWith("C:/demo");
+    expect(prepareProject).toHaveBeenCalledWith({ projectRoot: "C:/demo", packageName: "demo" });
+    expect((await screen.findAllByText("demo")).length).toBeGreaterThan(0);
+  });
+
   it("restores the last project during development startup", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ status: "ok" }) }));
     window.localStorage.setItem(LAST_PROJECT_STORAGE_KEY, "C:/demo");
@@ -201,11 +236,105 @@ describe("Studio", () => {
 
   it("renders all typed explorer sections", () => {
     render(<ProjectExplorer workspace={workspace} selection={null} onSelect={vi.fn()} onAdd={vi.fn()} />);
-    for (const section of ["views", "templates", "flows", "handlers", "commands.json", "schedules"]) {
+    for (const section of ["views", "templates", "flows", "handlers", "commands", "schedules"]) {
       expect(screen.getAllByText(section).length).toBeGreaterThan(0);
     }
     expect(screen.getByRole("button", { name: "checkout.submit" })).toBeInTheDocument();
-    expect(screen.getAllByRole("button", { name: "commands.json" })[1]).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "fallbacks" })).toBeInTheDocument();
+  });
+
+  it("creates a command as an individual resource from the commands section", async () => {
+    const emptyCommands: CommandsDetail = {
+      source_path: "commands.json",
+      revision: "commands-one",
+      payload: { schema_version: 3, commands: [] },
+    };
+    const createdCommands: CommandsDetail = {
+      ...emptyCommands,
+      revision: "commands-two",
+      payload: { schema_version: 3, commands: [{ name: "new_command", action: { type: "noop" } }] },
+    };
+    const commandsWorkspace: Workspace = {
+      ...workspace,
+      commands: { ...workspace.commands, items: [] },
+    };
+    const saveCommands = vi.fn().mockResolvedValue(createdCommands);
+    const api = apiMock({
+      getCommands: vi.fn().mockResolvedValue(emptyCommands),
+      saveCommands,
+      describe: vi.fn().mockResolvedValue({
+        ...commandsWorkspace,
+        commands: { ...commandsWorkspace.commands, revision: "commands-two", items: [{ name: "new_command" }] },
+      }),
+    });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={commandsWorkspace} />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "commands" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "New command" }));
+
+    await waitFor(() => expect(saveCommands).toHaveBeenCalledWith("project-1", {
+      schema_version: 3,
+      commands: [{ name: "new_command", action: { type: "noop" } }],
+    }, "commands-one"));
+    expect(await screen.findByLabelText("Command editor")).toBeInTheDocument();
+    expect(screen.getByLabelText("Command name")).toHaveValue("new_command");
+  });
+
+  it("edits and deletes one selected command without exposing the aggregate list", async () => {
+    const commandDetail: CommandsDetail = {
+      source_path: "commands.json",
+      revision: "commands-one",
+      payload: {
+        schema_version: 3,
+        commands: [{ name: "help", description: "Preserved", action: { type: "view.render", target: "home" } }],
+      },
+    };
+    const renamedDetail: CommandsDetail = {
+      ...commandDetail,
+      revision: "commands-two",
+      payload: {
+        ...commandDetail.payload,
+        commands: [{ name: "support", description: "Preserved", action: { type: "view.render", target: "home" } }],
+      },
+    };
+    const emptyDetail: CommandsDetail = {
+      ...renamedDetail,
+      revision: "commands-three",
+      payload: { ...renamedDetail.payload, commands: [] },
+    };
+    const commandsWorkspace: Workspace = {
+      ...workspace,
+      commands: { ...workspace.commands, items: [{ name: "help", description: "Preserved" }] },
+    };
+    const saveCommands = vi.fn()
+      .mockResolvedValueOnce(renamedDetail)
+      .mockResolvedValueOnce(emptyDetail);
+    const api = apiMock({
+      getCommands: vi.fn().mockResolvedValue(commandDetail),
+      saveCommands,
+      describe: vi.fn().mockResolvedValue(commandsWorkspace),
+    });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={commandsWorkspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "/help" }));
+    expect(await screen.findByLabelText("Command editor")).toBeInTheDocument();
+    expect(screen.getAllByLabelText("Command name")).toHaveLength(1);
+    expect(screen.getByLabelText("Action")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Command name"), { target: { value: "Support" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveCommands).toHaveBeenNthCalledWith(1, "project-1", {
+      ...commandDetail.payload,
+      commands: [{ name: "support", description: "Preserved", action: { type: "view.render", target: "home" } }],
+    }, "commands-one"));
+    expect(await screen.findByRole("heading", { name: "/support" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete command" }));
+    await waitFor(() => expect(saveCommands).toHaveBeenNthCalledWith(2, "project-1", {
+      ...renamedDetail.payload,
+      commands: [],
+    }, "commands-two"));
   });
 
   it("opens project settings from the activity rail and saves a bot token", async () => {
@@ -348,7 +477,7 @@ describe("Studio", () => {
     const openCode = vi.fn().mockResolvedValue(undefined);
     window.studioDesktop = { backendInfo: vi.fn(), selectDirectory: vi.fn(), openCode };
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={{ ...workspace, handlers: [] }} />);
-    fireEvent.click(screen.getAllByRole("button", { name: "commands.json" })[1]);
+    fireEvent.click(screen.getByRole("button", { name: "fallbacks" }));
     expect(await screen.findByText("Message fallback")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Create handler" }));
     await waitFor(() => expect(api.createHandler).toHaveBeenCalledWith("project-1", {
@@ -385,9 +514,11 @@ describe("Studio", () => {
 
     fireEvent.change(await screen.findByLabelText("Inline text"), { target: { value: "   " } });
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(screen.getByLabelText("Invalid unsaved changes")).toBeInTheDocument();
     expect(screen.queryByText("Inline text cannot be empty.")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Inline text"), { target: { value: "Visible" } });
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
+    expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Text source"));
     fireEvent.click(screen.getByRole("option", { name: "Template" }));
@@ -455,6 +586,39 @@ describe("Studio", () => {
     fireEvent.keyDown(input, { key: "Enter" });
 
     await waitFor(() => expect(api.renameView).toHaveBeenCalledWith("project-1", "home", "welcome", "view-one"));
+  });
+
+  it("deletes a resource without a confirmation dialog and undoes it with Ctrl+Z", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm");
+    const api = apiMock();
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "home" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    await waitFor(() => expect(api.deleteView).toHaveBeenCalledWith("project-1", "home", "view-one"));
+    expect(confirmSpy).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+
+    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "home", viewDetail.payload));
+  });
+
+  it("undoes a rename with Ctrl+Z", async () => {
+    const renamed: ViewDetail = { ...viewDetail, id: "welcome", source_path: "views/welcome.json", revision: "view-renamed", payload: { ...viewDetail.payload, id: "welcome" } };
+    const api = apiMock({ renameView: vi.fn().mockResolvedValueOnce(renamed).mockResolvedValueOnce(viewDetail) });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.contextMenu(screen.getByRole("button", { name: "home" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const input = await screen.findByLabelText("Rename home");
+    fireEvent.change(input, { target: { value: "welcome" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(api.renameView).toHaveBeenCalledWith("project-1", "home", "welcome", "view-one"));
+
+    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+
+    await waitFor(() => expect(api.renameView).toHaveBeenCalledWith("project-1", "welcome", "home", "view-one"));
   });
 
   it("renames every resource type inline, including with F2", async () => {

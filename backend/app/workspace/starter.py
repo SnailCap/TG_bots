@@ -156,7 +156,7 @@ name = "{slug}"
 version = "0.1.0"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "tg-bot-core @ git+https://github.com/SnailCap/TG_bots.git@core-v3.0.0#subdirectory=packages/tg-bot-core",
+    "tg-bot-core @ git+https://github.com/SnailCap/TG_bots.git@b183a173a3f46f2b096a0b6ec877ad5cba41566a#subdirectory=packages/tg-bot-core",
 ]
 
 [project.optional-dependencies]

@@ -7,9 +7,10 @@ import {
   useState,
   type KeyboardEvent,
   type MouseEvent,
-  type PointerEvent as ReactPointerEvent,
 } from "react";
 
+import { ResizeHandle } from "../../shared/ui/ResizeHandle";
+import { ConfirmationDialog } from "../../shared/ui/ConfirmationDialog";
 import { Select, type SelectOption } from "../../shared/ui/Select";
 import type { ManagedUser, StudioApiClient, UserRole, UserStatus } from "../../studio/api";
 
@@ -37,7 +38,6 @@ const USER_DETAILS_WIDTH_KEY = "tg-bot-studio.users.details-width";
 const USER_DETAILS_DEFAULT_WIDTH = 372;
 const USER_DETAILS_MIN_WIDTH = 310;
 const USER_DETAILS_MAX_WIDTH = 620;
-const USER_DETAILS_RESIZE_STEP = 24;
 
 interface UsersPageProps {
   api?: Pick<StudioApiClient, "listUsers" | "updateUser">;
@@ -61,11 +61,9 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: Use
   const [focusedUserId, setFocusedUserId] = useState<string | null>(null);
   const [detailsClosing, setDetailsClosing] = useState(false);
   const [detailsWidth, setDetailsWidth] = useState(loadUserDetailsWidth);
-  const [detailsResizing, setDetailsResizing] = useState(false);
   const [bulkRole, setBulkRole] = useState("");
   const [bulkStatus, setBulkStatus] = useState("");
   const [notice, setNotice] = useState("");
-  const resizeStartRef = useRef({ pointerX: 0, width: detailsWidth });
   const detailsWidthRef = useRef(detailsWidth);
 
   useEffect(() => {
@@ -102,7 +100,6 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: Use
     if (!detailsClosing) return;
     setFocusedUserId(null);
     setDetailsClosing(false);
-    setDetailsResizing(false);
   }, [detailsClosing]);
 
   useEffect(() => {
@@ -113,27 +110,6 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: Use
     window.addEventListener("keydown", closeDetails);
     return () => window.removeEventListener("keydown", closeDetails);
   }, [closeUserDetails, focusedUserId]);
-
-  useEffect(() => {
-    if (!detailsResizing) return undefined;
-    const resize = (event: globalThis.PointerEvent) => {
-      const nextWidth = clampUserDetailsWidth(resizeStartRef.current.width + resizeStartRef.current.pointerX - event.clientX);
-      detailsWidthRef.current = nextWidth;
-      setDetailsWidth(nextWidth);
-    };
-    const finishResize = () => {
-      setDetailsResizing(false);
-      saveUserDetailsWidth(detailsWidthRef.current);
-    };
-    window.addEventListener("pointermove", resize);
-    window.addEventListener("pointerup", finishResize, { once: true });
-    window.addEventListener("pointercancel", finishResize, { once: true });
-    return () => {
-      window.removeEventListener("pointermove", resize);
-      window.removeEventListener("pointerup", finishResize);
-      window.removeEventListener("pointercancel", finishResize);
-    };
-  }, [detailsResizing]);
 
   useEffect(() => {
     const clampToViewport = () => {
@@ -188,24 +164,11 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: Use
     setDetailsClosing(false);
     setFocusedUserId(id);
   };
-  const startDetailsResize = (event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    resizeStartRef.current = { pointerX: event.clientX, width: detailsWidthRef.current };
-    setDetailsResizing(true);
-  };
-  const resizeDetailsWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
-    let nextWidth = detailsWidthRef.current;
-    if (event.key === "ArrowLeft") nextWidth += USER_DETAILS_RESIZE_STEP;
-    else if (event.key === "ArrowRight") nextWidth -= USER_DETAILS_RESIZE_STEP;
-    else if (event.key === "Home") nextWidth = USER_DETAILS_MIN_WIDTH;
-    else if (event.key === "End") nextWidth = USER_DETAILS_MAX_WIDTH;
-    else return;
-    event.preventDefault();
-    nextWidth = clampUserDetailsWidth(nextWidth);
-    detailsWidthRef.current = nextWidth;
-    setDetailsWidth(nextWidth);
-    saveUserDetailsWidth(nextWidth);
-  };
+  const setDetailsSize = useCallback((width: number) => {
+    detailsWidthRef.current = width;
+    setDetailsWidth(width);
+  }, []);
+  const commitDetailsSize = useCallback(() => saveUserDetailsWidth(detailsWidthRef.current), []);
   const openUserFromKeyboard = (event: KeyboardEvent<HTMLTableRowElement>, id: string) => {
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
@@ -287,13 +250,12 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: Use
           user={focusedUser}
           avatarUrl={userAvatarUrl(apiBaseUrl, projectId, focusedUser)}
           closing={detailsClosing}
-          resizing={detailsResizing}
           saving={saving}
           width={detailsWidth}
           onClose={closeUserDetails}
           onClosed={finishClosingUserDetails}
-          onResizeStart={startDetailsResize}
-          onResizeKeyDown={resizeDetailsWithKeyboard}
+          onResize={setDetailsSize}
+          onResizeEnd={commitDetailsSize}
           onSave={async (changed) => {
             if (await persistUsers([changed])) setNotice("User details updated.");
           }}
@@ -314,17 +276,18 @@ function UserRow({ user, avatarUrl, selected, focused, onOpen, onOpenFromKeyboar
   </tr>;
 }
 
-function UserDetails({ user, avatarUrl, closing, resizing, saving, width, onClose, onClosed, onResizeStart, onResizeKeyDown, onSave }: {
-  user: BotUser; avatarUrl?: string; closing: boolean; resizing: boolean; saving: boolean; width: number;
+function UserDetails({ user, avatarUrl, closing, saving, width, onClose, onClosed, onResize, onResizeEnd, onSave }: {
+  user: BotUser; avatarUrl?: string; closing: boolean; saving: boolean; width: number;
   onClose(): void; onClosed(): void;
-  onResizeStart(event: ReactPointerEvent<HTMLDivElement>): void; onResizeKeyDown(event: KeyboardEvent<HTMLDivElement>): void; onSave(user: BotUser): Promise<void>;
+  onResize(width: number): void; onResizeEnd(): void; onSave(user: BotUser): Promise<void>;
 }) {
   const [draft, setDraft] = useState(() => copyUser(user));
+  const [blockConfirmationOpen, setBlockConfirmationOpen] = useState(false);
   const setStatus = (status: UserStatus) => setDraft((current) => ({ ...current, status }));
-  const className = `user-details${closing ? " user-details--closing" : ""}${resizing ? " user-details--resizing" : ""}`;
+  const className = `user-details${closing ? " user-details--closing" : ""}`;
   const name = displayName(draft);
   return <aside className={className} style={{ width }} role="dialog" aria-modal="true" aria-label={`${name} details`} onAnimationEnd={(event) => { if (event.target === event.currentTarget && closing) onClosed(); }}>
-    <div className="user-details__resizer" role="separator" aria-label="Resize user details" aria-orientation="vertical" aria-valuemin={USER_DETAILS_MIN_WIDTH} aria-valuemax={USER_DETAILS_MAX_WIDTH} aria-valuenow={width} tabIndex={0} onPointerDown={onResizeStart} onKeyDown={onResizeKeyDown} />
+    <ResizeHandle className="user-details__resizer" axis="horizontal" label="Resize user details" value={width} min={USER_DETAILS_MIN_WIDTH} max={USER_DETAILS_MAX_WIDTH} step={24} inverted onResize={onResize} onResizeEnd={onResizeEnd} />
     <header className="user-details__header"><span>User details</span><button type="button" aria-label="Close user details" autoFocus onClick={onClose}><CloseIcon /></button></header>
     <div className="user-details__content">
       <div className="user-details__profile"><Avatar user={draft} imageUrl={avatarUrl} large /><div><h2>{name}</h2>{draft.username && <p>@{draft.username}</p>}</div><StatusBadge status={draft.status} /></div>
@@ -337,7 +300,7 @@ function UserDetails({ user, avatarUrl, closing, resizing, saving, width, onClos
       </DetailsSection>
       <DetailsSection title="Account status" description="Blocked users cannot interact with this bot.">
         <div className="user-details__status-actions">
-          {draft.status === "blocked" ? <button type="button" className="button--secondary" onClick={() => setStatus("active")}><RestoreIcon />Restore access</button> : <button type="button" className="button--danger" onClick={() => setStatus("blocked")}><BlockIcon />Block</button>}
+          {draft.status === "blocked" ? <button type="button" className="button--secondary" onClick={() => setStatus("active")}><RestoreIcon />Restore access</button> : <button type="button" className="button--danger" onClick={() => setBlockConfirmationOpen(true)}><BlockIcon />Block</button>}
         </div>
       </DetailsSection>
       <DetailsSection title="Internal note" description="Only Studio collaborators can see this note.">
@@ -345,6 +308,14 @@ function UserDetails({ user, avatarUrl, closing, resizing, saving, width, onClos
       </DetailsSection>
     </div>
     <footer className="user-details__footer"><button type="button" disabled={saving} onClick={() => void onSave(draft)}>{saving ? "Saving…" : "Save changes"}</button></footer>
+    <ConfirmationDialog
+      open={blockConfirmationOpen}
+      title={`Block ${name}?`}
+      description="This person will no longer be able to interact with this bot. You can restore access later."
+      confirmLabel="Block user"
+      onCancel={() => setBlockConfirmationOpen(false)}
+      onConfirm={() => { setStatus("blocked"); setBlockConfirmationOpen(false); }}
+    />
   </aside>;
 }
 

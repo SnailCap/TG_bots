@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import type { ProjectOutputStream } from "../contracts";
 import { assertApprovedProjectRoot, ideConfiguration, launchOpenCode, parseOpenCodeInput } from "./open-code";
+import { prepareProjectEnvironment } from "./project-environment";
 import { buildLocalRunCommand, parseRunProjectInput, resolveRunProject } from "./run-project";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +20,7 @@ let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
 const approvedRoots = new Set<string>();
 const localRunProcesses = new Map<string, ChildProcessWithoutNullStreams>();
+const environmentPreparations = new Map<string, Promise<string>>();
 let projectOutputSequence = 0;
 
 function emitProjectOutput(
@@ -63,7 +65,7 @@ function pythonCommand(root: string): { executable: string; arguments: string[] 
   }
 
   return process.platform === "win32"
-    ? { executable: "py", arguments: ["-3.12"] }
+    ? { executable: "py", arguments: ["-3"] }
     : { executable: "python3", arguments: [] };
 }
 
@@ -121,6 +123,18 @@ function stopLocalRuns(): void {
   localRunProcesses.clear();
 }
 
+function ensureProjectEnvironment(target: Awaited<ReturnType<typeof resolveRunProject>>): Promise<string> {
+  const existing = environmentPreparations.get(target.projectRoot);
+  if (existing) return existing;
+  const preparation = prepareProjectEnvironment(target, {
+    stdout: (text) => emitProjectOutput(target.projectRoot, "stdout", text),
+    stderr: (text) => emitProjectOutput(target.projectRoot, "stderr", text),
+    lifecycle: (text) => emitProjectOutput(target.projectRoot, "lifecycle", text),
+  }).finally(() => environmentPreparations.delete(target.projectRoot));
+  environmentPreparations.set(target.projectRoot, preparation);
+  return preparation;
+}
+
 async function createWindow(): Promise<void> {
   mainWindow = new BrowserWindow({
     width: 1120,
@@ -174,6 +188,10 @@ ipcMain.handle("desktop:approve-project-root", async (_event, projectRoot: unkno
   await assertApprovedProjectRoot(canonicalRoot, new Set([canonicalRoot]));
   approvedRoots.add(canonicalRoot);
 });
+ipcMain.handle("desktop:prepare-project", async (_event, input: unknown) => {
+  const target = await resolveRunProject(parseRunProjectInput(input), approvedRoots);
+  return { python: await ensureProjectEnvironment(target) };
+});
 ipcMain.handle("desktop:run-project", async (_event, input: unknown) => {
   const target = await resolveRunProject(parseRunProjectInput(input), approvedRoots);
   const existing = localRunProcesses.get(target.projectRoot);
@@ -182,6 +200,7 @@ ipcMain.handle("desktop:run-project", async (_event, input: unknown) => {
     return { pid: existing.pid ?? 0, alreadyRunning: true };
   }
 
+  await ensureProjectEnvironment(target);
   const command = buildLocalRunCommand(target);
   const displayCommand = [command.executable, ...command.args]
     .map((part) => /\s/.test(part) ? `"${part}"` : part)

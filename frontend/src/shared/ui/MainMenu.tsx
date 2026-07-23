@@ -7,17 +7,21 @@ const sections: readonly MenuSection[] = ["File", "Edit", "View", "Navigate", "C
 export function MainMenu({
   canSave,
   canCloseTab,
+  canUndo = false,
   onOpenProject,
   onNewProject,
   onSave,
   onCloseTab,
+  onUndo,
 }: {
   canSave: boolean;
   canCloseTab: boolean;
+  canUndo?: boolean;
   onOpenProject(): void;
   onNewProject(): void;
   onSave(): void;
   onCloseTab(): void;
+  onUndo?(): void;
 }) {
   const [open, setOpen] = useState(false);
   const [section, setSection] = useState<MenuSection>("File");
@@ -77,8 +81,9 @@ export function MainMenu({
               <MenuSeparator />
               <MenuItem label="Save" shortcut="Ctrl+S" disabled={!canSave} onSelect={() => run(onSave)} />
             </>}
+            {section === "Edit" && <MenuItem label="Undo" shortcut="Ctrl+Z" disabled={!canUndo || !onUndo} onSelect={() => run(onUndo ?? (() => undefined))} />}
             {section === "View" && <MenuItem label="Close current tab" shortcut="Ctrl+W" disabled={!canCloseTab} onSelect={() => run(onCloseTab)} />}
-            {section !== "File" && section !== "View" && <p className="main-menu__empty">No actions here yet.</p>}
+            {section !== "File" && section !== "Edit" && section !== "View" && <p className="main-menu__empty">No actions here yet.</p>}
           </div>
         </div>
       )}

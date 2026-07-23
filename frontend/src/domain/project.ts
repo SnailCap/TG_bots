@@ -159,6 +159,10 @@ export interface AggregateSummary {
   revision: string;
 }
 
+export interface CommandsSummary extends AggregateSummary {
+  items: Pick<CommandSpec, "name" | "description">[];
+}
+
 export interface ManifestSpec {
   schema_version: typeof SCHEMA_VERSION;
   id: string;
@@ -206,7 +210,7 @@ export interface Workspace {
   flows: FlowSummary[];
   handlers: HandlerSummary[];
   handlers_revision: string;
-  commands: AggregateSummary;
+  commands: CommandsSummary;
   schedules: ScheduleSummary[];
 }
 
@@ -295,12 +299,13 @@ export interface OpenCodeTarget {
 }
 
 export type Selection =
-  | { kind: "view"; id: string }
-  | { kind: "template"; path: string }
-  | { kind: "flow"; id: string }
-  | { kind: "handler"; id: string }
-  | { kind: "commands" }
-  | { kind: "schedule"; id: string };
+    | { kind: "view"; id: string }
+    | { kind: "template"; path: string }
+    | { kind: "flow"; id: string }
+    | { kind: "handler"; id: string }
+    | { kind: "command"; name: string }
+    | { kind: "commands" }
+    | { kind: "schedule"; id: string };
 
 export interface ActionOptions {
   views: string[];

@@ -7,20 +7,25 @@ export interface SelectOption {
   disabled?: boolean;
 }
 
-export function Select({ value, options, placeholder, disabled = false, clickOnly = false, searchable = false, ariaLabel, onChange }: {
+export function Select({ id, value, options, placeholder, disabled = false, readOnly = false, clickOnly = false, searchable = false, ariaLabel, "aria-describedby": ariaDescribedBy, "aria-invalid": ariaInvalid, onChange }: {
+  id?: string;
   value: string;
   options: SelectOption[];
   placeholder?: string;
   disabled?: boolean;
+  readOnly?: boolean;
   clickOnly?: boolean;
   searchable?: boolean;
-  ariaLabel: string;
+  ariaLabel?: string;
+  "aria-describedby"?: string;
+  "aria-invalid"?: boolean;
   onChange(value: string): void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const listId = useId().replace(/:/g, "");
+  const triggerId = id ?? `${listId}-trigger`;
   const selected = options.find((option) => option.value === value);
   const label = selected?.label ?? placeholder ?? value;
   const visibleOptions = searchable
@@ -44,12 +49,12 @@ export function Select({ value, options, placeholder, disabled = false, clickOnl
   }, [open]);
 
   const choose = (next: SelectOption) => {
-    if (next.disabled) return;
+    if (readOnly || next.disabled) return;
     setOpen(false);
     onChange(next.value);
   };
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
-    if (disabled) return;
+    if (disabled || readOnly) return;
     if (clickOnly) {
       if (event.key === " " || event.key === "Enter" || event.key === "ArrowDown" || event.key === "ArrowUp") event.preventDefault();
       return;
@@ -66,12 +71,12 @@ export function Select({ value, options, placeholder, disabled = false, clickOnl
     }
   };
 
-  return <div ref={rootRef} className={open ? "select-control select-control--open" : "select-control"}>
-    <button id={`${listId}-trigger`} type="button" className="select-control__trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} disabled={disabled} onClick={() => setOpen((current) => { if (!current) setQuery(""); return !current; })} onKeyDown={onKeyDown}>
+  return <div ref={rootRef} className={["select-control", open ? "select-control--open" : "", readOnly ? "select-control--readonly" : ""].filter(Boolean).join(" ")}>
+    <button id={triggerId} type="button" role="combobox" className="select-control__trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={listId} aria-describedby={ariaDescribedBy} aria-invalid={ariaInvalid || undefined} aria-readonly={readOnly || undefined} disabled={disabled} onClick={() => { if (readOnly) return; setOpen((current) => { if (!current) setQuery(""); return !current; }); }} onKeyDown={onKeyDown}>
       <span className="select-control__value">{selected?.icon && <span className="select-control__icon" aria-hidden="true">{selected.icon}</span>}<span>{label}</span></span><span className="select-control__chevron" aria-hidden="true"><ChevronIcon /></span>
     </button>
-    {open && <div id={listId} className="select-control__menu" role="listbox" aria-labelledby={`${listId}-trigger`}>
-      {searchable && <input className="select-control__search" aria-label={`Search ${ariaLabel}`} autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search…" />}
+    {open && <div id={listId} className="select-control__menu" role="listbox" aria-labelledby={triggerId}>
+      {searchable && <input className="select-control__search" aria-label={`Search ${ariaLabel ?? "options"}`} autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search…" />}
       {visibleOptions.length
         ? visibleOptions.map((option) => <button key={option.value} type="button" role="option" aria-selected={option.value === value} disabled={option.disabled} className={option.value === value ? "select-control__option select-control__option--selected" : "select-control__option"} onClick={(event) => { event.preventDefault(); event.stopPropagation(); choose(option); }}><span className="select-control__option-content">{option.icon && <span className="select-control__icon" aria-hidden="true">{option.icon}</span>}<span>{option.label}</span></span></button>)
         : <p className="select-control__empty">No matching options.</p>}

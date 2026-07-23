@@ -1,0 +1,190 @@
+:root {
+  --form-control-height: 32px;
+  --form-control-border: #3a3f47;
+  --form-control-border-hover: #566f91;
+  --form-control-border-focus: #4d7dbb;
+  --form-control-background: #25282e;
+  --form-control-background-hover: #292d34;
+  --form-control-radius: 2px;
+  --form-control-focus-ring: 0 0 0 1px rgb(77 125 187 / 22%);
+  --form-label-width: 56px;
+  --form-label-color: #c7cbd2;
+  --form-label-font-size: .82rem;
+  --form-label-font-weight: 400;
+  --form-field-gap: 10px;
+  --form-row-gap: 14px;
+  --form-column-gap: 22px;
+  --form-compound-leading-width: 104px;
+  --form-message-color: #94a0af;
+  --form-error-color: #e58a92;
+  --form-error-border: #b85c68;
+}
+
+.form-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--form-row-gap) var(--form-column-gap);
+  min-width: 0;
+}
+
+.form-layout--columns-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.form-layout--columns-2 > :not(.form-field),
+.form-field--full {
+  grid-column: 1 / -1;
+}
+
+.form-field {
+  display: grid;
+  grid-template-columns: var(--form-label-width) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--form-field-gap);
+  min-width: 0;
+}
+
+.form-field__label {
+  align-self: start;
+  min-width: 0;
+  padding-top: calc((var(--form-control-height) - 1em) / 2);
+  color: var(--form-label-color);
+  font-size: var(--form-label-font-size);
+  font-weight: var(--form-label-font-weight);
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.form-field__body {
+  display: grid;
+  min-width: 0;
+}
+
+.form-field :where(input, select, textarea),
+.form-field .select-control__trigger {
+  min-height: var(--form-control-height);
+  border-color: var(--form-control-border);
+  border-radius: var(--form-control-radius);
+  background: var(--form-control-background);
+}
+
+.form-field :where(input, select, textarea):hover:not(:disabled):not([readonly]),
+.form-field .select-control__trigger:hover:not(:disabled),
+.form-field .select-control--open .select-control__trigger {
+  border-color: var(--form-control-border-hover);
+  background: var(--form-control-background-hover);
+}
+
+.form-field :where(input, select, textarea):focus-visible,
+.form-field .select-control__trigger:focus-visible {
+  border-color: var(--form-control-border-focus);
+  outline: none;
+  box-shadow: var(--form-control-focus-ring);
+}
+
+.form-field :where(input, select, textarea)[aria-invalid="true"],
+.form-field--error .select-control__trigger,
+.form-field--error .form-control-group--attached {
+  border-color: var(--form-error-border);
+}
+
+.form-field--disabled { opacity: .58; }
+.form-field--disabled .form-field__label,
+.form-field--disabled :where(input, select, textarea, button) { cursor: not-allowed; }
+
+.form-field--readonly :where(input, select, textarea),
+.form-field .select-control--readonly .select-control__trigger,
+.form-field--readonly .form-control-group--attached {
+  color: #b7bec8;
+  background: #292c31;
+}
+
+.form-field__message {
+  padding-top: 5px;
+  color: var(--form-message-color);
+  font-size: .74rem;
+  font-weight: 400;
+  line-height: 1.35;
+}
+
+.form-field__message--error { color: var(--form-error-color); }
+
+.form-control-group {
+  display: grid;
+  min-width: 0;
+}
+
+.form-control-group--split {
+  grid-template-columns: var(--form-compound-leading-width) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.form-control-group--attached {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: var(--form-control-height);
+  border: 1px solid var(--form-control-border);
+  border-radius: var(--form-control-radius);
+  background: var(--form-control-background);
+}
+
+.form-control-group--attached:hover { border-color: var(--form-control-border-hover); }
+.form-control-group--attached:focus-within {
+  border-color: var(--form-control-border-focus);
+  box-shadow: var(--form-control-focus-ring);
+}
+
+.form-control-group--attached > :where(input, select, textarea) {
+  min-width: 0;
+  min-height: calc(var(--form-control-height) - 2px);
+  border: 0;
+  border-radius: var(--form-control-radius) 0 0 var(--form-control-radius);
+  background: transparent;
+  box-shadow: none;
+}
+
+.form-control-group--attached > :where(input, select, textarea):hover,
+.form-control-group--attached > :where(input, select, textarea):focus,
+.form-control-group--attached > :where(input, select, textarea):focus-visible {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.form-control-group__actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: var(--form-control-height);
+}
+
+.form-control-group__actions > button {
+  width: var(--form-control-height);
+  min-width: var(--form-control-height);
+  min-height: calc(var(--form-control-height) - 2px);
+  height: calc(var(--form-control-height) - 2px);
+  padding: 0;
+  border: 0;
+  border-left: 1px solid #414852;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.form-control-group__actions > button:last-child {
+  border-radius: 0 var(--form-control-radius) var(--form-control-radius) 0;
+}
+
+@media (max-width: 760px) {
+  .form-layout--columns-2 { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 520px) {
+  .form-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .form-field__label { padding-top: 0; }
+  .form-control-group--split { grid-template-columns: minmax(0, 1fr); }
+}

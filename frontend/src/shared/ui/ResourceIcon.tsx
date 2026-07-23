@@ -9,6 +9,7 @@ export function ResourceIcon({ selection, title }: { selection: Selection; title
     template: <><path d="m5.75 4-3 4 3 4M10.25 4l3 4-3 4" /><path d="m9.25 3-2.5 10" /></>,
     flow: <><circle cx="4" cy="4" r="1.35" /><circle cx="12" cy="4" r="1.35" /><circle cx="12" cy="12" r="1.35" /><path d="M5.35 4h1.8A2.85 2.85 0 0 1 10 6.85v3.8" /></>,
     handler: <path d="m9.2 2.5-4.4 6h3l-.75 5 4.4-6h-3l.75-5Z" />,
+    command: <><path d="M3.25 4.25h9.5v7.5h-9.5z" /><path d="m5.25 6.5 1.5 1.5-1.5 1.5M8.5 9.5h2.25" /></>,
     commands: <><path d="m3.5 5 2.5 3-2.5 3M8 11h4.5" /></>,
     schedule: <><rect x="3" y="4" width="10" height="9" rx="1.25" /><path d="M5.5 2.75v2.5M10.5 2.75v2.5M3 7h10M5.5 9.5h.01M8 9.5h.01M10.5 9.5h.01" /></>,
   };

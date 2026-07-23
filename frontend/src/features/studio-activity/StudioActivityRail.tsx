@@ -2,10 +2,10 @@ export type StudioActivity = "resources" | "users";
 
 export function StudioActivityRail({ active, onSelect, terminalOpen, onToggleTerminal, settingsOpen, onOpenSettings }: { active: StudioActivity; onSelect(activity: StudioActivity): void; terminalOpen: boolean; onToggleTerminal(): void; settingsOpen: boolean; onOpenSettings(): void }) {
   return (
-    <nav className="studio-activity-rail" aria-label="Studio pages">
+    <nav className="studio-side-rail studio-activity-rail" aria-label="Studio pages">
       <button
         type="button"
-        className={active === "resources" ? "studio-activity-rail__button studio-activity-rail__button--active" : "studio-activity-rail__button"}
+        className={active === "resources" ? "studio-side-rail__button studio-side-rail__button--active studio-activity-rail__button" : "studio-side-rail__button studio-activity-rail__button"}
         aria-label="Resources"
         aria-current={active === "resources" ? "page" : undefined}
         title="Resources"
@@ -16,7 +16,7 @@ export function StudioActivityRail({ active, onSelect, terminalOpen, onToggleTer
       </button>
       <button
         type="button"
-        className={active === "users" ? "studio-activity-rail__button studio-activity-rail__button--active" : "studio-activity-rail__button"}
+        className={active === "users" ? "studio-side-rail__button studio-side-rail__button--active studio-activity-rail__button" : "studio-side-rail__button studio-activity-rail__button"}
         aria-label="Users"
         aria-current={active === "users" ? "page" : undefined}
         title="Users"
@@ -28,7 +28,7 @@ export function StudioActivityRail({ active, onSelect, terminalOpen, onToggleTer
       <div className="studio-activity-rail__utility">
         <button
           type="button"
-          className={terminalOpen ? "studio-activity-rail__button studio-activity-rail__button--active" : "studio-activity-rail__button"}
+          className={terminalOpen ? "studio-side-rail__button studio-side-rail__button--active studio-activity-rail__button" : "studio-side-rail__button studio-activity-rail__button"}
           aria-label="Terminal"
           aria-pressed={terminalOpen}
           title="Terminal"
@@ -39,7 +39,7 @@ export function StudioActivityRail({ active, onSelect, terminalOpen, onToggleTer
         </button>
         <button
           type="button"
-          className={settingsOpen ? "studio-activity-rail__button studio-activity-rail__button--active" : "studio-activity-rail__button"}
+          className={settingsOpen ? "studio-side-rail__button studio-side-rail__button--active studio-activity-rail__button" : "studio-side-rail__button studio-activity-rail__button"}
           aria-label="Settings"
           aria-pressed={settingsOpen}
           title="Settings"

@@ -49,7 +49,7 @@ BOT_TOKEN="<telegram-token>" python -m my_bot
 
 На Windows токен задаётся, например, через `$env:BOT_TOKEN = "<telegram-token>"`. Runtime сам не читает `.env`: файл нужно загрузить средствами shell/process manager либо экспортировать переменную. Состояние по умолчанию хранится в `data/runtime.sqlite3`.
 
-Starter pin-ит core на Git tag `core-v3.0.0`; удалённая установка возможна только после публикации этого tag. Для production меняйте pin осознанно на протестированный tag или immutable commit.
+Starter pin-ит core на опубликованный immutable commit `b183a173a3f46f2b096a0b6ec877ad5cba41566a`. Для production меняйте pin осознанно только на другой протестированный tag или immutable commit.
 
 ## Структура репозитория
 

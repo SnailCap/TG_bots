@@ -23,6 +23,10 @@ export interface LocalRunStatus {
   pid: number | null;
 }
 
+export interface ProjectEnvironmentResult {
+  python: string;
+}
+
 export type ProjectOutputStream = "stdout" | "stderr" | "lifecycle";
 
 export interface ProjectProcessEvent {
@@ -40,6 +44,7 @@ export interface StudioDesktop {
   selectDirectory(): Promise<string | null>;
   openCode(input: OpenCodeInput): Promise<void>;
   approveProjectRoot?(projectRoot: string): Promise<void>;
+  prepareProject?(input: RunProjectInput): Promise<ProjectEnvironmentResult>;
   runProject?(input: RunProjectInput): Promise<LocalRunResult>;
   stopProject?(projectRoot: string): Promise<void>;
   projectRunStatus?(projectRoot: string): Promise<LocalRunStatus>;

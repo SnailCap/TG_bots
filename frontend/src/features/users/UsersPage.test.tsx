@@ -58,6 +58,20 @@ describe("UsersPage", () => {
     expect(screen.getByLabelText("User role")).toHaveTextContent("Trusted user");
   });
 
+  it("asks for confirmation before blocking a user", () => {
+    render(<UsersPage initialUsers={users} />);
+    fireEvent.click(screen.getByText("Anna Keller"));
+    fireEvent.click(screen.getByRole("button", { name: "Block" }));
+
+    expect(screen.getByRole("dialog", { name: "Block Anna Keller?" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog", { name: "Block Anna Keller?" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Block" }));
+    fireEvent.click(screen.getByRole("button", { name: "Block user" }));
+    expect(screen.getByRole("button", { name: "Restore access" })).toBeInTheDocument();
+  });
+
   it("resizes the details drawer and restores the saved width", () => {
     const firstRender = render(<UsersPage initialUsers={users} />);
     fireEvent.click(screen.getByText("Anna Keller"));

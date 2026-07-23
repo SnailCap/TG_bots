@@ -102,7 +102,20 @@ class ProjectService:
             "resource_root": str(workspace.resources),
             "manifest": manifest,
             "commands": {
-                key: commands[key] for key in ("source_path", "revision")
+                **{
+                    key: commands[key] for key in ("source_path", "revision")
+                },
+                "items": [
+                    {
+                        "name": command.name,
+                        **(
+                            {"description": command.description}
+                            if command.description is not None
+                            else {}
+                        ),
+                    }
+                    for command in project.commands.commands
+                ],
             },
             "handlers_revision": content_revision(handlers_path.read_bytes()),
             "views": self._catalog_summaries(workspace, project.views.values()),

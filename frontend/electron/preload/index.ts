@@ -7,6 +7,7 @@ const desktop: StudioDesktop = {
   selectDirectory: (): Promise<string | null> => ipcRenderer.invoke("desktop:select-directory"),
   openCode: (input: OpenCodeInput): Promise<void> => ipcRenderer.invoke("desktop:open-code", input),
   approveProjectRoot: (projectRoot: string): Promise<void> => ipcRenderer.invoke("desktop:approve-project-root", projectRoot),
+  prepareProject: (input: RunProjectInput) => ipcRenderer.invoke("desktop:prepare-project", input),
   runProject: (input: RunProjectInput) => ipcRenderer.invoke("desktop:run-project", input),
   stopProject: (projectRoot: string): Promise<void> => ipcRenderer.invoke("desktop:stop-project", projectRoot),
   projectRunStatus: (projectRoot: string) => ipcRenderer.invoke("desktop:project-run-status", projectRoot),

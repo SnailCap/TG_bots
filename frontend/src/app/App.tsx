@@ -111,6 +111,26 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
     await load(() => api.open(path));
   };
 
+  const createProject = async () => {
+    const next = await api.create(parentPath, name, packageName);
+    try {
+      if (window.studioDesktop?.prepareProject) {
+        await window.studioDesktop.approveProjectRoot?.(next.project_root);
+        await window.studioDesktop.prepareProject({
+          projectRoot: next.project_root,
+          packageName: next.package,
+        });
+      }
+    } catch (caught) {
+      const reason = caught instanceof Error ? caught.message : "unexpected environment error";
+      throw new Error(
+        `Project files were created at ${next.project_root}, but Python setup failed: ${reason}. `
+          + "Open that project to retry setup automatically on Run.",
+      );
+    }
+    return next;
+  };
+
   if (workspace) return <StudioPage key={workspace.project_id} api={api} apiBaseUrl={apiBaseUrl} initialWorkspace={workspace} recentProjects={recentProjects} onOpenProject={(path) => void openProjectFromSwitcher(path)} onNewProject={() => { autoOpenCancelled.current = true; setWorkspace(null); }} />;
   return (
     <main className="welcome" aria-busy={busy}>
@@ -128,10 +148,10 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
           <div className="form-actions"><button type="button" className="button--secondary" onClick={() => void pick(setOpenPath)}>Choose folder…</button><button type="button" disabled={!openPath || busy} onClick={() => void load(() => api.open(openPath))}>{busy ? "Opening…" : "Open project"}</button></div>
         </section>
         <section className="welcome-card" aria-labelledby="create-project-title">
-          <div className="section-heading"><div><p className="eyebrow">Start from a safe baseline</p><h2 id="create-project-title">Create a new bot project</h2></div><p>Creates the schema, starter code, deployment files and an empty schedules directory.</p></div>
+          <div className="section-heading"><div><p className="eyebrow">Start from a safe baseline</p><h2 id="create-project-title">Create a new bot project</h2></div><p>Creates the project, selects a compatible Python and installs its local environment automatically.</p></div>
           <div className="form-grid form-grid--two"><label>New project name<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>Python package<input value={packageName} onChange={(event) => setPackageName(event.target.value)} /></label></div>
           <label>Parent directory<input value={parentPath} onChange={(event) => setParentPath(event.target.value)} placeholder="C:\projects" /></label>
-          <div className="form-actions"><button type="button" className="button--secondary" onClick={() => void pick(setParentPath)}>Choose parent folder…</button><button type="button" disabled={!parentPath || !name || !packageName || busy} onClick={() => void load(() => api.create(parentPath, name, packageName))}>{busy ? "Creating…" : "Create starter"}</button></div>
+          <div className="form-actions"><button type="button" className="button--secondary" onClick={() => void pick(setParentPath)}>Choose parent folder…</button><button type="button" disabled={!parentPath || !name || !packageName || busy} onClick={() => void load(createProject)}>{busy ? "Creating and configuring…" : "Create project"}</button></div>
         </section>
       </section>
     </main>

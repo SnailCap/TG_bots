@@ -60,7 +60,7 @@ def test_starter_is_atomic_autonomous_v3_project(
     assert not [item for item in validate_project(project, inspect_code=True) if item.level == "error"]
 
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert "core-v3.0.0" in pyproject
+    assert "b183a173a3f46f2b096a0b6ec877ad5cba41566a" in pyproject
     assert "subdirectory=packages/tg-bot-core" in pyproject
     generated_python = "\n".join(
         path.read_text(encoding="utf-8") for path in (root / "src").rglob("*.py")
@@ -195,6 +195,9 @@ def test_v3_resource_crud_revisions_commands_and_reference_safe_delete(
         commands["revision"],
     )
     assert saved_commands["payload"]["commands"][0]["name"] == "help"
+    assert service.describe(project_id)["commands"]["items"] == [
+        {"name": "help", "description": "Help"}
+    ]
 
     schedule = service.create_schedule(
         project_id,

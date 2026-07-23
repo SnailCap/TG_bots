@@ -20,7 +20,12 @@ describe("local project run", () => {
     const target = await resolveRunProject({ projectRoot: root, packageName: "demo_bot" }, new Set([root]));
 
     expect(target).toEqual({ projectRoot: root, packageName: "demo_bot" });
-    expect(buildLocalRunCommand(target).args).toEqual(["-3.12", "-m", "demo_bot"]);
+    expect(buildLocalRunCommand(target)).toEqual({
+      executable: process.platform === "win32"
+        ? path.join(root, ".venv", "Scripts", "python.exe")
+        : path.join(root, ".venv", "bin", "python"),
+      args: ["-m", "demo_bot"],
+    });
   });
 
   it("rejects malformed package names before any process can be launched", () => {

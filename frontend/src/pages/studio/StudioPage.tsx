@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 import type { ProjectProcessEvent } from "../../../electron/contracts";
 import botStudioIcon from "../../assets/bot-studio-logo.svg";
@@ -8,6 +8,7 @@ import {
   emptySchedule,
   emptyView,
   type ActionOptions,
+  type CommandSpec,
   type CommandsDetail,
   type FlowDetail,
   type HandlerDetail,
@@ -21,7 +22,7 @@ import {
   type Workspace,
 } from "../../domain/project";
 import { type HandlerActions } from "../../features/action-editor/ActionEditor";
-import { CommandsEditor } from "../../features/commands-editor/CommandsEditor";
+import { CommandEditor, CommandFallbacksEditor } from "../../features/commands-editor/CommandsEditor";
 import { FlowEditor } from "../../features/flow-editor/FlowEditor";
 import { ResourceDragProvider } from "../../features/resource-dnd";
 import { HandlerInspector, NewHandlerEditor } from "../../features/handler-inspector/HandlerInspector";
@@ -37,6 +38,7 @@ import { UsersPage } from "../../features/users/UsersPage";
 import { ViewEditor } from "../../features/view-editor/ViewEditor";
 import { MainMenu } from "../../shared/ui/MainMenu";
 import { ResourceEditorHeader } from "../../shared/ui/ResourceEditorHeader";
+import { ResizeHandle } from "../../shared/ui/ResizeHandle";
 import { ResourceIcon } from "../../shared/ui/ResourceIcon";
 import { ProjectSwitcher } from "../../shared/ui/ProjectSwitcher";
 import { Toast } from "../../shared/ui/Toast";
@@ -48,6 +50,7 @@ type EditorState =
   | { kind: "view"; detail: ViewDetail; isNew: boolean }
   | { kind: "template"; detail: TemplateDetail; isNew: boolean }
   | { kind: "flow"; detail: FlowDetail; isNew: boolean }
+  | { kind: "command"; detail: CommandsDetail; commandIndex: number }
   | { kind: "commands"; detail: CommandsDetail }
   | { kind: "schedule"; detail: ScheduleDetail; isNew: boolean }
   | { kind: "handler"; detail: HandlerDetail }
@@ -55,6 +58,16 @@ type EditorState =
   | null;
 
 type EditorTab = { key: string; editor: Exclude<EditorState, null>; dirty: boolean };
+
+type DeletedResource =
+  | { kind: "view"; detail: ViewDetail }
+  | { kind: "template"; detail: TemplateDetail }
+  | { kind: "flow"; detail: FlowDetail }
+  | { kind: "command"; command: CommandSpec; index: number }
+  | { kind: "schedule"; detail: ScheduleDetail }
+  | { kind: "handler"; detail: HandlerDetail };
+
+type UndoEntry = { undo: () => Promise<void> };
 const MAX_TERMINAL_ENTRIES = 2000;
 
 export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects = [], onOpenProject = () => undefined, onNewProject = () => undefined }: { api: StudioApiClient; apiBaseUrl: string; initialWorkspace: Workspace; recentProjects?: readonly string[]; onOpenProject?(path: string): void; onNewProject?(): void }) {
@@ -82,8 +95,16 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsError, setSettingsError] = useState("");
   const [explorerWidth, setExplorerWidth] = useState(262);
+  const [terminalHeight, setTerminalHeight] = useState(280);
   const explorerWidthRef = useRef(explorerWidth);
+  const terminalHeightRef = useRef(terminalHeight);
   const workspaceRef = useRef<HTMLDivElement>(null);
+  const tabsRef = useRef(tabs);
+  const activeTabKeyRef = useRef(activeTabKey);
+  const undoStackRef = useRef<UndoEntry[]>([]);
+  const [undoAvailable, setUndoAvailable] = useState(false);
+  tabsRef.current = tabs;
+  activeTabKeyRef.current = activeTabKey;
   const nextNewTabId = useRef(1);
   const firstContentKey = useRef<string | null>(null);
   const localRunCommandRevision = useRef(0);
@@ -94,19 +115,27 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     return Math.max(180, workspaceWidth - previewWidth - 321);
   }, [previewOpen]);
 
+  const maximumTerminalHeight = useCallback((workspaceHeight: number) => Math.max(120, workspaceHeight - 165), []);
+
   useEffect(() => {
-    const clampExplorerWidth = () => {
+    const clampDimensions = () => {
       const workspaceElement = workspaceRef.current;
       if (!workspaceElement) return;
       const width = Math.min(maximumExplorerWidth(workspaceElement.clientWidth), explorerWidthRef.current);
-      if (width === explorerWidthRef.current) return;
-      explorerWidthRef.current = width;
-      setExplorerWidth(width);
+      const height = Math.min(maximumTerminalHeight(workspaceElement.clientHeight), terminalHeightRef.current);
+      if (width !== explorerWidthRef.current) {
+        explorerWidthRef.current = width;
+        setExplorerWidth(width);
+      }
+      if (height !== terminalHeightRef.current) {
+        terminalHeightRef.current = height;
+        setTerminalHeight(height);
+      }
     };
-    clampExplorerWidth();
-    window.addEventListener("resize", clampExplorerWidth);
-    return () => window.removeEventListener("resize", clampExplorerWidth);
-  }, [maximumExplorerWidth]);
+    clampDimensions();
+    window.addEventListener("resize", clampDimensions);
+    return () => window.removeEventListener("resize", clampDimensions);
+  }, [maximumExplorerWidth, maximumTerminalHeight]);
 
   const report = useCallback((caught: unknown) => {
     const message = caught instanceof Error ? caught.message : "Unexpected error";
@@ -194,39 +223,19 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     }
   }, [api, projectSettings, workspace.project_id]);
 
-  const resizeExplorer = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const workspaceElement = workspaceRef.current;
-    if (!workspaceElement) return;
-    const startX = event.clientX;
-    const startWidth = explorerWidthRef.current;
-    const maximumWidth = maximumExplorerWidth(workspaceElement.clientWidth);
-    document.body.classList.add("is-resizing");
-
-    const onMove = (moveEvent: globalThis.PointerEvent) => {
-      const width = Math.min(maximumWidth, Math.max(180, startWidth + moveEvent.clientX - startX));
-      explorerWidthRef.current = width;
-      workspaceElement.style.setProperty("--explorer-width", `${width}px`);
-    };
-    const onEnd = () => {
-      document.body.classList.remove("is-resizing");
-      setExplorerWidth(explorerWidthRef.current);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onEnd);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onEnd, { once: true });
-  }, [maximumExplorerWidth]);
-
-  const resizeExplorerByKeyboard = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const direction = event.key === "ArrowLeft" ? -1 : 1;
-    const workspaceWidth = workspaceRef.current?.clientWidth ?? 0;
-    const maximumWidth = maximumExplorerWidth(workspaceWidth);
-    const width = Math.min(maximumWidth, Math.max(180, explorerWidthRef.current + direction * 16));
+  const setExplorerSize = useCallback((width: number) => {
     explorerWidthRef.current = width;
-    setExplorerWidth(width);
-  }, [maximumExplorerWidth]);
+    workspaceRef.current?.style.setProperty("--explorer-width", `${width}px`);
+  }, []);
+
+  const commitExplorerSize = useCallback(() => setExplorerWidth(explorerWidthRef.current), []);
+
+  const setTerminalSize = useCallback((height: number) => {
+    terminalHeightRef.current = height;
+    workspaceRef.current?.style.setProperty("--terminal-height", `${height}px`);
+  }, []);
+
+  const commitTerminalSize = useCallback(() => setTerminalHeight(terminalHeightRef.current), []);
 
   const loadSelection = useCallback(async (next: Selection, tabKey?: string) => {
     let nextEditor: Exclude<EditorState, null>;
@@ -234,6 +243,11 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
       case "view": nextEditor = { kind: "view", detail: await api.getView(workspace.project_id, next.id), isNew: false }; break;
       case "template": nextEditor = { kind: "template", detail: await api.getTemplate(workspace.project_id, next.path), isNew: false }; break;
       case "flow": nextEditor = { kind: "flow", detail: await api.getFlow(workspace.project_id, next.id), isNew: false }; break;
+      case "command": {
+        const detail = await api.getCommands(workspace.project_id);
+        nextEditor = { kind: "command", detail, commandIndex: findCommandIndex(detail, next.name) };
+        break;
+      }
       case "commands": nextEditor = { kind: "commands", detail: await api.getCommands(workspace.project_id) }; break;
       case "schedule": nextEditor = { kind: "schedule", detail: await api.getSchedule(workspace.project_id, next.id), isNew: false }; break;
       case "handler": nextEditor = { kind: "handler", detail: await api.getHandler(workspace.project_id, next.id) }; break;
@@ -267,6 +281,88 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     setBusy(true);
     void loadSelection(next, tabKey).catch(report).finally(() => setBusy(false));
   }, [activeTabKey, dirty, editor, loadSelection, report, tabs]);
+
+  const pushUndo = useCallback((entry: UndoEntry) => {
+    undoStackRef.current.push(entry);
+    setUndoAvailable(true);
+  }, []);
+
+  const performUndo = useCallback(async () => {
+    if (busy) return;
+    const entry = undoStackRef.current.pop();
+    setUndoAvailable(undoStackRef.current.length > 0);
+    if (!entry) return;
+    setBusy(true);
+    try {
+      await entry.undo();
+      setError("");
+      setConflict(false);
+    } catch (caught) {
+      report(caught);
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, report]);
+
+  const restoreDeletedResource = useCallback(async (snapshot: DeletedResource) => {
+    if (snapshot.kind === "view") await api.createView(workspace.project_id, snapshot.detail.id, snapshot.detail.payload);
+    else if (snapshot.kind === "flow") await api.createFlow(workspace.project_id, snapshot.detail.id, snapshot.detail.payload);
+    else if (snapshot.kind === "schedule") await api.createSchedule(workspace.project_id, snapshot.detail.id, snapshot.detail.payload);
+    else if (snapshot.kind === "template") await api.saveTemplate(workspace.project_id, snapshot.detail.path, snapshot.detail.content);
+    else if (snapshot.kind === "command") {
+      const detail = await api.getCommands(workspace.project_id);
+      const commands = [...detail.payload.commands];
+      commands.splice(Math.min(snapshot.index, commands.length), 0, snapshot.command);
+      await api.saveCommands(workspace.project_id, { ...detail.payload, commands }, detail.revision);
+    }
+    else {
+      const fresh = await api.describe(workspace.project_id);
+      await api.createHandler(workspace.project_id, {
+        handler_id: snapshot.detail.id,
+        kind: snapshot.detail.kind,
+        registry_revision: fresh.handlers_revision,
+        outcomes: snapshot.detail.outcomes,
+        description: snapshot.detail.description,
+      });
+    }
+  }, [api, workspace.project_id]);
+
+  const pushDeleteUndo = useCallback((snapshot: DeletedResource) => {
+    pushUndo({
+      undo: async () => {
+        await restoreDeletedResource(snapshot);
+        await refreshWorkspace();
+        select(selectionForDeletedResource(snapshot));
+      },
+    });
+  }, [pushUndo, refreshWorkspace, restoreDeletedResource, select]);
+
+  const closeTabsFor = useCallback((target: Selection) => {
+    const remaining = tabsRef.current.filter((tab) => !selectionKeyEquals(selectionForEditor(tab.editor), target));
+    setTabs(remaining);
+    if (activeTabKeyRef.current === selectionTabKey(target)) {
+      const fallback = remaining[remaining.length - 1] ?? null;
+      setActiveTabKey(fallback?.key ?? null);
+      setEditor(fallback?.editor ?? null);
+      setSelection(null);
+      setDirty(fallback?.dirty ?? false);
+    }
+  }, []);
+
+  const deletePersistedResource = useCallback(async (target: Selection) => {
+    if (target.kind === "view") { const detail = await api.getView(workspace.project_id, target.id); await api.deleteView(workspace.project_id, target.id, detail.revision); }
+    else if (target.kind === "template") { const detail = await api.getTemplate(workspace.project_id, target.path); await api.deleteTemplate(workspace.project_id, target.path, detail.revision); }
+    else if (target.kind === "flow") { const detail = await api.getFlow(workspace.project_id, target.id); await api.deleteFlow(workspace.project_id, target.id, detail.revision); }
+    else if (target.kind === "schedule") { const detail = await api.getSchedule(workspace.project_id, target.id); await api.deleteSchedule(workspace.project_id, target.id, detail.revision); }
+    else if (target.kind === "handler") { const detail = await api.getHandler(workspace.project_id, target.id); await api.deleteHandler(workspace.project_id, target.id, detail.revision); }
+    else if (target.kind === "command") {
+      const detail = await api.getCommands(workspace.project_id);
+      await api.saveCommands(workspace.project_id, {
+        ...detail.payload,
+        commands: detail.payload.commands.filter((command) => command.name !== target.name),
+      }, detail.revision);
+    }
+  }, [api, workspace.project_id]);
 
   useEffect(() => {
     if (!editor || !activeTabKey) return;
@@ -405,6 +501,15 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
         const saved = await api.createFlow(workspace.project_id, id, emptyFlow(id));
         nextEditor = { kind, isNew: false, detail: saved };
         nextSelection = { kind, id: saved.id };
+      } else if (kind === "command") {
+        const detail = await api.getCommands(workspace.project_id);
+        const name = nextAvailableCommandName(detail.payload.commands.map((command) => command.name));
+        const saved = await api.saveCommands(workspace.project_id, {
+          ...detail.payload,
+          commands: [...detail.payload.commands, { name, action: { type: "noop" } }],
+        }, detail.revision);
+        nextEditor = { kind, detail: saved, commandIndex: findCommandIndex(saved, name) };
+        nextSelection = { kind, name };
       } else {
         const id = nextAvailableResourceName("new-schedule", workspace.schedules.map((item) => item.id));
         const saved = await api.createSchedule(workspace.project_id, id, emptySchedule(id));
@@ -419,6 +524,13 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
       setDirty(false);
       setError("");
       setConflict(false);
+      pushUndo({
+        undo: async () => {
+          await deletePersistedResource(nextSelection);
+          closeTabsFor(nextSelection);
+          await refreshWorkspace();
+        },
+      });
       await refreshWorkspace();
     } catch (caught) {
       report(caught);
@@ -469,14 +581,26 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
 
   useEffect(() => {
     const closeWithShortcut = (event: KeyboardEvent) => {
+      if (event.ctrlKey && (event.key === "`" || event.code === "Backquote")) {
+        event.preventDefault();
+        setTerminalOpen((open) => !open);
+        return;
+      }
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "w" && activeTabKey) {
         event.preventDefault();
         closeTab(activeTabKey);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
+        const target = event.target as HTMLElement | null;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
+        event.preventDefault();
+        void performUndo();
       }
     };
     window.addEventListener("keydown", closeWithShortcut);
     return () => window.removeEventListener("keydown", closeWithShortcut);
-  }, [activeTabKey, closeTab]);
+  }, [activeTabKey, closeTab, performUndo]);
 
   const save = async () => {
     if (!editor) return;
@@ -504,6 +628,24 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
           : await api.saveFlow(workspace.project_id, id, editor.detail.payload, editor.detail.revision);
         setEditor({ kind: "flow", detail: saved, isNew: false });
         nextSelection = { kind: "flow", id: saved.id };
+      } else if (editor.kind === "command") {
+        const command = commandAt(editor);
+        const saved = await api.saveCommands(workspace.project_id, editor.detail.payload, editor.detail.revision);
+        const nextEditor: Exclude<EditorState, null> = {
+          kind: "command",
+          detail: saved,
+          commandIndex: findCommandIndex(saved, command.name),
+        };
+        const previousTabKey = activeTabKey;
+        const nextTabKey = selectionTabKey({ kind: "command", name: command.name });
+        setEditor(nextEditor);
+        nextSelection = { kind: "command", name: command.name };
+        if (previousTabKey && previousTabKey !== nextTabKey) {
+          setActiveTabKey(nextTabKey);
+          setTabs((current) => current.map((tab) => tab.key === previousTabKey
+            ? { ...tab, key: nextTabKey, editor: nextEditor, dirty: false }
+            : tab));
+        }
       } else if (editor.kind === "commands") {
         setEditor({ kind: "commands", detail: await api.saveCommands(workspace.project_id, editor.detail.payload, editor.detail.revision) });
       } else if (editor.kind === "schedule") {
@@ -529,16 +671,27 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   };
 
   const remove = async () => {
-    if (!editor || !window.confirm("Delete this resource?")) return;
+    if (!editor) return;
+    const snapshot = deletedResourceSnapshot(editor);
+    if (!snapshot) return;
     setBusy(true);
     try {
       if (editor.kind === "view" && !editor.isNew) await api.deleteView(workspace.project_id, editor.detail.id, editor.detail.revision);
       else if (editor.kind === "template" && !editor.isNew) await api.deleteTemplate(workspace.project_id, editor.detail.path, editor.detail.revision);
       else if (editor.kind === "flow" && !editor.isNew) await api.deleteFlow(workspace.project_id, editor.detail.id, editor.detail.revision);
+      else if (editor.kind === "command") {
+        const command = commandAt(editor);
+        await api.saveCommands(workspace.project_id, {
+          ...editor.detail.payload,
+          commands: editor.detail.payload.commands.filter((_, index) => index !== editor.commandIndex),
+        }, editor.detail.revision);
+        setSelection({ kind: "command", name: command.name });
+      }
       else if (editor.kind === "schedule" && !editor.isNew) await api.deleteSchedule(workspace.project_id, editor.detail.id, editor.detail.revision);
       else if (editor.kind === "handler") await api.deleteHandler(workspace.project_id, editor.detail.id, editor.detail.revision);
       else return;
       if (activeTabKey) closeTab(activeTabKey, true);
+      pushDeleteUndo(snapshot);
       setNotice("");
       await refreshWorkspace();
     } catch (caught) {
@@ -550,71 +703,107 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
 
   const removeFromExplorer = (next: Selection) => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
-    if (!window.confirm("Delete this resource?")) return;
     setBusy(true);
     void (async () => {
-      if (next.kind === "view") { const detail = await api.getView(workspace.project_id, next.id); await api.deleteView(workspace.project_id, next.id, detail.revision); }
-      else if (next.kind === "template") { const detail = await api.getTemplate(workspace.project_id, next.path); await api.deleteTemplate(workspace.project_id, next.path, detail.revision); }
-      else if (next.kind === "flow") { const detail = await api.getFlow(workspace.project_id, next.id); await api.deleteFlow(workspace.project_id, next.id, detail.revision); }
-      else if (next.kind === "schedule") { const detail = await api.getSchedule(workspace.project_id, next.id); await api.deleteSchedule(workspace.project_id, next.id, detail.revision); }
-      else if (next.kind === "handler") { const detail = await api.getHandler(workspace.project_id, next.id); await api.deleteHandler(workspace.project_id, next.id, detail.revision); }
+      let snapshot: DeletedResource;
+      if (next.kind === "view") { const detail = await api.getView(workspace.project_id, next.id); snapshot = { kind: "view", detail }; await api.deleteView(workspace.project_id, next.id, detail.revision); }
+      else if (next.kind === "template") { const detail = await api.getTemplate(workspace.project_id, next.path); snapshot = { kind: "template", detail }; await api.deleteTemplate(workspace.project_id, next.path, detail.revision); }
+      else if (next.kind === "flow") { const detail = await api.getFlow(workspace.project_id, next.id); snapshot = { kind: "flow", detail }; await api.deleteFlow(workspace.project_id, next.id, detail.revision); }
+      else if (next.kind === "command") {
+        const detail = await api.getCommands(workspace.project_id);
+        const index = findCommandIndex(detail, next.name);
+        snapshot = { kind: "command", command: detail.payload.commands[index], index };
+        await api.saveCommands(workspace.project_id, {
+          ...detail.payload,
+          commands: detail.payload.commands.filter((_, current) => current !== index),
+        }, detail.revision);
+      }
+      else if (next.kind === "schedule") { const detail = await api.getSchedule(workspace.project_id, next.id); snapshot = { kind: "schedule", detail }; await api.deleteSchedule(workspace.project_id, next.id, detail.revision); }
+      else if (next.kind === "handler") { const detail = await api.getHandler(workspace.project_id, next.id); snapshot = { kind: "handler", detail }; await api.deleteHandler(workspace.project_id, next.id, detail.revision); }
       else return;
       if (activeTabKey && selectionKeyEquals(selection, next)) closeTab(activeTabKey, true);
       setTabs((current) => current.filter((tab) => !selectionKeyEquals(selectionForEditor(tab.editor), next)));
+      pushDeleteUndo(snapshot);
       await refreshWorkspace();
     })().catch(report).finally(() => setBusy(false));
   };
+
+  const renameResource = useCallback(async (next: Exclude<Selection, { kind: "commands" }>, name: string): Promise<{ selection: Exclude<Selection, { kind: "commands" }>; editor: Exclude<EditorState, null> }> => {
+    if (next.kind === "view") {
+      const detail = await api.getView(workspace.project_id, next.id);
+      const renamed = await api.renameView(workspace.project_id, next.id, name, detail.revision);
+      return { selection: { kind: "view", id: renamed.id }, editor: { kind: "view", detail: renamed, isNew: false } };
+    }
+    if (next.kind === "template") {
+      const detail = await api.getTemplate(workspace.project_id, next.path);
+      const renamed = await api.renameTemplate(workspace.project_id, next.path, name, detail.revision);
+      return { selection: { kind: "template", path: renamed.path }, editor: { kind: "template", detail: renamed, isNew: false } };
+    }
+    if (next.kind === "flow") {
+      const detail = await api.getFlow(workspace.project_id, next.id);
+      const renamed = await api.renameFlow(workspace.project_id, next.id, name, detail.revision);
+      return { selection: { kind: "flow", id: renamed.id }, editor: { kind: "flow", detail: renamed, isNew: false } };
+    }
+    if (next.kind === "schedule") {
+      const detail = await api.getSchedule(workspace.project_id, next.id);
+      const renamed = await api.renameSchedule(workspace.project_id, next.id, name, detail.revision);
+      return { selection: { kind: "schedule", id: renamed.id }, editor: { kind: "schedule", detail: renamed, isNew: false } };
+    }
+    if (next.kind === "command") {
+      const detail = await api.getCommands(workspace.project_id);
+      const index = findCommandIndex(detail, next.name);
+      const commandName = normalizeCommandName(name);
+      const renamed = await api.saveCommands(workspace.project_id, {
+        ...detail.payload,
+        commands: detail.payload.commands.map((command, current) => current === index
+          ? { ...command, name: commandName }
+          : command),
+      }, detail.revision);
+      return {
+        selection: { kind: "command", name: commandName },
+        editor: { kind: "command", detail: renamed, commandIndex: findCommandIndex(renamed, commandName) },
+      };
+    }
+    const detail = await api.getHandler(workspace.project_id, next.id);
+    const renamed = await api.renameHandler(workspace.project_id, next.id, name, detail.revision);
+    return { selection: { kind: "handler", id: renamed.id }, editor: { kind: "handler", detail: renamed } };
+  }, [api, workspace.project_id]);
+
+  const applyRenameToTabs = useCallback((from: Selection, to: Selection, toEditor: Exclude<EditorState, null>) => {
+    const previousTabKey = selectionTabKey(from);
+    const nextTabKey = selectionTabKey(to);
+    setTabs((current) => current.map((tab) => selectionKeyEquals(selectionForEditor(tab.editor), from)
+      ? { ...tab, key: nextTabKey, editor: toEditor, dirty: false }
+      : tab));
+    if (activeTabKeyRef.current === previousTabKey) {
+      setActiveTabKey(nextTabKey);
+      setEditor(toEditor);
+      setDirty(false);
+    }
+    setSelection(to);
+  }, []);
 
   const renameFromExplorer = useCallback(async (next: Exclude<Selection, { kind: "commands" }>, name: string) => {
     if (dirty && !window.confirm("Discard unsaved changes?")) return;
     setBusy(true);
     try {
-      let nextSelection: Exclude<Selection, { kind: "commands" }>;
-      let nextEditor: Exclude<EditorState, null>;
-      if (next.kind === "view") {
-        const detail = await api.getView(workspace.project_id, next.id);
-        const renamed = await api.renameView(workspace.project_id, next.id, name, detail.revision);
-        nextSelection = { kind: "view", id: renamed.id };
-        nextEditor = { kind: "view", detail: renamed, isNew: false };
-      } else if (next.kind === "template") {
-        const detail = await api.getTemplate(workspace.project_id, next.path);
-        const renamed = await api.renameTemplate(workspace.project_id, next.path, name, detail.revision);
-        nextSelection = { kind: "template", path: renamed.path };
-        nextEditor = { kind: "template", detail: renamed, isNew: false };
-      } else if (next.kind === "flow") {
-        const detail = await api.getFlow(workspace.project_id, next.id);
-        const renamed = await api.renameFlow(workspace.project_id, next.id, name, detail.revision);
-        nextSelection = { kind: "flow", id: renamed.id };
-        nextEditor = { kind: "flow", detail: renamed, isNew: false };
-      } else if (next.kind === "schedule") {
-        const detail = await api.getSchedule(workspace.project_id, next.id);
-        const renamed = await api.renameSchedule(workspace.project_id, next.id, name, detail.revision);
-        nextSelection = { kind: "schedule", id: renamed.id };
-        nextEditor = { kind: "schedule", detail: renamed, isNew: false };
-      } else {
-        const detail = await api.getHandler(workspace.project_id, next.id);
-        const renamed = await api.renameHandler(workspace.project_id, next.id, name, detail.revision);
-        nextSelection = { kind: "handler", id: renamed.id };
-        nextEditor = { kind: "handler", detail: renamed };
-      }
-      const previousTabKey = selectionTabKey(next);
-      const nextTabKey = selectionTabKey(nextSelection);
-      setTabs((current) => current.map((tab) => selectionKeyEquals(selectionForEditor(tab.editor), next)
-        ? { ...tab, key: nextTabKey, editor: nextEditor, dirty: false }
-        : tab));
-      if (activeTabKey === previousTabKey) {
-        setActiveTabKey(nextTabKey);
-        setEditor(nextEditor);
-        setDirty(false);
-      }
-      setSelection(nextSelection);
+      const { selection: nextSelection, editor: nextEditor } = await renameResource(next, name);
+      applyRenameToTabs(next, nextSelection, nextEditor);
       await refreshWorkspace();
+      const previousName = next.kind === "template" ? next.path : next.kind === "command" ? next.name : next.id;
+      pushUndo({
+        undo: async () => {
+          const restored = await renameResource(nextSelection, previousName);
+          applyRenameToTabs(nextSelection, restored.selection, restored.editor);
+          await refreshWorkspace();
+        },
+      });
     } catch (caught) {
       report(caught);
     } finally {
       setBusy(false);
     }
-  }, [activeTabKey, api, dirty, refreshWorkspace, report, selection, workspace.project_id]);
+  }, [api, applyRenameToTabs, dirty, pushUndo, refreshWorkspace, renameResource, report, workspace.project_id]);
 
   const reloadCurrent = () => {
     if (!selection) return;
@@ -641,7 +830,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
       await approveProjectRoot(workspace.project_root);
       const result = await runLocalProject({ projectRoot: workspace.project_root, packageName: workspace.package });
       setLocalRunPid(result.pid || null);
-      setNotice(result.alreadyRunning ? "Local bot is already running." : `Local bot started (PID ${result.pid}).`);
+      setNotice("");
       setError("");
     } catch (caught) {
       report(caught);
@@ -684,10 +873,12 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
           <MainMenu
             canSave={Boolean(editor && !busy && canSave(editor))}
             canCloseTab={Boolean(activeTabKey)}
+            canUndo={undoAvailable && !busy}
             onOpenProject={() => switchProject("")}
             onNewProject={createProject}
             onSave={() => void save()}
             onCloseTab={() => { if (activeTabKey) closeTab(activeTabKey); }}
+            onUndo={() => void performUndo()}
           />
           <ProjectSwitcher workspace={workspace} recentProjects={recentProjects} onOpenProject={switchProject} onNewProject={createProject} />
         </div>
@@ -707,20 +898,21 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
       </header>
       {error && <Toast message={error} tone="error" action={conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>} onDismiss={() => { setError(""); setConflict(false); }} />}
       {notice && <Toast message={notice} tone="notice" onDismiss={() => setNotice("")} />}
-      <div ref={workspaceRef} className={`workspace${activeActivity === "users" ? " workspace--users" : ""}${activeActivity === "resources" && previewOpen ? " workspace--preview-open" : ""}${terminalOpen ? " workspace--terminal-open" : ""}`} style={{ "--explorer-width": `${explorerWidth}px` } as CSSProperties}>
+      <div ref={workspaceRef} className={`workspace${activeActivity === "users" ? " workspace--users" : ""}${activeActivity === "resources" && previewOpen ? " workspace--preview-open" : ""}${terminalOpen ? " workspace--terminal-open" : ""}`} style={{ "--explorer-width": `${explorerWidth}px`, "--terminal-height": `${terminalHeight}px` } as CSSProperties}>
         <StudioActivityRail active={activeActivity} onSelect={setActiveActivity} terminalOpen={terminalOpen} onToggleTerminal={() => setTerminalOpen((open) => !open)} settingsOpen={settingsOpen} onOpenSettings={openProjectSettings} />
         {activeActivity === "resources" && <><ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onAdd={addResource} onRename={renameFromExplorer} onDelete={removeFromExplorer} />
-        <div className="workspace__resizer" role="separator" aria-label="Resize resource list" aria-orientation="vertical" tabIndex={0} onPointerDown={resizeExplorer} onKeyDown={resizeExplorerByKeyboard} />
+        <ResizeHandle className="workspace__resizer" axis="horizontal" label="Resize resource list" value={explorerWidth} min={180} max={() => maximumExplorerWidth(workspaceRef.current?.clientWidth ?? 0)} onResize={setExplorerSize} onResizeEnd={commitExplorerSize} />
         <section className="workspace__main" aria-busy={busy}>
           {tabs.length > 0 && <nav className="editor-tabs" aria-label="Open resources" role="tablist">
             {tabs.map((tab) => <div key={tab.key} className={tab.key === activeTabKey ? "editor-tab editor-tab--active" : "editor-tab"} role="presentation">
-              <button type="button" className="editor-tab__select" role="tab" aria-selected={tab.key === activeTabKey} onClick={() => activateTab(tab.key)}><span className="editor-tab__dirty-slot">{tab.dirty && <span className="editor-tab__dirty" aria-label="Unsaved changes" />}</span><ResourceIcon selection={editorTabSelection(tab.editor)} title={editorTabLabel(tab.editor)} /><span className="editor-tab__label">{editorTabLabel(tab.editor)}</span></button>
+              <button type="button" className="editor-tab__select" role="tab" aria-selected={tab.key === activeTabKey} onClick={() => activateTab(tab.key)}><span className="editor-tab__dirty-slot">{tab.dirty && <span className={isEditorInvalid(tab.editor) ? "editor-tab__dirty editor-tab__dirty--invalid" : "editor-tab__dirty"} aria-label={isEditorInvalid(tab.editor) ? "Invalid unsaved changes" : "Unsaved changes"} title={isEditorInvalid(tab.editor) ? "This resource needs attention before it can be used" : "Unsaved changes"} />}</span><ResourceIcon selection={editorTabSelection(tab.editor)} title={editorTabLabel(tab.editor)} /><span className="editor-tab__label">{editorTabLabel(tab.editor)}</span></button>
               <button type="button" className="editor-tab__close" aria-label={`Close ${editorTabLabel(tab.editor)}`} title="Close tab" onClick={() => closeTab(tab.key)}><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5 5 6 6m0-6-6 6" /></svg></button>
             </div>)}
           </nav>}
           <div key={firstContentKey.current ?? "empty"} className={firstContentKey.current ? "workspace__content workspace__content--enter" : "workspace__content"}>
             {editor && <ResourceEditorHeader category={editorCategory(editor)} title={editorHeaderTitle(editor)} saveAction={isSaveableEditor(editor) ? { disabled: busy || !canSave(editor), saving, onSave: () => void save() } : undefined} />}
             {renderEditor(editor, options, handlerActions, setEditor, setDirty, repairHandler, openHandler, findUsages, createAndOpenHandler, select, (suggestedPath) => addResource("template", suggestedPath))}
+          {editor?.kind === "command" && <footer className="editor__actions editor__actions--danger"><span>Deleting this command removes it from the bot command list.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete command</button></footer>}
           {editor?.kind === "handler" && <footer className="editor__actions editor__actions--danger"><span>Deleting a binding can break the resources that use it.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
           {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
           </div>
@@ -728,7 +920,10 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
         <TelegramPreview open={previewOpen} model={previewModel} onClose={() => setPreviewOpen(false)} />
         <PreviewToolRail open={previewOpen} onToggle={() => setPreviewOpen((open) => !open)} /></>}
         {activeActivity === "users" && <UsersPage api={api} apiBaseUrl={apiBaseUrl} projectId={workspace.project_id} />}
-        {terminalOpen && <StudioTerminal entries={terminalEntries} running={localRunActive} pid={localRunPid} onClose={() => setTerminalOpen(false)} />}
+        {terminalOpen && <>
+          <ResizeHandle className="workspace__terminal-resizer" axis="vertical" label="Resize terminal" value={terminalHeight} min={120} max={() => maximumTerminalHeight(workspaceRef.current?.clientHeight ?? 0)} inverted onResize={setTerminalSize} onResizeEnd={commitTerminalSize} />
+          <StudioTerminal entries={terminalEntries} running={localRunActive} pid={localRunPid} onClose={() => setTerminalOpen(false)} />
+        </>}
       </div>
       <footer className="studio-statusbar" aria-label="Studio status">
         <div className="studio-statusbar__group">
@@ -775,19 +970,37 @@ function previewEditor(editor: EditorState): PreviewEditor | null {
   if (editor.kind === "flow") return { kind: "flow", payload: editor.detail.payload };
   if (editor.kind === "schedule") return { kind: "schedule", payload: editor.detail.payload };
   if (editor.kind === "template") return { kind: "template", detail: editor.detail };
-  if (editor.kind === "commands") return { kind: "commands", payload: editor.detail.payload };
+  if (editor.kind === "commands" || editor.kind === "command") return { kind: "commands", payload: editor.detail.payload };
   return { kind: "handler" };
 }
 
 function selectionTabKey(selection: Selection): string {
   if (selection.kind === "template") return `template:${selection.path}`;
+  if (selection.kind === "command") return `command:${selection.name}`;
   if (selection.kind === "commands") return "commands";
   return `${selection.kind}:${selection.id}`;
+}
+
+function deletedResourceSnapshot(editor: Exclude<EditorState, null>): DeletedResource | null {
+  if (editor.kind === "handler") return { kind: "handler", detail: editor.detail };
+  if (editor.kind === "command") return { kind: "command", command: commandAt(editor), index: editor.commandIndex };
+  if (editor.kind === "commands" || editor.kind === "new-handler" || editor.isNew) return null;
+  if (editor.kind === "view") return { kind: "view", detail: editor.detail };
+  if (editor.kind === "template") return { kind: "template", detail: editor.detail };
+  if (editor.kind === "flow") return { kind: "flow", detail: editor.detail };
+  return { kind: "schedule", detail: editor.detail };
+}
+
+function selectionForDeletedResource(snapshot: DeletedResource): Selection {
+  if (snapshot.kind === "template") return { kind: "template", path: snapshot.detail.path };
+  if (snapshot.kind === "command") return { kind: "command", name: snapshot.command.name };
+  return { kind: snapshot.kind, id: snapshot.detail.id };
 }
 
 function selectionForEditor(editor: Exclude<EditorState, null>): Selection | null {
   if (editor.kind === "new-handler" || ("isNew" in editor && editor.isNew)) return null;
   if (editor.kind === "template") return { kind: "template", path: editor.detail.path };
+  if (editor.kind === "command") return { kind: "command", name: commandAt(editor).name };
   if (editor.kind === "commands") return { kind: "commands" };
   return { kind: editor.kind, id: editor.detail.id };
 }
@@ -799,13 +1012,15 @@ function selectionKeyEquals(left: Selection | null, right: Selection): boolean {
 function editorTabLabel(editor: Exclude<EditorState, null>): string {
   if (editor.kind === "new-handler") return "New handler";
   if (editor.kind === "template") return editor.detail.path || "New template";
-  if (editor.kind === "commands") return "commands.json";
+  if (editor.kind === "command") return `/${commandAt(editor).name}`;
+  if (editor.kind === "commands") return "fallbacks";
   return editor.detail.id || `New ${editor.kind}`;
 }
 
 function editorTabSelection(editor: Exclude<EditorState, null>): Selection {
   const selection = selectionForEditor(editor);
   if (selection) return selection;
+  if (editor.kind === "command") return { kind: "command", name: commandAt(editor).name };
   if (editor.kind === "commands") return { kind: "commands" };
   if (editor.kind === "template") return { kind: "template", path: editor.detail.path };
   if (editor.kind === "new-handler") return { kind: "handler", id: "" };
@@ -814,13 +1029,15 @@ function editorTabSelection(editor: Exclude<EditorState, null>): Selection {
 
 function editorCategory(editor: Exclude<EditorState, null>): string {
   if (editor.kind === "new-handler") return "Handler";
+  if (editor.kind === "command") return "Command";
   if (editor.kind === "commands") return "Commands";
   return editor.kind[0].toUpperCase() + editor.kind.slice(1);
 }
 
 function editorHeaderTitle(editor: Exclude<EditorState, null>): string {
   if (editor.kind === "new-handler") return "New handler";
-  if (editor.kind === "commands") return "Commands";
+  if (editor.kind === "command") return `/${commandAt(editor).name}`;
+  if (editor.kind === "commands") return "Fallbacks";
   if (editor.kind === "template") return editor.detail.path || "New template";
   return editor.detail.id || `New ${editor.kind}`;
 }
@@ -842,7 +1059,8 @@ function renderEditor(
   if (editor.kind === "view") return <ViewEditor value={editor.detail.payload} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onOpenTemplate={(path) => select({ kind: "template", path })} onCreateTemplate={createTemplate} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "template") return <TemplateEditor path={editor.detail.path} content={editor.detail.content} onContentChange={(content) => { setEditor({ ...editor, detail: { ...editor.detail, content } }); setDirty(true); }} />;
   if (editor.kind === "flow") return <FlowEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
-  if (editor.kind === "commands") return <CommandsEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
+  if (editor.kind === "command") return <CommandEditor value={commandAt(editor)} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onChange={(command) => { setEditor({ ...editor, detail: { ...editor.detail, payload: { ...editor.detail.payload, commands: editor.detail.payload.commands.map((item, index) => index === editor.commandIndex ? command : item) } } }); setDirty(true); }} />;
+  if (editor.kind === "commands") return <CommandFallbacksEditor value={editor.detail.payload} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "schedule") return <ScheduleEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "handler") return <HandlerInspector handler={editor.detail} onRepair={repairHandler} onOpen={openHandler} onFindUsages={findUsages} />;
   return <NewHandlerEditor onCreate={async (id, kind, outcomes, description) => { await createHandler(id, kind, outcomes, description); select({ kind: "handler", id }); }} />;
@@ -851,6 +1069,7 @@ function renderEditor(
 function canSave(editor: Exclude<EditorState, null>): boolean {
   if (editor.kind === "view") return Boolean(editor.detail.payload.id.trim());
   if (editor.kind === "flow" || editor.kind === "schedule") return Boolean(editor.detail.payload.id.trim());
+  if (editor.kind === "command") return Boolean(commandAt(editor).name.trim());
   if (editor.kind === "template") return Boolean(editor.detail.path.trim());
   return editor.kind === "commands";
 }
@@ -860,7 +1079,25 @@ function isNewEditor(editor: Exclude<EditorState, null>): boolean {
 }
 
 function canDelete(editor: Exclude<EditorState, null>): boolean {
+  if (editor.kind === "command") return true;
   return (editor.kind === "view" || editor.kind === "template" || editor.kind === "flow" || editor.kind === "schedule") && !editor.isNew;
+}
+
+function isEditorInvalid(editor: Exclude<EditorState, null>): boolean {
+  if (editor.kind === "view") {
+    const text = editor.detail.payload.text;
+    return !editor.detail.payload.id.trim() || !(text.inline?.trim() || text.template?.trim());
+  }
+  if (editor.kind === "flow") {
+    const { id, initial_state, states } = editor.detail.payload;
+    return !id.trim() || !initial_state.trim() || !(initial_state in states) || Object.values(states).some((state) => !state.view.trim());
+  }
+  if (editor.kind === "schedule") {
+    const { id, handler, trigger } = editor.detail.payload;
+    return !id.trim() || !handler.trim() || trigger.seconds <= 0;
+  }
+  if (editor.kind === "template") return !editor.detail.path.trim();
+  return false;
 }
 
 function nextAvailableResourceName(base: string, existing: string[]): string {
@@ -879,6 +1116,30 @@ function nextAvailableTemplatePath(existing: string[]): string {
   return `new-template-${suffix}.txt`;
 }
 
+function nextAvailableCommandName(existing: string[]): string {
+  const names = new Set(existing);
+  if (!names.has("new_command")) return "new_command";
+  let suffix = 2;
+  while (names.has(`new_command_${suffix}`)) suffix += 1;
+  return `new_command_${suffix}`;
+}
+
+function normalizeCommandName(value: string): string {
+  return value.trim().replace(/^\//, "").toLowerCase();
+}
+
+function findCommandIndex(detail: CommandsDetail, name: string): number {
+  const index = detail.payload.commands.findIndex((command) => command.name === name);
+  if (index < 0) throw new Error(`Command '/${name}' no longer exists. Refresh the project resources.`);
+  return index;
+}
+
+function commandAt(editor: Extract<Exclude<EditorState, null>, { kind: "command" }>): CommandSpec {
+  const command = editor.detail.payload.commands[editor.commandIndex];
+  if (!command) throw new Error("The selected command no longer exists. Refresh the project resources.");
+  return command;
+}
+
 function isSaveableEditor(editor: Exclude<EditorState, null>): boolean {
   return editor.kind !== "handler" && editor.kind !== "new-handler";
 }
@@ -886,7 +1147,7 @@ function isSaveableEditor(editor: Exclude<EditorState, null>): boolean {
 function draftForEditor(editor: EditorState): ExplorerDraft | null {
   if (!editor) return null;
   if (editor.kind === "new-handler") return { kind: "handler", label: "New handler" };
-  if (editor.kind === "commands" || editor.kind === "handler") return null;
+  if (editor.kind === "command" || editor.kind === "commands" || editor.kind === "handler") return null;
   if (!editor.isNew) return null;
   if (editor.kind === "template") return { kind: "template", label: editor.detail.path || "New template" };
   if (editor.kind === "view") return { kind: "view", label: editor.detail.payload.id || "New view" };

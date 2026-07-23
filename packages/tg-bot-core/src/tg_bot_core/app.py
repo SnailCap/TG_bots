@@ -6,16 +6,21 @@ import signal
 from collections.abc import Sequence
 from dataclasses import replace
 
+from .analytics import (
+    AnalyticsEventType,
+    AnalyticsRecorder,
+    SqliteAnalyticsEventWriter,
+)
 from .catalog import ProjectCatalog
 from .config import BotConfig
 from .dispatcher import EventDispatcher
 from .engine import FlowEngine
-from .events import InteractionEvent
+from .events import CallbackEvent, CommandEvent, InteractionEvent, MessageEvent
 from .handlers import HandlerExecutor, HandlerResolver
 from .jobs import DurableJobQueue, JobRuntime
 from .project import ProjectDefinition, ProjectValidationError, load_and_validate_project
 from .services import ServiceContainer, ServiceProvider
-from .store import SessionConflict, SqliteStore
+from .store import FlowSession, SessionConflict, SqliteStore
 from .transport import BotTransport, UserProfileProvider
 
 log = logging.getLogger(__name__)
@@ -39,6 +44,7 @@ class BotApp:
         self.service_container = ServiceContainer()
         self.store = SqliteStore(config.database_path)
         self.queue = DurableJobQueue(self.store)
+        self.analytics: AnalyticsRecorder | None = None
         self.handler_executor: HandlerExecutor | None = None
         self.engine: FlowEngine | None = None
         self.dispatcher: EventDispatcher | None = None
@@ -64,10 +70,14 @@ class BotApp:
             if project is None:  # Kept explicit for type narrowing and future report levels.
                 raise ProjectValidationError(diagnostics)
             await self.store.initialize()
+            analytics = AnalyticsRecorder(
+                project.manifest.id,
+                SqliteAnalyticsEventWriter(self.store.path),
+            )
             await self.service_container.build(self.service_providers)
             resolver = HandlerResolver(project.handlers, project.root, project.manifest.package)
             resolver.validate_all()
-            executor = HandlerExecutor(resolver, self.service_container.all())
+            executor = HandlerExecutor(resolver, self.service_container.all(), analytics)
             catalog = ProjectCatalog(project)
             await self.queue.sync_schedules(project.schedules)
             jobs = JobRuntime(self.queue, executor, self.service_container.all())
@@ -84,10 +94,12 @@ class BotApp:
                 self.store,
                 self.queue,
                 self.transport,
+                analytics,
                 max_auto_transitions=self.config.max_auto_transitions,
             )
             self.project = project
             self.catalog = catalog
+            self.analytics = analytics
             self.handler_executor = executor
             self.jobs = jobs
             self.engine = engine
@@ -141,8 +153,25 @@ class BotApp:
         if self.project is None or self.dispatcher is None:
             raise RuntimeError("BotApp is not started.")
         bot_id = self.project.manifest.id
-        managed_user = await self.store.upsert_user(bot_id, event.actor)
+        managed_user, created = await self.store.upsert_user_with_status(bot_id, event.actor)
+        if self.analytics is None:
+            raise RuntimeError("BotApp analytics recorder is not initialized.")
+        if created:
+            await self.analytics.record(
+                AnalyticsEventType.USER_FIRST_SEEN,
+                actor=event.actor,
+            )
+        await self.analytics.record(
+            AnalyticsEventType.INTERACTION_RECEIVED,
+            actor=event.actor,
+        )
         if managed_user.blocked:
+            session = (
+                await self.store.load_session(bot_id, event.actor)
+                if isinstance(event, CallbackEvent)
+                else None
+            )
+            await self._record_interaction_subtype(event, session)
             log.info("Ignoring update from blocked user: bot_id=%s user_id=%s", bot_id, event.actor.user_id)
             return
         if isinstance(self.transport, UserProfileProvider):
@@ -171,14 +200,47 @@ class BotApp:
             event = replace(event, actor=replace(event.actor, role=managed_user.role))
         if not await self.store.mark_update_once(bot_id, event.actor, event.update_id):
             return
-        for _ in range(2):
-            session = await self.store.load_session(bot_id, event.actor)
+        session = await self.store.load_session(bot_id, event.actor)
+        await self._record_interaction_subtype(event, session)
+        for attempt in range(2):
+            if attempt:
+                session = await self.store.load_session(bot_id, event.actor)
             try:
                 await self.dispatcher.dispatch(session, event)
                 return
             except SessionConflict:
                 continue
         raise SessionConflict("Could not apply update after retrying optimistic session conflicts.")
+
+    async def _record_interaction_subtype(
+        self,
+        event: InteractionEvent,
+        session: FlowSession | None,
+    ) -> None:
+        if self.analytics is None:
+            return
+        if isinstance(event, CommandEvent):
+            await self.analytics.record(
+                AnalyticsEventType.COMMAND_RECEIVED,
+                actor=event.actor,
+                resource_id=event.command.lower().removeprefix("/"),
+            )
+            return
+        if isinstance(event, MessageEvent):
+            await self.analytics.record(
+                AnalyticsEventType.MESSAGE_RECEIVED,
+                actor=event.actor,
+            )
+            return
+        if isinstance(event, CallbackEvent):
+            await self.analytics.record(
+                AnalyticsEventType.BUTTON_CLICKED,
+                actor=event.actor,
+                resource_id=event.action_id,
+                flow_id=session.flow_id if session else None,
+                state_id=session.state_id if session else None,
+                view_id=session.view_id if session else None,
+            )
 
     async def run_async(self) -> None:
         loop = asyncio.get_running_loop()

@@ -25,10 +25,10 @@ export function StudioTerminal({
       <header className="studio-terminal__header">
         <div className="studio-terminal__title-group">
           <span className="studio-terminal__title">Terminal</span>
-          <span className={running ? "studio-terminal__state studio-terminal__state--running" : "studio-terminal__state"}>
+          {running && <span className="studio-terminal__state studio-terminal__state--running">
             <span aria-hidden="true" />
-            {running ? `Running${pid ? ` · PID ${pid}` : ""}` : "Stopped"}
-          </span>
+            {`Running${pid ? ` · PID ${pid}` : ""}`}
+          </span>}
         </div>
         <button type="button" className="studio-terminal__close" aria-label="Close terminal" title="Close terminal" onClick={onClose}>
           <CloseIcon />

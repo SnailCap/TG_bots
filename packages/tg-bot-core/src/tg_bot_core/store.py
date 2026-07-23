@@ -8,6 +8,7 @@ from typing import Any
 
 import aiosqlite
 
+from .analytics import initialize_analytics_schema
 from .events import Actor, UserRole
 
 
@@ -146,6 +147,7 @@ class SqliteStore:
                 );
                 """
             )
+            await initialize_analytics_schema(connection)
             await self._ensure_bot_user_columns(connection)
             await connection.commit()
 
@@ -253,17 +255,21 @@ class SqliteStore:
     async def upsert_user(self, bot_id: str, actor: Actor) -> BotUser:
         """Refresh Telegram identity fields while preserving Studio-managed fields."""
 
+        user, _created = await self.upsert_user_with_status(bot_id, actor)
+        return user
+
+    async def upsert_user_with_status(
+        self, bot_id: str, actor: Actor
+    ) -> tuple[BotUser, bool]:
+        """Upsert a user and report whether this transaction created the row."""
+
         async with aiosqlite.connect(self.path) as connection:
             connection.row_factory = aiosqlite.Row
-            await connection.execute(
+            inserted = await connection.execute(
                 """INSERT INTO bot_users
                 (bot_id, user_id, username, first_name, last_name, language_code, role, blocked, note)
                 VALUES (?, ?, ?, ?, ?, ?, 'user', 0, '')
-                ON CONFLICT(bot_id, user_id) DO UPDATE SET
-                    username=excluded.username,
-                    first_name=excluded.first_name,
-                    last_name=excluded.last_name,
-                    language_code=excluded.language_code""",
+                ON CONFLICT(bot_id, user_id) DO NOTHING""",
                 (
                     bot_id,
                     actor.user_id,
@@ -273,6 +279,20 @@ class SqliteStore:
                     actor.language_code,
                 ),
             )
+            created = inserted.rowcount == 1
+            if not created:
+                await connection.execute(
+                    """UPDATE bot_users SET username=?, first_name=?, last_name=?, language_code=?
+                    WHERE bot_id=? AND user_id=?""",
+                    (
+                        actor.username,
+                        actor.first_name,
+                        actor.last_name,
+                        actor.language_code,
+                        bot_id,
+                        actor.user_id,
+                    ),
+                )
             row = await (
                 await connection.execute(
                     "SELECT * FROM bot_users WHERE bot_id=? AND user_id=?",
@@ -282,7 +302,7 @@ class SqliteStore:
             await connection.commit()
         if row is None:  # Defensive: the upsert and select share one connection.
             raise RuntimeError("User upsert did not produce a row.")
-        return self._user_from_row(row)
+        return self._user_from_row(row), created
 
     async def list_users(self, bot_id: str) -> list[BotUser]:
         async with aiosqlite.connect(self.path) as connection:
