@@ -372,6 +372,23 @@ describe("Studio", () => {
     }));
   });
 
+  it("routes activity rail links to separate Resources and Users pages", async () => {
+    const api = apiMock();
+    const { container } = render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    expect(screen.getByRole("link", { name: "Resources" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(screen.getByRole("link", { name: "Users" }));
+
+    expect(await screen.findByRole("region", { name: "User management" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
+    expect(container.querySelector(".workspace")).toHaveClass("workspace--users");
+    expect(api.listUsers).toHaveBeenCalledWith("project-1");
+
+    fireEvent.click(screen.getByRole("link", { name: "Resources" }));
+    expect(await screen.findByRole("heading", { name: "Select a resource" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Resources" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("creates a missing custom button handler and asks Electron to open it", async () => {
     const missingWorkspace = { ...workspace, handlers: [] };
     const missingView: ViewDetail = {

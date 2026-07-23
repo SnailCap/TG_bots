@@ -1,3 +1,5 @@
+import type { TelegramFormatKind } from "./telegram-formatting";
+
 export type TemplateTextNode = {
   type: "text";
   text: string;
@@ -20,15 +22,29 @@ export type TemplateUnresolvedTokenNode = {
 export type TemplateRawFragmentNode = {
   type: "raw-fragment";
   source: string;
+  fragmentKind?: "jinja" | "html";
+};
+
+export type TemplateFormatNode = {
+  type: "format";
+  format: TelegramFormatKind;
+  children: TemplateNode[];
+  href?: string;
+  userId?: string;
+  language?: string;
+  emojiId?: string;
+  unix?: number;
+  dateTimeFormat?: string;
+  fallback?: string;
 };
 
 export type TemplateNode =
   | TemplateTextNode
   | TemplateContextTokenNode
   | TemplateUnresolvedTokenNode
-  | TemplateRawFragmentNode;
+  | TemplateRawFragmentNode
+  | TemplateFormatNode;
 
 export type TemplateDocument = {
   nodes: TemplateNode[];
 };
-

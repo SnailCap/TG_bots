@@ -23,6 +23,8 @@
 17. Visual Template Composer не является новым project format: сохраняйте только обычный Jinja-текст, а визуальную document model держите transient во frontend.
 18. Parser/serializer Template Composer должны сохранять исходные данные без потерь. Неизвестные или неподдерживаемые Jinja expressions нельзя удалять либо молча переписывать.
 19. Context fields добавляются через отдельный context catalog, а не hard-coded ветвления внутри editor-компонентов. Visual и Source mode всегда используют одну Jinja-строку как источник состояния.
+20. `frontend/src/pages/studio/StudioPage.tsx` — только composition/controller boundary. Не добавляйте в него JSX-каркас, editor dispatch, project settings, local-run lifecycle или resource API branching: используйте соседние `StudioPageView.tsx`, `StudioEditor.tsx`, `useStudio*.ts` и `studio-resource-api.ts`. Держите файл не длиннее 600 строк; если изменение пересекает этот порог, сначала вынесите новую ответственность в отдельный компонент, hook или чистый module.
+21. Каждый пункт основного левого Studio rail является отдельной route page. Добавляйте страницы через typed registry `frontend/src/pages/studio/studio-routes.tsx`, а содержимое — отдельным компонентом в `frontend/src/pages/<route>/`; не возвращайте локальный `activeActivity` switch в `StudioPage`/`StudioPageView` и не монтируйте все страницы одновременно через `hidden`.
 
 ## Карта ответственности
 
@@ -30,6 +32,7 @@
 - `packages/tg-bot-core/src/tg_bot_core/`: runtime composition, dispatcher, flow/action engine, handler SDK/executor, SQLite sessions/jobs и transport abstraction.
 - `backend/app/workspace/`: безопасная работа с deployable files, revisions, starter и handler scaffolding/inspection.
 - `frontend/src/`: typed domain model и Studio features; не используйте raw filesystem.
+- `frontend/src/pages/studio/`: координация и routing Studio. `StudioPage.tsx` связывает специализированные hooks, `StudioPageView.tsx` рендерит общий shell и `<Outlet>`, `studio-routes.tsx` является typed registry страниц rail, `StudioEditor.tsx` маршрутизирует typed editors, `editor-model.ts` хранит editor state/helpers, а `studio-resource-api.ts` изолирует CRUD branching.
 - `frontend/electron/`: минимальный privileged boundary, lifecycle backend и безопасный IDE launch.
 
 При добавлении event/action/handler kind/schedule trigger/context property следуйте [docs/development/extending-schema.md](docs/development/extending-schema.md). Обновляйте loader, validator, references, runtime, Studio backend/frontend, starter и документацию как одну вертикаль; не допускайте расхождения Studio и runtime.

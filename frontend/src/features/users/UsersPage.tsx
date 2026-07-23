@@ -44,9 +44,10 @@ interface UsersPageProps {
   apiBaseUrl?: string;
   projectId?: string;
   initialUsers?: readonly BotUser[];
+  hidden?: boolean;
 }
 
-export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: UsersPageProps) {
+export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers, hidden = false }: UsersPageProps) {
   const [users, setUsers] = useState<BotUser[]>(() => initialUsers?.map(copyUser) ?? []);
   const [loading, setLoading] = useState(initialUsers === undefined);
   const [loadRevision, setLoadRevision] = useState(0);
@@ -207,7 +208,7 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: Use
     setBulkStatus("");
   };
 
-  return <section className="users-page" aria-label="User management">
+  return <section className="users-page" aria-label="User management" hidden={hidden}>
     <div className="users-page__body">
       <div className="users-manager" inert={focusedUser ? true : undefined}>
         <div className="users-toolbar">
@@ -230,7 +231,7 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers }: Use
         </div>}
 
         <div className="users-table-shell">
-          {loading ? <LoadingUsersState /> : error && users.length === 0 ? <LoadErrorState onRetry={() => setLoadRevision((value) => value + 1)} /> : users.length === 0 ? <EmptyUsersState /> : filteredUsers.length === 0 ? <NoResultsState onClear={clearFilters} /> : <>
+          {loading ? null : error && users.length === 0 ? <LoadErrorState onRetry={() => setLoadRevision((value) => value + 1)} /> : users.length === 0 ? <EmptyUsersState /> : filteredUsers.length === 0 ? <NoResultsState onClear={clearFilters} /> : <>
             <div className="users-table__scroll"><table className="users-table">
               <thead><tr>
                 <th className="users-table__check"><input type="checkbox" aria-label="Select all visible users" checked={allVisibleSelected} onChange={toggleAllVisible} /></th>
@@ -295,15 +296,15 @@ function UserDetails({ user, avatarUrl, closing, saving, width, onClose, onClose
         <div><dt>Telegram ID</dt><dd><code>{draft.telegramId}</code></dd></div>
         <div><dt>Language</dt><dd>{draft.languageCode?.toUpperCase() || "Not provided"}</dd></div>
       </dl>
-      <DetailsSection title="Role" description="Controls what this person can do in the bot.">
+      <DetailsSection title="Role">
         <Select value={draft.role} options={ROLE_OPTIONS} ariaLabel="User role" onChange={(role) => setDraft((current) => ({ ...current, role: role as UserRole }))} />
       </DetailsSection>
-      <DetailsSection title="Account status" description="Blocked users cannot interact with this bot.">
+      <DetailsSection title="Account status">
         <div className="user-details__status-actions">
           {draft.status === "blocked" ? <button type="button" className="button--secondary" onClick={() => setStatus("active")}><RestoreIcon />Restore access</button> : <button type="button" className="button--danger" onClick={() => setBlockConfirmationOpen(true)}><BlockIcon />Block</button>}
         </div>
       </DetailsSection>
-      <DetailsSection title="Internal note" description="Only Studio collaborators can see this note.">
+      <DetailsSection title="Internal note">
         <label className="user-details__note"><span className="sr-only">Internal note</span><textarea value={draft.note} placeholder="Add context about this user…" onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))} /></label>
       </DetailsSection>
     </div>
@@ -319,8 +320,8 @@ function UserDetails({ user, avatarUrl, closing, saving, width, onClose, onClose
   </aside>;
 }
 
-function DetailsSection({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return <section className="user-details__section"><header><h3>{title}</h3><p>{description}</p></header>{children}</section>;
+function DetailsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return <section className="user-details__section"><header><h3>{title}</h3></header>{children}</section>;
 }
 
 function SortableHeader({ label, sortKey, sort, onSort }: { label: string; sortKey: SortKey; sort: { key: SortKey; direction: SortDirection }; onSort(key: SortKey): void }) {
@@ -341,7 +342,6 @@ function StatusBadge({ status }: { status: UserStatus }) {
   return <span className={`status-badge status-badge--${status}`}><span aria-hidden="true" />{STATUS_LABELS[status]}</span>;
 }
 
-function LoadingUsersState() { return <div className="users-empty" aria-live="polite"><h2>Loading users…</h2></div>; }
 function LoadErrorState({ onRetry }: { onRetry(): void }) { return <div className="users-empty"><h2>Could not load users</h2><p>Check that the project is still available and try again.</p><button type="button" className="button--secondary" onClick={onRetry}>Try again</button></div>; }
 function EmptyUsersState() { return <div className="users-empty"><div className="users-empty__icon"><UsersIcon /></div><h2>No users yet</h2><p>People will appear here after they interact with this bot for the first time.</p></div>; }
 function NoResultsState({ onClear }: { onClear(): void }) { return <div className="users-empty"><div className="users-empty__icon"><SearchIcon /></div><h2>No users match these filters</h2><p>Try a different search or clear the current filters.</p><button type="button" className="button--secondary" onClick={onClear}>Clear filters</button></div>; }

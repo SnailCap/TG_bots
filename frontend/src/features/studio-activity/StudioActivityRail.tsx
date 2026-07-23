@@ -1,30 +1,30 @@
-export type StudioActivity = "resources" | "users";
+import type { ComponentType } from "react";
+import { NavLink } from "react-router-dom";
 
-export function StudioActivityRail({ active, onSelect, terminalOpen, onToggleTerminal, settingsOpen, onOpenSettings }: { active: StudioActivity; onSelect(activity: StudioActivity): void; terminalOpen: boolean; onToggleTerminal(): void; settingsOpen: boolean; onOpenSettings(): void }) {
+type StudioRailRoute = {
+  id: string;
+  path: string;
+  label: string;
+  icon: ComponentType;
+};
+
+export function StudioActivityRail({ routes, terminalOpen, onToggleTerminal, settingsOpen, onOpenSettings }: { routes: readonly StudioRailRoute[]; terminalOpen: boolean; onToggleTerminal(): void; settingsOpen: boolean; onOpenSettings(): void }) {
   return (
     <nav className="studio-side-rail studio-activity-rail" aria-label="Studio pages">
-      <button
-        type="button"
-        className={active === "resources" ? "studio-side-rail__button studio-side-rail__button--active studio-activity-rail__button" : "studio-side-rail__button studio-activity-rail__button"}
-        aria-label="Resources"
-        aria-current={active === "resources" ? "page" : undefined}
-        title="Resources"
-        data-tooltip="Resources"
-        onClick={() => onSelect("resources")}
-      >
-        <ResourcesIcon />
-      </button>
-      <button
-        type="button"
-        className={active === "users" ? "studio-side-rail__button studio-side-rail__button--active studio-activity-rail__button" : "studio-side-rail__button studio-activity-rail__button"}
-        aria-label="Users"
-        aria-current={active === "users" ? "page" : undefined}
-        title="Users"
-        data-tooltip="Users"
-        onClick={() => onSelect("users")}
-      >
-        <UsersIcon />
-      </button>
+      {routes.map(({ id, path, label, icon: Icon }) => (
+        <NavLink
+          key={id}
+          to={path}
+          className={({ isActive }) => isActive
+            ? "studio-side-rail__button studio-side-rail__button--active studio-activity-rail__button"
+            : "studio-side-rail__button studio-activity-rail__button"}
+          aria-label={label}
+          title={label}
+          data-tooltip={label}
+        >
+          <Icon />
+        </NavLink>
+      ))}
       <div className="studio-activity-rail__utility">
         <button
           type="button"
@@ -51,14 +51,6 @@ export function StudioActivityRail({ active, onSelect, terminalOpen, onToggleTer
       </div>
     </nav>
   );
-}
-
-function ResourcesIcon() {
-  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="3.25" y="3.25" width="5.1" height="5.1" rx=".5" /><rect x="11.65" y="3.25" width="5.1" height="5.1" rx=".5" /><rect x="3.25" y="11.65" width="5.1" height="5.1" rx=".5" /><rect x="11.65" y="11.65" width="5.1" height="5.1" rx=".5" /></svg>;
-}
-
-function UsersIcon() {
-  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="7.2" cy="7" r="2.7" /><path d="M2.4 16.7c.35-3.5 1.95-5.3 4.8-5.3s4.45 1.8 4.8 5.3M12 5.8a2.55 2.55 0 0 1 0 5m1.2 1.2c2.55.3 3.95 1.85 4.35 4.7" /></svg>;
 }
 
 function TerminalIcon() {

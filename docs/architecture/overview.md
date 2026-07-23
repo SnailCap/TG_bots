@@ -138,6 +138,23 @@ sequenceDiagram
 
 Backend читает и сохраняет manifest, views/templates, flows, commands, schedules и handlers; для file-per-entity resources есть create/delete операции. Он поддерживает revision conflicts, reference-safe deletion, validation, usages и handler inspection. Scaffolding может атомарно создать binding, безопасный Python path и привязку к выбранной сущности. Существующий source file не перезаписывается.
 
+### Граница frontend Studio page
+
+`frontend/src/pages/studio/StudioPage.tsx` остаётся composition/controller boundary и не владеет всеми деталями Studio:
+
+- `StudioPageView.tsx` рендерит общий shell, `<Routes>`/`<Outlet>`, terminal, settings и status bar;
+- `studio-routes.tsx` хранит единый typed registry route pages для router и левого rail;
+- `pages/resources/ResourcesPage.tsx` владеет explorer, вкладками редакторов и preview;
+- `pages/users/UsersPage.tsx` является route page для управления пользователями;
+- `StudioEditor.tsx` выбирает typed editor для текущего ресурса;
+- `editor-model.ts` содержит editor state и чистые преобразования selection/tab/draft;
+- `studio-resource-api.ts` содержит typed CRUD branching для ресурсов;
+- `useStudioLayout.ts`, `useLocalProjectRun.ts`, `useProjectSettings.ts`, `useStudioHandlers.ts` и `useStudioUndo.ts` изолируют независимые lifecycle.
+
+Новые обязанности добавляются в соответствующий компонент, hook или чистый module, а не накапливаются в `StudioPage.tsx`. Для coding agents действует лимит 600 строк на `StudioPage.tsx`: достижение лимита является сигналом к декомпозиции до добавления новой логики.
+
+Навигация основного левого rail реализована через `HashRouter`: routes доступны как `#/resources`, `#/users` и не требуют server fallback в Electron/Vite. Каждый основной пункт rail — отдельная page, которая монтируется через `<Outlet>`. Добавление страницы состоит из отдельного компонента в `frontend/src/pages/<route>/` и одной записи в `studio-routes.tsx`; локальный boolean/activity switch в Studio shell не используется.
+
 Electron открывает только существующий `.py` внутри canonical project root. Поддерживаются system association, VS Code, JetBrains и configurable executable; frontend не передаёт shell command.
 
 ### Local test run

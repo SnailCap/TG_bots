@@ -1,6 +1,6 @@
-# Template Composer MVP
+# Template Composer
 
-Template Composer adds a visual editing mode for plain text templates without changing the project format. The editor shows supported context references as atomic tokens, while Studio continues to save a normal UTF-8 Jinja `.txt` file through the existing template API.
+Template Composer adds a visual editing mode for Telegram HTML templates without changing the project format. The editor shows supported context references as atomic tokens and Telegram formatting as a visual projection, while Studio continues to save a normal UTF-8 Jinja `.txt` file through the existing template API.
 
 ## Source of truth
 
@@ -13,6 +13,8 @@ Jinja string -> parseTemplate -> TemplateDocument -> serializeTemplate -> Jinja 
 ```
 
 Known expressions retain their original source spelling when parsed. Newly inserted tokens use the canonical form `{{ user.first_name }}`. Unknown and unsupported fragments retain their exact source.
+
+Telegram formatting is part of the transient `TemplateDocument`; it is not a second persisted document format. Visual edits serialize to canonical Bot API HTML, and switching from Source back to Visual normalizes official aliases such as `<strong>`, `<em>`, `<ins>`, `<del>`, and `<span class="tg-spoiler">`.
 
 ## Context catalog
 
@@ -38,7 +40,31 @@ An unknown simple reference such as `{{ order.total }}` becomes an unresolved wa
 
 The frontend preview is deliberately isolated in `preview.ts`. It substitutes only supported simple context tokens with editable example values. It is not a Jinja implementation and does not evaluate filters, statements, loops, or conditions. Unsupported source is shown unchanged.
 
-## MVP limits
+## Telegram HTML formatting
+
+Visual mode supports the regular-message HTML entities accepted by Telegram Bot API:
+
+- bold, italic, underline, strikethrough, and spoiler;
+- web links and `tg://user` mentions;
+- inline code and preformatted code blocks with an optional language;
+- regular and expandable block quotes;
+- custom emoji with a required fallback emoji;
+- dynamic date/time entities with Telegram's `r|w?[dD]?[tT]?` format.
+
+Selecting text opens a compact formatting toolbar. Common inline styles are shown directly; block and special entities are available in More. The editor uses Telegram Desktop keyboard shortcuts while focus and selection remain inside Visual mode.
+
+`telegram-formatting.ts` is the shared action catalog for toolbar actions, HTML aliases, and keyboard shortcuts. `paste-sanitizer.ts` removes external styles, classes, unsafe links, and unsupported markup while retaining formatting that can be represented by Telegram HTML.
+
+Before Visual edits are published, the serializer:
+
+- emits only the canonical Telegram tags;
+- escapes plain `<`, `>`, and `&`;
+- removes duplicate inline wrappers;
+- prevents formatting inside `<code>` and `<pre>`;
+- prevents nested block quotes and nested exclusive entities;
+- preserves Jinja tokens and unsupported Jinja fragments without evaluating them.
+
+## Limits
 
 - Only the fixed system user fields are available.
 - Only simple `scope.field` output expressions are visualized.
@@ -46,4 +72,3 @@ The frontend preview is deliberately isolated in `preview.ts`. It substitutes on
 - Filters, fallbacks, conditions, and loops are not evaluated visually.
 - There is no Python generation, handler change, or rename refactoring.
 - `tg-bot-core` and project schema are unchanged.
-

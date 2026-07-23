@@ -4,6 +4,7 @@ import { VisualTemplateEditor } from "./editor";
 import { parseTemplate } from "./parser";
 import { defaultPreviewValues, renderTemplatePreview } from "./preview";
 import { TemplatePreviewPanel } from "./preview-panel";
+import { normalizeTelegramHtml } from "./serializer";
 import { validateTemplate } from "./validation";
 
 type EditorMode = "visual" | "source";
@@ -22,6 +23,13 @@ export function TemplateComposer({
   const document = useMemo(() => parseTemplate(content), [content]);
   const diagnostics = useMemo(() => validateTemplate(document), [document]);
   const preview = useMemo(() => renderTemplatePreview(document, previewValues), [document, previewValues]);
+  const switchMode = (nextMode: EditorMode) => {
+    if (nextMode === "visual") {
+      const normalized = normalizeTelegramHtml(content);
+      if (normalized !== content) onContentChange(normalized);
+    }
+    setMode(nextMode);
+  };
 
   return (
     <section className="template-composer" aria-label={`Template composer for ${path}`}>
@@ -29,8 +37,8 @@ export function TemplateComposer({
         <div className="template-composer__editor-column">
           <header className="template-composer__toolbar">
             <div className="template-mode-switch" role="tablist" aria-label="Template editor mode">
-              <button type="button" role="tab" aria-selected={mode === "visual"} className={mode === "visual" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => setMode("visual")}>Visual</button>
-              <button type="button" role="tab" aria-selected={mode === "source"} className={mode === "source" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => setMode("source")}>Source</button>
+              <button type="button" role="tab" aria-selected={mode === "visual"} className={mode === "visual" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => switchMode("visual")}>Visual</button>
+              <button type="button" role="tab" aria-selected={mode === "source"} className={mode === "source" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => switchMode("source")}>Source</button>
             </div>
             <span className="template-composer__hint">Type <kbd>$</kbd> to insert a context field</span>
           </header>
@@ -44,6 +52,10 @@ export function TemplateComposer({
               spellCheck={false}
               value={content}
               onChange={(event) => onContentChange(event.target.value)}
+              onBlur={() => {
+                const normalized = normalizeTelegramHtml(content);
+                if (normalized !== content) onContentChange(normalized);
+              }}
               placeholder="Write Jinja template source…"
             />
           )}
@@ -68,4 +80,3 @@ export function TemplateComposer({
 function WarningIcon() {
   return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.1 14 13H2L8 2.1Z" /><path d="M8 5.6v3.6M8 11.4v.1" /></svg>;
 }
-
