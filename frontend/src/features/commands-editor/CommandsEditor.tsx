@@ -1,34 +1,42 @@
+import { useState } from "react";
+
 import type {
   ActionOptions,
   ActionSpec,
   CommandSpec,
   CommandsSpec,
   HandlerCreateOptions,
+  Selection,
 } from "../../domain/project";
 import { actionFor } from "../../domain/project";
 import { ActionEditor, type HandlerActions } from "../action-editor/ActionEditor";
+import { AccessSelect, type AccessLevel } from "../../shared/ui/AccessSelect";
+import { FormControlGroup, FormField, FormGrid } from "../../shared/ui/Form";
 
 export function CommandEditor({
   value,
   revision,
   options,
   handlerActions,
+  onOpenResource,
   onChange,
 }: {
   value: CommandSpec;
   revision: string;
   options: ActionOptions;
   handlerActions: HandlerActions;
+  onOpenResource?(selection: Selection): void;
   onChange(value: CommandSpec): void;
 }) {
+  const [accessMockup, setAccessMockup] = useState<AccessLevel>("everyone");
   return (
     <section className="editor" aria-label="Command editor">
-      <div className="form-grid form-grid--command-settings">
-        <label className="editor-field command-settings__name">
-          <span>Name:</span>
-          <span className="command-name-control">
-            <span aria-hidden="true">/</span>
+      <FormGrid columns={2} className="command-settings">
+        <FormField label="Name:">
+          {(controlProps) => (
+            <FormControlGroup prefix={<span aria-hidden="true">/</span>}>
             <input
+              {...controlProps}
               aria-label="Command name"
               value={value.name}
               spellCheck={false}
@@ -37,24 +45,41 @@ export function CommandEditor({
                 name: event.target.value.replace(/^\//, "").toLowerCase(),
               })}
             />
-          </span>
-        </label>
-        <div className="editor-field command-settings__action">
-          <span>Action:</span>
-          <ActionEditor
-            action={value.action}
-            hideActionLabel
-            onChange={(action) => onChange({ ...value, action })}
-            options={options}
-            scope={{ expectedKind: "command" }}
-            handlerActions={handlerActions}
-            createOptions={{
-              attachment: { type: "command", command: value.name },
-              target_revision: revision,
-            }}
-          />
-        </div>
-      </div>
+            </FormControlGroup>
+          )}
+        </FormField>
+        <FormField label="Access:">
+          {(controlProps) => <AccessSelect {...controlProps} ariaLabel="Command access" value={accessMockup} onChange={setAccessMockup} />}
+        </FormField>
+        <FormField label="Description:" span="full">
+          {(controlProps) => (
+            <input
+              {...controlProps}
+              value={value.description ?? ""}
+              placeholder="Describe what this command does"
+              onChange={(event) => onChange({
+                ...value,
+                description: event.target.value || undefined,
+              })}
+            />
+          )}
+        </FormField>
+        <ActionEditor
+          action={value.action}
+          bare
+          fieldLayout="row"
+          compoundPrimary
+          onOpenResource={onOpenResource}
+          onChange={(action) => onChange({ ...value, action })}
+          options={options}
+          scope={{ expectedKind: "command" }}
+          handlerActions={handlerActions}
+          createOptions={{
+            attachment: { type: "command", command: value.name },
+            target_revision: revision,
+          }}
+        />
+      </FormGrid>
     </section>
   );
 }
@@ -74,7 +99,7 @@ export function CommandFallbacksEditor({
 }) {
   return (
     <section className="editor editor--wide" aria-label="Command fallbacks editor">
-      <div className="form-grid">
+      <FormGrid>
         <FallbackEditor
           title="Message fallback"
           action={value.message_fallback}
@@ -93,7 +118,7 @@ export function CommandFallbacksEditor({
           createOptions={{ attachment: { type: "global_command_fallback" }, target_revision: revision }}
           onChange={(command_fallback) => onChange({ ...value, command_fallback })}
         />
-      </div>
+      </FormGrid>
     </section>
   );
 }

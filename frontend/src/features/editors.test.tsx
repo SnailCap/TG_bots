@@ -92,7 +92,7 @@ describe("action editor", () => {
     expect(onChange).toHaveBeenLastCalledWith({ type: "flow.cancel", view: "home" });
 
     rerender(<ActionEditor {...props} action={{ type: "handler.invoke", handler: "checkout.submit", outcomes: {} }} />);
-    fireEvent.change(screen.getByLabelText("Handler payload"), { target: { value: "{\"order_id\": 7}" } });
+    fireEvent.change(screen.getByLabelText("Handler payload:"), { target: { value: "{\"order_id\": 7}" } });
     expect(onChange).toHaveBeenLastCalledWith({ type: "handler.invoke", handler: "checkout.submit", outcomes: {}, payload: { order_id: 7 } });
 
     rerender(<ActionEditor {...props} action={{ type: "task.enqueue", target: "jobs.sync" }} />);

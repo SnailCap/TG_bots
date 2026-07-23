@@ -149,6 +149,18 @@ def test_loader_prefers_nested_resources_for_a_project_named_resources(tmp_path:
             ),
             "unsupported fields for noop",
         ),
+        (
+            lambda root: write_json(
+                root / "resources" / "views" / "home.json",
+                {
+                    "schema_version": 3,
+                    "id": "home",
+                    "text": {"inline": "Home"},
+                    "keyboard": [[{"id": "bad", "text": "Bad", "action": {"type": "view.render", "target": "home", "delivery": "replace"}}]],
+                },
+            ),
+            "delivery must be 'edit' or 'send'",
+        ),
     ],
 )
 def test_loader_rejects_wrong_version_and_ambiguous_actions(tmp_path: Path, mutate, match: str) -> None:

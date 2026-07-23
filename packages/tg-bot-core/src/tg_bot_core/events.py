@@ -40,10 +40,12 @@ class MessageEvent(InteractionEvent):
 @dataclass(frozen=True, slots=True)
 class CallbackEvent(InteractionEvent):
     action_id: str = ""
+    message_id: int | None = None
     kind: Literal["callback"] = "callback"
 
 
 @dataclass(frozen=True, slots=True)
 class LifecycleEvent(InteractionEvent):
     hook: str = ""
+    message_id: int | None = None
     kind: Literal["lifecycle"] = "lifecycle"

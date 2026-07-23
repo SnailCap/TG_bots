@@ -204,6 +204,55 @@ def new_app(root: Path, transport: FakeTransport, trace: list[str], *, max_auto_
 
 
 @pytest.mark.asyncio
+async def test_callback_navigation_edits_the_current_message_by_default_and_can_send_new(tmp_path: Path) -> None:
+    make_project(
+        tmp_path,
+        views=[
+            {
+                "schema_version": 3,
+                "id": "home",
+                "text": {"inline": "Home"},
+                "keyboard": [[{"id": "open_help", "text": "Help", "action": {"type": "view.render", "target": "help"}}]],
+            },
+            {
+                "schema_version": 3,
+                "id": "help",
+                "text": {"inline": "Help"},
+                "keyboard": [[
+                    {"id": "begin_flow", "text": "Begin", "action": {"type": "flow.start", "target": "main"}},
+                    {"id": "new_home", "text": "Home", "action": {"type": "view.render", "target": "home", "delivery": "send"}},
+                ]],
+            },
+            {"schema_version": 3, "id": "ask", "text": {"inline": "Ask"}, "keyboard": []},
+        ],
+        flows=[{
+            "schema_version": 3,
+            "id": "main",
+            "initial_state": "ask",
+            "states": {"ask": {"view": "ask"}},
+        }],
+    )
+    actor = Actor(41, 42)
+    transport = FakeTransport()
+    app = new_app(tmp_path, transport, [])
+    await app.start()
+
+    await transport.emit(CommandEvent(actor, 1, "unknown"))
+    assert transport.messages[-1].edit_message_id is None
+
+    await transport.emit(CallbackEvent(actor, 2, "open_help", message_id=501))
+    assert (transport.messages[-1].text, transport.messages[-1].edit_message_id) == ("Help", 501)
+
+    await transport.emit(CallbackEvent(actor, 3, "new_home", message_id=501))
+    assert (transport.messages[-1].text, transport.messages[-1].edit_message_id) == ("Home", None)
+
+    await transport.emit(CallbackEvent(actor, 4, "open_help", message_id=502))
+    await transport.emit(CallbackEvent(actor, 5, "begin_flow", message_id=502))
+    assert (transport.messages[-1].text, transport.messages[-1].edit_message_id) == ("Ask", 502)
+    await app.stop()
+
+
+@pytest.mark.asyncio
 async def test_standalone_project_runs_flow_across_restart_without_studio(tmp_path: Path) -> None:
     make_interactive_project(tmp_path)
     actor = Actor(7, 8, first_name="Ada")

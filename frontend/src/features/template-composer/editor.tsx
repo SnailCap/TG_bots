@@ -20,20 +20,54 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
   const pendingCaret = useRef<number | null>(null);
+  const source = serializeTemplate(document);
+  const historyRef = useRef({ entries: [source], index: 0 });
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null);
   const suggestions = autocomplete ? searchContextFields(autocomplete.query) : [];
+  const renderedNodes = document.nodes.length ? document.nodes : [{ type: "text" as const, text: "" }];
+  const needsTrailingTextSlot = renderedNodes.at(-1)?.type !== "text";
+  const restorePendingCaret = () => {
+    const editor = editorRef.current;
+    const caret = pendingCaret.current;
+    if (caret === null || !editor) return;
+    restoreCaretOffset(editor, caret);
+    pendingCaret.current = null;
+  };
+  const deferCaretRestore = () => queueMicrotask(restorePendingCaret);
+  if (historyRef.current.entries[historyRef.current.index] !== source) {
+    historyRef.current = { entries: [source], index: 0 };
+  }
+  const publishSource = (nextSource: string) => {
+    const history = historyRef.current;
+    if (history.entries[history.index] !== nextSource) {
+      history.entries.splice(history.index + 1);
+      history.entries.push(nextSource);
+      if (history.entries.length > 100) history.entries.shift();
+      history.index = history.entries.length - 1;
+    }
+    onChange(nextSource);
+  };
+  const replayHistory = (direction: -1 | 1) => {
+    const history = historyRef.current;
+    const nextIndex = history.index + direction;
+    if (nextIndex < 0 || nextIndex >= history.entries.length) return;
+    history.index = nextIndex;
+    const editor = editorRef.current;
+    if (editor) pendingCaret.current = getCaretOffset(editor);
+    onChange(history.entries[nextIndex]);
+    deferCaretRestore();
+  };
 
   useLayoutEffect(() => {
-    if (pendingCaret.current === null || !editorRef.current) return;
-    restoreCaretOffset(editorRef.current, pendingCaret.current);
-    pendingCaret.current = null;
+    restorePendingCaret();
   }, [document]);
 
   const commitDom = (caretOffset?: number) => {
     const editor = editorRef.current;
     if (!editor) return;
     pendingCaret.current = caretOffset ?? getCaretOffset(editor);
-    onChange(serializeTemplate(readEditorDocument(editor)));
+    publishSource(serializeTemplate(readEditorDocument(editor)));
+    deferCaretRestore();
   };
 
   const updateAutocomplete = () => {
@@ -78,7 +112,8 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
     );
     setAutocomplete(null);
     pendingCaret.current = caretBefore + 1;
-    onChange(serializeTemplate(nextDocument));
+    publishSource(serializeTemplate(nextDocument));
+    deferCaretRestore();
   };
 
   const handleInput = (_event: FormEvent<HTMLDivElement>) => {
@@ -87,6 +122,17 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if ((event.ctrlKey || event.metaKey) && !event.altKey) {
+      const key = event.key.toLowerCase();
+      const redo = key === "y" || (key === "z" && event.shiftKey);
+      const undo = key === "z" && !event.shiftKey;
+      if (undo || redo) {
+        event.preventDefault();
+        event.stopPropagation();
+        replayHistory(redo ? 1 : -1);
+        return;
+      }
+    }
     if (autocomplete) {
       if (event.key === "ArrowDown" || event.key === "ArrowUp") {
         event.preventDefault();
@@ -120,7 +166,8 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
         nextDocument.nodes.splice(nodeIndex, 1);
         setAutocomplete(null);
         pendingCaret.current = Math.max(0, caret);
-        onChange(serializeTemplate(nextDocument));
+        publishSource(serializeTemplate(nextDocument));
+        deferCaretRestore();
       }
     }
   };
@@ -150,7 +197,8 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
         }}
         onPaste={handlePaste}
       >
-        {(document.nodes.length ? document.nodes : [{ type: "text" as const, text: "" }]).map((node, index) => <TemplateNodeView key={`${index}-${nodeKey(node)}`} node={node} index={index} />)}
+        {renderedNodes.map((node, index) => <TemplateNodeView key={`${index}-${nodeKey(node)}`} node={node} index={index} />)}
+        {needsTrailingTextSlot && <TemplateNodeView key="trailing-text-slot" node={{ type: "text", text: "" }} index={renderedNodes.length} />}
       </div>
       {autocomplete && <ContextAutocomplete fields={suggestions} activeIndex={autocomplete.activeIndex} position={autocomplete.position} onChoose={chooseField} />}
     </div>
@@ -352,7 +400,14 @@ function restoreCaretOffset(root: HTMLElement, target: number): void {
   for (const child of Array.from(root.childNodes)) visit(child);
   if (restored) return;
   const emptyTextNode = root.querySelector<HTMLElement>("[data-template-node='text']");
-  if (emptyTextNode) setCaret(emptyTextNode, 0);
+  if (emptyTextNode) {
+    setCaret(emptyTextNode, 0);
+    return;
+  }
+  // A document made only of atomic tokens has no text node that can receive a
+  // caret. Keep the selection on the editable root so the next edit starts
+  // from a live DOM position instead of a text node React has just removed.
+  setCaret(root, target === 0 ? 0 : root.childNodes.length);
 }
 
 function setCaret(node: Node, offset: number): void {

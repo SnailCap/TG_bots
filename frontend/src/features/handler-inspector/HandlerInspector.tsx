@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { HandlerDetail, HandlerKind, HandlerUsage } from "../../domain/project";
+import { FormField, FormGrid } from "../../shared/ui/Form";
 import { Select } from "../../shared/ui/Select";
 
 export function HandlerInspector({
@@ -43,14 +44,21 @@ export function NewHandlerEditor({ onCreate }: { onCreate(id: string, kind: Hand
   const [description, setDescription] = useState("");
   return (
     <section className="editor" aria-label="New handler editor">
-      <div className="form-grid">
-        <label>Handler name<input value={id} onChange={(event) => setId(event.target.value)} placeholder="checkout.submit" /></label>
-        <small className="muted">Use dot-separated words. Studio derives the binding and Python file path from this name.</small>
-        <label>Context kind<Select ariaLabel="Context kind" value={kind} options={[{ value: "button", label: "Button" }, { value: "message", label: "Message" }, { value: "command", label: "Command" }, { value: "lifecycle", label: "Lifecycle" }, { value: "task", label: "Task" }]} onChange={(next) => setKind(next as HandlerKind)} /></label>
-        <label>Additional outcomes, comma-separated<input value={outcomes} onChange={(event) => setOutcomes(event.target.value)} placeholder="invalid, access_denied" /></label>
-        <label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
+      <FormGrid columns={2}>
+        <FormField label="Handler name" layout="stacked" hint="Use dot-separated words. Studio derives the binding and Python file path from this name.">
+          {(controlProps) => <input {...controlProps} value={id} onChange={(event) => setId(event.target.value)} placeholder="checkout.submit" />}
+        </FormField>
+        <FormField label="Context kind" layout="stacked">
+          {(controlProps) => <Select {...controlProps} ariaLabel="Context kind" value={kind} options={[{ value: "button", label: "Button" }, { value: "message", label: "Message" }, { value: "command", label: "Command" }, { value: "lifecycle", label: "Lifecycle" }, { value: "task", label: "Task" }]} onChange={(next) => setKind(next as HandlerKind)} />}
+        </FormField>
+        <FormField label="Additional outcomes, comma-separated" layout="stacked" span="full">
+          {(controlProps) => <input {...controlProps} value={outcomes} onChange={(event) => setOutcomes(event.target.value)} placeholder="invalid, access_denied" />}
+        </FormField>
+        <FormField label="Description" layout="stacked" span="full">
+          {(controlProps) => <textarea {...controlProps} value={description} onChange={(event) => setDescription(event.target.value)} />}
+        </FormField>
         <button type="button" disabled={!id.trim()} onClick={() => void onCreate(id.trim(), kind, outcomes.split(",").map((item) => item.trim()).filter(Boolean), description.trim() || undefined)}>Create handler and open code</button>
-      </div>
+      </FormGrid>
     </section>
   );
 }

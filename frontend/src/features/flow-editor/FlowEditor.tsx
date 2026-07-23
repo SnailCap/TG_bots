@@ -11,6 +11,7 @@ import type {
 import { HandlerControls } from "../handlers/HandlerControls";
 import { OutcomeEditor, type ActionScope, type HandlerActions } from "../action-editor/ActionEditor";
 import { ResourceDropTarget } from "../resource-dnd";
+import { FormField, FormGrid } from "../../shared/ui/Form";
 import { Select } from "../../shared/ui/Select";
 
 const LIFECYCLE_HOOKS: Array<keyof FlowLifecycle> = ["on_start", "on_complete", "on_cancel", "on_error"];
@@ -37,12 +38,13 @@ export function FlowEditor({
   const flowOptions = { ...options, states: stateIds };
   return (
     <section className="editor editor--wide" aria-label="Flow editor">
-      <div className="form-grid">
-        <label>Flow ID<input disabled={!isNew} value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} /></label>
-        <label>
-          Initial state
-          <Select ariaLabel="Initial state" value={value.initial_state} options={stateIds.map((stateId) => ({ value: stateId, label: stateId }))} onChange={(initial_state) => onChange({ ...value, initial_state })} />
-        </label>
+      <FormGrid columns={2}>
+        <FormField label="Flow ID" layout="stacked" disabled={!isNew}>
+          {(controlProps) => <input {...controlProps} value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} />}
+        </FormField>
+        <FormField label="Initial state" layout="stacked">
+          {(controlProps) => <Select {...controlProps} ariaLabel="Initial state" value={value.initial_state} options={stateIds.map((stateId) => ({ value: stateId, label: stateId }))} onChange={(initial_state) => onChange({ ...value, initial_state })} />}
+        </FormField>
         <fieldset>
           <legend>Flow lifecycle</legend>
           {LIFECYCLE_HOOKS.map((hook) => (
@@ -92,7 +94,7 @@ export function FlowEditor({
             }}>Add state</button>
           </div>
         </fieldset>
-      </div>
+      </FormGrid>
     </section>
   );
 }
@@ -122,12 +124,13 @@ function StateEditor({
   return (
     <article className="state-card">
       <header><div><strong>{stateId}</strong><small>{flowId}.{stateId}</small></div>{removable && <button type="button" className="button--danger" onClick={onRemove}>Remove state</button>}</header>
-      <label>
-        Default view
-        <ResourceDropTarget target={{ type: "view-reference" }} label="Drop view here" onDrop={(resource) => onChange({ ...state, view: resource.value })}>
-          <Select ariaLabel="Default view" value={state.view} options={[{ value: "", label: "Select a view" }, ...options.views.map((viewId) => ({ value: viewId, label: viewId }))]} onChange={(view) => onChange({ ...state, view })} />
-        </ResourceDropTarget>
-      </label>
+      <FormField label="Default view" layout="stacked">
+        {(controlProps) => (
+          <ResourceDropTarget target={{ type: "view-reference" }} label="Drop view here" onDrop={(resource) => onChange({ ...state, view: resource.value })}>
+            <Select {...controlProps} ariaLabel="Default view" value={state.view} options={[{ value: "", label: "Select a view" }, ...options.views.map((viewId) => ({ value: viewId, label: viewId }))]} onChange={(view) => onChange({ ...state, view })} />
+          </ResourceDropTarget>
+        )}
+      </FormField>
       <InvocationSlot title="on_enter" invocation={state.on_enter} scope={{ expectedKind: "lifecycle", currentFlow: flowId }} options={options} handlerActions={handlerActions} createOptions={targetRevision ? { attachment: { type: "state_on_enter", flow_id: flowId, state_id: stateId }, target_revision: targetRevision } : undefined} onChange={(on_enter) => onChange({ ...state, on_enter })} />
       <InvocationSlot title="on_message" invocation={state.on_message} scope={{ expectedKind: "message", currentFlow: flowId }} options={options} handlerActions={handlerActions} createOptions={targetRevision ? { attachment: { type: "state_on_message", flow_id: flowId, state_id: stateId }, target_revision: targetRevision } : undefined} onChange={(on_message) => onChange({ ...state, on_message })} />
       <fieldset>
@@ -220,14 +223,14 @@ function InvocationEditor({
   return (
     <div className="invocation-editor">
       <h4>{title}</h4>
-      <label>
-        Handler name
-        <ResourceDropTarget target={{ type: "handler-reference", handlerKind: scope.expectedKind }} label={`Drop ${scope.expectedKind} handler here`} onDrop={(resource) => onChange({ ...invocation, handler: resource.value })}>
-          <input list={`${datalist}-handlers`} value={invocation.handler} onChange={(event) => onChange({ ...invocation, handler: event.target.value })} />
-        </ResourceDropTarget>
-        <datalist id={`${datalist}-handlers`}>{compatible.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
-      </label>
-      <small className="muted">Stable name for this handler's binding and generated Python file.</small>
+      <FormField label="Handler name" layout="stacked" hint="Stable name for this handler's binding and generated Python file.">
+        {(controlProps) => <>
+          <ResourceDropTarget target={{ type: "handler-reference", handlerKind: scope.expectedKind }} label={`Drop ${scope.expectedKind} handler here`} onDrop={(resource) => onChange({ ...invocation, handler: resource.value })}>
+            <input {...controlProps} list={`${datalist}-handlers`} value={invocation.handler} onChange={(event) => onChange({ ...invocation, handler: event.target.value })} />
+          </ResourceDropTarget>
+          <datalist id={`${datalist}-handlers`}>{compatible.map((handler) => <option key={handler.id} value={handler.id} />)}</datalist>
+        </>}
+      </FormField>
       <HandlerControls handlerId={invocation.handler} kind={scope.expectedKind} handlers={options.handlers} onCreate={handlerActions.create} onRepair={handlerActions.repair} onOpen={handlerActions.open} onFindUsages={handlerActions.usages} createOptions={{ ...createOptions, routes: invocation.outcomes }} />
       <OutcomeEditor
         outcomes={invocation.outcomes}

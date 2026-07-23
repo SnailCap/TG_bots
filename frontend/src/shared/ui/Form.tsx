@@ -10,12 +10,13 @@ export interface FormControlProps {
   "aria-invalid"?: true;
 }
 
-export function FormGrid({ children, columns = 1, className = "" }: {
+export function FormGrid({ children, columns = 1, width = "fluid", className = "" }: {
   children: ReactNode;
   columns?: 1 | 2;
+  width?: "fluid" | "standard";
   className?: string;
 }) {
-  return <div className={`form-layout form-layout--columns-${columns} ${className}`.trim()}>{children}</div>;
+  return <div className={`form-layout form-layout--columns-${columns} form-layout--width-${width} ${className}`.trim()}>{children}</div>;
 }
 
 export function FormField({
@@ -26,6 +27,7 @@ export function FormField({
   error,
   disabled = false,
   readOnly = false,
+  layout = "row",
   span = "auto",
   className = "",
 }: {
@@ -36,6 +38,7 @@ export function FormField({
   error?: ReactNode;
   disabled?: boolean;
   readOnly?: boolean;
+  layout?: "row" | "stacked";
   span?: "auto" | "full";
   className?: string;
 }) {
@@ -57,9 +60,14 @@ export function FormField({
       disabled ? "form-field--disabled" : "",
       readOnly ? "form-field--readonly" : "",
       error ? "form-field--error" : "",
+      layout === "stacked" ? "form-field--stacked" : "",
       className,
     ].filter(Boolean).join(" ")}>
-      <label className="form-field__label" htmlFor={controlId}>{label}</label>
+      <label className="form-field__label" htmlFor={controlId}>
+        <span className="form-field__label-text">
+          {label}{typeof label === "string" && label.endsWith(":") ? null : ":"}
+        </span>
+      </label>
       <div className="form-field__body">
         {children(controlProps)}
         {messageId && (
@@ -78,14 +86,17 @@ export function FormField({
 
 export function FormControlGroup({
   children,
+  prefix,
   layout = "attached",
   className = "",
   ...props
-}: HTMLAttributes<HTMLDivElement> & {
+}: Omit<HTMLAttributes<HTMLDivElement>, "prefix"> & {
+  prefix?: ReactNode;
   layout?: "attached" | "split";
 }) {
   return (
-    <div className={`form-control-group form-control-group--${layout} ${className}`.trim()} {...props}>
+    <div className={`form-control-group form-control-group--${layout}${prefix ? " form-control-group--prefixed" : ""} ${className}`.trim()} {...props}>
+      {prefix && <span className="form-control-group__prefix">{prefix}</span>}
       {children}
     </div>
   );

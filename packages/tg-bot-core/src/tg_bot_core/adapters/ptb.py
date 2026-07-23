@@ -5,6 +5,7 @@ from io import BytesIO
 from pathlib import PurePosixPath
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 from ..catalog import CallbackCodec, CatalogError
@@ -57,11 +58,20 @@ class PtbTransport(BotTransport):
             if message.keyboard
             else None
         )
-        await self._app.bot.send_message(
-            chat_id=message.chat_id,
-            text=message.text,
-            reply_markup=keyboard,
-        )
+        if message.edit_message_id is not None:
+            try:
+                await self._app.bot.edit_message_text(
+                    chat_id=message.chat_id,
+                    message_id=message.edit_message_id,
+                    text=message.text,
+                    reply_markup=keyboard,
+                )
+                return
+            except BadRequest as error:
+                if "message is not modified" in str(error).lower():
+                    return
+                log.warning("Could not edit message %s; sending a new one: %s", message.edit_message_id, error)
+        await self._app.bot.send_message(chat_id=message.chat_id, text=message.text, reply_markup=keyboard)
 
     async def fetch_user_avatar(
         self, user_id: int, current_file_id: str | None
@@ -116,9 +126,12 @@ class PtbTransport(BotTransport):
         except (CatalogError, ValueError) as error:
             log.warning("Ignoring invalid callback payload: %s", error)
             return
-        await self._handler(
-            CallbackEvent(actor=self._actor(update), update_id=update.update_id, action_id=action_id)
-        )
+        await self._handler(CallbackEvent(
+            actor=self._actor(update),
+            update_id=update.update_id,
+            action_id=action_id,
+            message_id=update.callback_query.message.message_id if update.callback_query.message else None,
+        ))
 
     @staticmethod
     def _actor(update: Update) -> Actor:

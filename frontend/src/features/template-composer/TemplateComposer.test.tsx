@@ -3,9 +3,16 @@ import { useState } from "react";
 import { describe, expect, it } from "vitest";
 
 import { TemplateComposer } from "./TemplateComposer";
+import { useFieldHistory } from "../../shared/lib/useFieldHistory";
 
 function Harness({ initial = "" }: { initial?: string }) {
   const [content, setContent] = useState(initial);
+  return <><TemplateComposer path="welcome.txt" content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
+}
+
+function HistoryHarness({ initial = "" }: { initial?: string }) {
+  const [content, setContent] = useState(initial);
+  useFieldHistory();
   return <><TemplateComposer path="welcome.txt" content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
 }
 
@@ -47,6 +54,33 @@ describe("visual template composer", () => {
     expect(token).toHaveAttribute("contenteditable", "false");
   });
 
+  it("undoes and redoes a variable inserted from autocomplete", async () => {
+    render(<HistoryHarness />);
+    const editor = typeVisual("$");
+    fireEvent.focus(editor);
+    fireEvent.keyDown(editor, { key: "Enter" });
+    await Promise.resolve();
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}");
+
+    fireEvent.keyDown(editor, { key: "z", ctrlKey: true });
+    expect(screen.getByTestId("source-value")).toHaveTextContent("$");
+    fireEvent.keyDown(editor, { key: "z", ctrlKey: true, shiftKey: true });
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}");
+  });
+
+  it("undoes deletion of an inserted variable", async () => {
+    render(<HistoryHarness initial="{{ user.first_name }}" />);
+    const editor = screen.getByRole("textbox", { name: "Visual template content" });
+    const token = screen.getByLabelText("Пользователь: Имя");
+    token.focus();
+    fireEvent.keyDown(token, { key: "Backspace" });
+    await Promise.resolve();
+    expect(screen.getByTestId("source-value")).toBeEmptyDOMElement();
+
+    fireEvent.keyDown(editor, { key: "z", ctrlKey: true });
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}");
+  });
+
   it("supports keyboard navigation and inserts the selected field", () => {
     render(<Harness />);
     const editor = typeVisual("$");
@@ -71,6 +105,21 @@ describe("visual template composer", () => {
     fireEvent.keyDown(token, { key: "Backspace" });
     expect(screen.getByTestId("source-value")).toBeEmptyDOMElement();
     expect(screen.getByRole("textbox", { name: "Visual template content" }).querySelector("[data-template-node='text']")).toBeInTheDocument();
+  });
+
+  it("keeps a live caret after deleting text typed immediately after a token", async () => {
+    render(<Harness initial="{{ user.first_name }}x" />);
+    const editor = screen.getByRole("textbox", { name: "Visual template content" });
+    const renderedSuffix = editor.querySelector<HTMLElement>("[data-template-node='text']")!.firstChild!;
+    renderedSuffix.textContent = "";
+    setCaret(renderedSuffix, 0);
+    fireEvent.input(editor);
+    await Promise.resolve();
+
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}");
+    const trailingTextSlot = editor.querySelector<HTMLElement>("[data-template-node='text']");
+    expect(trailingTextSlot).not.toBeNull();
+    expect(trailingTextSlot?.contains(window.getSelection()?.anchorNode ?? null) || window.getSelection()?.anchorNode === trailingTextSlot).toBe(true);
   });
 
   it("switches modes and reparses source changes into visual tokens", () => {

@@ -128,20 +128,28 @@ class FlowEngine:
     ) -> None:
         count = self._next_count(count)
         if action.type == "noop":
-            await self._save_and_render(session, self._current_view(session), pending)
+            await self._save_and_render(session, self._current_view(session), pending, self._editable_message_id(event))
             return
         if action.type == "view.render":
             if not action.target:
                 raise RuntimeError("view.render requires a target.")
             await self._save_and_render(
-                self._with_view(session, action.target), action.target, pending
+                self._with_view(session, action.target),
+                action.target,
+                pending,
+                self._editable_message_id(event, action.delivery),
             )
             return
         if action.type == "flow.start":
             if not action.target:
                 raise RuntimeError("flow.start requires a target.")
             await self._start_flow(
-                session, action.target, event, count=count, pending=pending
+                session,
+                action.target,
+                event,
+                count=count,
+                pending=pending,
+                edit_message_id=self._editable_message_id(event, action.delivery),
             )
             return
         if action.type == "flow.goto":
@@ -155,6 +163,7 @@ class FlowEngine:
                 count=count,
                 pending=pending,
                 exit_current=True,
+                edit_message_id=self._editable_message_id(event),
             )
             return
         if action.type == "flow.cancel":
@@ -206,7 +215,7 @@ class FlowEngine:
             saved = await self.store.save_session(self._with_view(session, target_view))
             await self._flush_pending(pending)
             await self.queue.enqueue(action.target, action.payload, delay_seconds=action.delay_seconds)
-            await self._render(saved, target_view)
+            await self._render(saved, target_view, self._editable_message_id(event))
             return
         raise RuntimeError(f"Unsupported action '{action.type}'.")
 
@@ -218,6 +227,7 @@ class FlowEngine:
         *,
         count: int,
         pending: list[_PendingAnalyticsEvent],
+        edit_message_id: int | None = None,
     ) -> None:
         count = self._next_count(count)
         flow = self.project.flows[flow_id]
@@ -246,7 +256,7 @@ class FlowEngine:
             status="active",
         )
         if flow.lifecycle.on_start:
-            lifecycle_event = LifecycleEvent(event.actor, event.update_id, "on_start")
+            lifecycle_event = LifecycleEvent(event.actor, event.update_id, "on_start", edit_message_id)
             session, route = await self._invoke(session, flow.lifecycle.on_start, lifecycle_event, "lifecycle")
             if route and route.type != "noop":
                 await self._apply_action(
@@ -266,6 +276,7 @@ class FlowEngine:
             count=count,
             pending=pending,
             exit_current=False,
+            edit_message_id=edit_message_id,
         )
 
     async def _enter_state(
@@ -278,6 +289,7 @@ class FlowEngine:
         count: int,
         pending: list[_PendingAnalyticsEvent],
         exit_current: bool,
+        edit_message_id: int | None = None,
     ) -> None:
         count = self._next_count(count)
         flow = self.project.flows[flow_id]
@@ -302,7 +314,7 @@ class FlowEngine:
         variables = dict(session.variables or {})
         entered = replace(session, flow_id=flow_id, state_id=state_id, view_id=None, variables=variables, status="active")
         if state.on_enter:
-            lifecycle_event = LifecycleEvent(event.actor, event.update_id, "on_enter")
+            lifecycle_event = LifecycleEvent(event.actor, event.update_id, "on_enter", edit_message_id)
             entered, route = await self._invoke(entered, state.on_enter, lifecycle_event, "lifecycle")
             if route and route.type != "noop":
                 await self._apply_action(
@@ -315,7 +327,7 @@ class FlowEngine:
                 )
                 return
         await self._save_and_render(
-            self._with_view(entered, state.view), state.view, pending
+            self._with_view(entered, state.view), state.view, pending, edit_message_id
         )
 
     async def _emit_flow_event(
@@ -328,12 +340,12 @@ class FlowEngine:
         pending: list[_PendingAnalyticsEvent],
     ) -> None:
         if session.status != "active" or not session.flow_id or not session.state_id:
-            await self._save_and_render(session, self._current_view(session), pending)
+            await self._save_and_render(session, self._current_view(session), pending, self._editable_message_id(event))
             return
         invocation = self.project.flows[session.flow_id].states[session.state_id].events.get(event_id)
         if invocation is None:
             log.warning("State %s.%s has no event '%s'", session.flow_id, session.state_id, event_id)
-            await self._save_and_render(session, self._current_view(session), pending)
+            await self._save_and_render(session, self._current_view(session), pending, self._editable_message_id(event))
             return
         await self._invoke_and_route(
             session,
@@ -357,7 +369,7 @@ class FlowEngine:
     ) -> None:
         session, route = await self._invoke(session, invocation, event, expected_kind, payload)
         if route is None or route.type == "noop":
-            await self._save_and_render(session, self._current_view(session), pending)
+            await self._save_and_render(session, self._current_view(session), pending, self._editable_message_id(event))
             return
         await self._apply_action(
             session,
@@ -440,7 +452,7 @@ class FlowEngine:
             invocation = flow.lifecycle.on_complete if status == "finished" else flow.lifecycle.on_cancel
             if invocation:
                 hook = "on_complete" if status == "finished" else "on_cancel"
-                lifecycle_event = LifecycleEvent(event.actor, event.update_id, hook)
+                lifecycle_event = LifecycleEvent(event.actor, event.update_id, hook, self._editable_message_id(event))
                 session, route = await self._invoke(session, invocation, lifecycle_event, "lifecycle")
                 event = lifecycle_event
         if previous_flow_id and previous_state_id:
@@ -475,7 +487,7 @@ class FlowEngine:
             return
         target = view or self.project.manifest.entry_view
         await self._save_and_render(
-            self._with_view(finished, target), target, pending
+            self._with_view(finished, target), target, pending, self._editable_message_id(event)
         )
 
     async def _handle_error(self, session: FlowSession, event: InteractionEvent, error: Exception) -> None:
@@ -501,7 +513,7 @@ class FlowEngine:
             )
         if flow and flow.lifecycle.on_error:
             try:
-                lifecycle_event = LifecycleEvent(event.actor, event.update_id, "on_error")
+                lifecycle_event = LifecycleEvent(event.actor, event.update_id, "on_error", self._editable_message_id(event))
                 failed, route = await self._invoke(session, flow.lifecycle.on_error, lifecycle_event, "lifecycle", {"error": str(error)})
                 failed = replace(failed, flow_id=None, state_id=None, status="failed")
                 if route and route.type != "noop":
@@ -518,6 +530,7 @@ class FlowEngine:
                     self._with_view(failed, self.project.manifest.entry_view),
                     self.project.manifest.entry_view,
                     pending,
+                    self._editable_message_id(lifecycle_event),
                 )
                 return
             except Exception:
@@ -538,13 +551,14 @@ class FlowEngine:
         session: FlowSession,
         view_id: str,
         pending: list[_PendingAnalyticsEvent],
+        edit_message_id: int | None = None,
     ) -> FlowSession:
         saved = await self.store.save_session(self._with_view(session, view_id))
         await self._flush_pending(pending)
-        await self._render(saved, view_id)
+        await self._render(saved, view_id, edit_message_id)
         return saved
 
-    async def _render(self, session: FlowSession, view_id: str) -> None:
+    async def _render(self, session: FlowSession, view_id: str, edit_message_id: int | None = None) -> None:
         actor = session.actor
         values = {
             **(session.variables or {}),
@@ -561,7 +575,7 @@ class FlowEngine:
             tuple(OutboundButton(button.text, self.codec.encode(button.id)) for button in row)
             for row in keyboard
         )
-        await self.transport.send(OutboundMessage(actor.chat_id, text, outbound))
+        await self.transport.send(OutboundMessage(actor.chat_id, text, outbound, edit_message_id))
         await self.analytics.record(
             AnalyticsEventType.VIEW_RENDERED,
             actor=actor,
@@ -591,6 +605,14 @@ class FlowEngine:
             if state:
                 return state.view
         return self.project.manifest.entry_view
+
+    @staticmethod
+    def _editable_message_id(event: InteractionEvent, delivery: str = "edit") -> int | None:
+        if delivery != "edit":
+            return None
+        if isinstance(event, (CallbackEvent, LifecycleEvent)):
+            return event.message_id
+        return None
 
     @staticmethod
     def _with_view(session: FlowSession, view_id: str) -> FlowSession:

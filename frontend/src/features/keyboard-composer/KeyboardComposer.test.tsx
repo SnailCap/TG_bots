@@ -74,11 +74,14 @@ describe("KeyboardComposer", () => {
     const { container } = render(<KeyboardHarness keyboard={[[button("continue", "Continue")]]} />);
 
     fireEvent.contextMenu(screen.getByRole("button", { name: "Continue" }), { clientX: 40, clientY: 40 });
-    expect(screen.getByRole("menuitem", { name: "Edit label" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Edit" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Add button" })).toBeInTheDocument();
     expect(screen.getByRole("menuitem", { name: "Duplicate" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(document.activeElement).toBe(screen.getByRole("menu", { name: "Keyboard actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Add button" }));
 
-    expect(container.querySelectorAll("[data-keyboard-button]")).toHaveLength(0);
+    expect(container.querySelectorAll("[data-keyboard-button]")).toHaveLength(2);
+    expect(screen.getByLabelText("Button text")).toHaveFocus();
   });
 
   it("moves a button to another row through the keyboard canvas", () => {

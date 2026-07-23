@@ -51,6 +51,7 @@ class ActionSpec:
     payload: Mapping[str, Any] = field(default_factory=dict)
     delay_seconds: float = 0
     view: str | None = None
+    delivery: str = "edit"
 
 
 @dataclass(frozen=True, slots=True)

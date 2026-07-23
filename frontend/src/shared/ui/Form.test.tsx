@@ -8,7 +8,7 @@ describe("shared form components", () => {
   it("connects labels, controls and validation messages", () => {
     render(
       <FormGrid columns={2}>
-        <FormField label="Name:" error="Name is required">
+        <FormField label="Name" error="Name is required">
           {(controlProps) => <input {...controlProps} />}
         </FormField>
       </FormGrid>,

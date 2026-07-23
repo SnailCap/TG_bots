@@ -94,8 +94,8 @@ Action object имеет единственный нормализованный
 | `type` | Поля | Runtime semantics |
 | --- | --- | --- |
 | `noop` | только `type` | Сохранить и показать current/default view |
-| `view.render` | `target` | Сохранить явный `view_id` и показать view, не меняя flow/state |
-| `flow.start` | `target` | Сбросить variables, запустить flow и его `on_start`/initial state |
+| `view.render` | `target`, optional `delivery` | Сохранить явный `view_id` и показать view, не меняя flow/state |
+| `flow.start` | `target`, optional `delivery` | Сбросить variables, запустить flow и его `on_start`/initial state |
 | `flow.cancel` | optional `view` | Вызвать `on_cancel`, очистить active flow/state, status `cancelled`, показать `view` или entry view |
 | `flow.event` | `target` | Передать named event текущему state; разрешён только из button context, а target должен быть объявлен хотя бы в одном `state.events` проекта |
 | `flow.goto` | `target` | Войти в state текущего flow и выполнить его `on_enter` |
@@ -132,6 +132,8 @@ Action object имеет единственный нормализованный
 ```
 
 Defaults: `payload={}`, `outcomes={}`, `delay_seconds=0`. Validator требует существующие targets/kinds и для каждого `handler.invoke` — explicit route `success` плюс routes всех outcomes, объявленных binding. `flow.goto` проверяется относительно flow, внутри которого action размещён; поэтому он не является глобальной навигацией.
+
+Для `view.render` и `flow.start` поле `delivery` принимает `edit` или `send` и по умолчанию равно `edit`. При callback-переходе `edit` заменяет текущее сообщение бота, сохраняя чат чистым. Если событие не содержит редактируемого сообщения бота (например, обычная команда), runtime отправляет новое сообщение. `delivery: "send"` всегда создаёт новое сообщение.
 
 ## Flows, states и hooks
 

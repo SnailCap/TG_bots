@@ -68,14 +68,40 @@ afterEach(() => {
 });
 
 describe("Studio", () => {
-  it("toggles the terminal with Ctrl+`", () => {
+  it("toggles the terminal with Ctrl+` in the russian keyboard layout", () => {
     render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
 
-    fireEvent.keyDown(window, { key: "`", code: "Backquote", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "ё", code: "Backquote", ctrlKey: true });
     expect(screen.getByLabelText("Bot terminal")).toBeInTheDocument();
 
-    fireEvent.keyDown(window, { key: "`", code: "Backquote", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "ё", code: "Backquote", ctrlKey: true });
     expect(screen.queryByLabelText("Bot terminal")).not.toBeInTheDocument();
+  });
+
+  it("saves the active resource with Ctrl+S in the russian keyboard layout", async () => {
+    const renameView = vi.fn().mockResolvedValue({ ...viewDetail, id: "start", payload: { ...viewDetail.payload, id: "start" }, revision: "view-two" });
+    const api = apiMock({ renameView });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
+    fireEvent.change(screen.getByLabelText("Name:"), { target: { value: "start" } });
+    const event = new KeyboardEvent("keydown", { key: "ы", code: "KeyS", ctrlKey: true, cancelable: true });
+    window.dispatchEvent(event);
+
+    expect(event.defaultPrevented).toBe(true);
+    await waitFor(() => expect(renameView).toHaveBeenCalledWith("project-1", "home", "start", "view-one"));
+  });
+
+  it("closes the active tab with Ctrl+W in the russian keyboard layout", async () => {
+    render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    expect(await screen.findByLabelText("View editor")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "ц", code: "KeyW", ctrlKey: true });
+
+    expect(screen.queryByLabelText("View editor")).not.toBeInTheDocument();
   });
 
   it("starts and stops the local bot while streaming its output to the terminal", async () => {
@@ -146,7 +172,7 @@ describe("Studio", () => {
     expect(screen.getByText("Schema v3")).toBeInTheDocument();
   });
 
-  it("does not select a resource when its editor is opened through a tab", async () => {
+  it("keeps explorer selection independent from switching editor tabs", async () => {
     const { container } = render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     const resourceButton = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(".explorer__item"))
       .find((button) => button.textContent?.trim() === label)!;
@@ -161,7 +187,8 @@ describe("Studio", () => {
       .find((button) => button.textContent?.includes("home"))!;
     fireEvent.click(homeTab);
 
-    expect(container.querySelector(".explorer__item--active")).not.toBeInTheDocument();
+    expect(resourceButton("checkout")).toHaveAttribute("aria-current", "page");
+    expect(resourceButton("home")).not.toHaveAttribute("aria-current", "page");
     expect(await screen.findByLabelText("View editor")).toBeInTheDocument();
   });
 
@@ -280,7 +307,7 @@ describe("Studio", () => {
     expect(screen.getByLabelText("Command name")).toHaveValue("new_command");
   });
 
-  it("edits and deletes one selected command without exposing the aggregate list", async () => {
+  it("edits one selected command without exposing the aggregate list", async () => {
     const commandDetail: CommandsDetail = {
       source_path: "commands.json",
       revision: "commands-one",
@@ -297,18 +324,11 @@ describe("Studio", () => {
         commands: [{ name: "support", description: "Preserved", action: { type: "view.render", target: "home" } }],
       },
     };
-    const emptyDetail: CommandsDetail = {
-      ...renamedDetail,
-      revision: "commands-three",
-      payload: { ...renamedDetail.payload, commands: [] },
-    };
     const commandsWorkspace: Workspace = {
       ...workspace,
       commands: { ...workspace.commands, items: [{ name: "help", description: "Preserved" }] },
     };
-    const saveCommands = vi.fn()
-      .mockResolvedValueOnce(renamedDetail)
-      .mockResolvedValueOnce(emptyDetail);
+    const saveCommands = vi.fn().mockResolvedValueOnce(renamedDetail);
     const api = apiMock({
       getCommands: vi.fn().mockResolvedValue(commandDetail),
       saveCommands,
@@ -319,7 +339,12 @@ describe("Studio", () => {
     fireEvent.click(screen.getByRole("button", { name: "/help" }));
     expect(await screen.findByLabelText("Command editor")).toBeInTheDocument();
     expect(screen.getAllByLabelText("Command name")).toHaveLength(1);
+    expect(screen.getByLabelText("Command access")).toBeInTheDocument();
+    expect(screen.getByLabelText("Description:")).toHaveValue("Preserved");
     expect(screen.getByLabelText("Action")).toBeInTheDocument();
+    expect(screen.getByLabelText("Action target")).toHaveValue("home");
+    expect(screen.getByRole("button", { name: "Browse views" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Open current action target" })).toBeEnabled();
 
     fireEvent.change(screen.getByLabelText("Command name"), { target: { value: "Support" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -330,11 +355,6 @@ describe("Studio", () => {
     }, "commands-one"));
     expect(await screen.findByRole("heading", { name: "/support" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete command" }));
-    await waitFor(() => expect(saveCommands).toHaveBeenNthCalledWith(2, "project-1", {
-      ...renamedDetail.payload,
-      commands: [],
-    }, "commands-two"));
   });
 
   it("opens project settings from the activity rail and saves a bot token", async () => {
@@ -408,7 +428,7 @@ describe("Studio", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Submit" }));
     fireEvent.click(await screen.findByLabelText("Action"));
     fireEvent.click(screen.getByRole("option", { name: "Custom handler" }));
-    fireEvent.change(screen.getByLabelText("Handler name"), { target: { value: "checkout.submit" } });
+    fireEvent.change(screen.getByLabelText("Handler name:"), { target: { value: "checkout.submit" } });
     fireEvent.click(screen.getByRole("button", { name: "Create handler" }));
 
     await waitFor(() => expect(api.createHandler).toHaveBeenCalledWith("project-1", {
@@ -572,6 +592,40 @@ describe("Studio", () => {
     expect(screen.getByDisplayValue("welcome")).toBeInTheDocument();
   });
 
+  it("keeps the selected explorer item mounted until a renamed resource and workspace refresh commit together", async () => {
+    const renamed: ViewDetail = {
+      ...viewDetail,
+      id: "welcome",
+      source_path: "views/welcome.json",
+      revision: "view-renamed",
+      payload: { ...viewDetail.payload, id: "welcome" },
+    };
+    let resolveDescribe!: (value: Workspace) => void;
+    const describe = vi.fn().mockReturnValue(new Promise<Workspace>((resolve) => {
+      resolveDescribe = resolve;
+    }));
+    const api = apiMock({
+      renameView: vi.fn().mockResolvedValue(renamed),
+      describe,
+    });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+
+    fireEvent.change(await screen.findByLabelText("Name:"), { target: { value: "welcome" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(describe).toHaveBeenCalledWith("project-1"));
+    expect(screen.getByRole("button", { name: "home" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("button", { name: "welcome" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      resolveDescribe({ ...workspace, views: [{ id: "welcome", source_path: "views/welcome.json", revision: "view-renamed" }] });
+    });
+
+    expect(await screen.findByRole("button", { name: "welcome" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("button", { name: "home" })).not.toBeInTheDocument();
+  });
+
   it("renames a view from its resource context menu", async () => {
     const renamed: ViewDetail = { ...viewDetail, id: "welcome", source_path: "views/welcome.json", revision: "view-renamed", payload: { ...viewDetail.payload, id: "welcome" } };
     const api = apiMock({ renameView: vi.fn().mockResolvedValue(renamed) });
@@ -599,7 +653,7 @@ describe("Studio", () => {
     await waitFor(() => expect(api.deleteView).toHaveBeenCalledWith("project-1", "home", "view-one"));
     expect(confirmSpy).not.toHaveBeenCalled();
 
-    fireEvent.keyDown(window, { key: "z", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "я", code: "KeyZ", ctrlKey: true });
 
     await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "home", viewDetail.payload));
   });

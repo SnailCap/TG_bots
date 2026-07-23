@@ -164,6 +164,8 @@ Context type выбирается trigger kind. Interactive context не сод�
 
 Catalog рендерит inline/template Jinja с `StrictUndefined`. Variables включают session state и `user` mapping. Keyboard buttons получают callback data через `CallbackCodec`; protocol содержит только stable global button ID. Старое сообщение может всё ещё прислать callback: button с другого view считается inactive; удалённый ID — stale. Если тот же ID переиспользован на том же view с другим смыслом, будет выполнена его текущая action, поэтому IDs следует сохранять стабильными.
 
+Callback-переходы `view.render` и `flow.start` по умолчанию редактируют сообщение бота, из которого пришёл callback. Их optional `delivery: "send"` принудительно создаёт новое сообщение; `delivery: "edit"` является default. Для событий без редактируемого bot message runtime безопасно использует обычную отправку.
+
 ## Durable tasks и schedules
 
 SQLite хранит `jobs`, `schedules` и `job_runs` рядом с sessions.

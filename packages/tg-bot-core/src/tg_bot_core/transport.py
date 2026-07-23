@@ -18,6 +18,7 @@ class OutboundMessage:
     chat_id: int
     text: str
     keyboard: tuple[tuple[OutboundButton, ...], ...] = ()
+    edit_message_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

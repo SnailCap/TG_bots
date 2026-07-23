@@ -16,11 +16,13 @@ export interface NoopAction {
 export interface ViewRenderAction {
   type: "view.render";
   target: string;
+  delivery?: "edit" | "send";
 }
 
 export interface FlowStartAction {
   type: "flow.start";
   target: string;
+  delivery?: "edit" | "send";
 }
 
 export interface FlowCancelAction {

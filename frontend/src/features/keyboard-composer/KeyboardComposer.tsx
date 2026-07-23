@@ -196,8 +196,9 @@ export function KeyboardComposer({
     setContext({ ...target, x: event.clientX, y: event.clientY });
   };
   const contextItems: ContextMenuItem[] = context?.kind === "button"
-    ? [
-        { id: "edit", label: "Edit label", icon: <Icon name="edit" />, onSelect: () => { const button = rows[context.location.row]?.[context.location.button]; if (button) setSelectedId(button.id); setFocusText(true); } },
+      ? [
+        { id: "edit", label: "Edit", icon: <Icon name="edit" />, onSelect: () => { const button = rows[context.location.row]?.[context.location.button]; if (button) setSelectedId(button.id); setFocusText(true); } },
+        { id: "add-button", label: "Add button", icon: <Icon name="plus" />, onSelect: () => addButton(context.location.row) },
         { id: "duplicate", label: "Duplicate", icon: <Icon name="copy" />, onSelect: () => duplicateButton(context.location) },
         { id: "delete", label: "Delete", icon: <Icon name="trash" />, danger: true, onSelect: () => deleteButton(context.location) },
       ]

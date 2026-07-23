@@ -27,7 +27,7 @@ export function ContextMenu({ x, y, label, items, onClose }: {
     const rect = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(margin, Math.min(x, window.innerWidth - rect.width - margin))}px`;
     menu.style.top = `${Math.max(margin, Math.min(y, window.innerHeight - rect.height - margin))}px`;
-    menu.querySelector<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)')?.focus();
+    menu.focus();
   }, [x, y]);
 
   useEffect(() => {
@@ -70,6 +70,7 @@ export function ContextMenu({ x, y, label, items, onClose }: {
       ref={menuRef}
       className="context-menu"
       role="menu"
+      tabIndex={-1}
       aria-label={label}
       style={{ left: x, top: y }}
       onContextMenu={(event) => event.preventDefault()}

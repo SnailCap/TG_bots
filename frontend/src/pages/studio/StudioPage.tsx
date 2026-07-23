@@ -102,6 +102,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const tabsRef = useRef(tabs);
   const activeTabKeyRef = useRef(activeTabKey);
   const undoStackRef = useRef<UndoEntry[]>([]);
+  const saveShortcutRef = useRef<() => void>(() => undefined);
   const [undoAvailable, setUndoAvailable] = useState(false);
   tabsRef.current = tabs;
   activeTabKeyRef.current = activeTabKey;
@@ -552,27 +553,21 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     if (!nextTab) {
       setActiveTabKey(null);
       setEditor(null);
-      setSelection(null);
       setDirty(false);
       return;
     }
     setActiveTabKey(nextTab.key);
     setEditor(nextTab.editor);
-    setSelection(null);
     setDirty(nextTab.dirty);
   }, [activeTabKey, dirty, tabs]);
 
   const activateTab = useCallback((tabKey: string) => {
     const tab = tabs.find((item) => item.key === tabKey);
     if (!tab) return;
-    if (tabKey === activeTabKey) {
-      setSelection(null);
-      return;
-    }
+    if (tabKey === activeTabKey) return;
     if (editor && activeTabKey) setTabs((current) => current.map((item) => item.key === activeTabKey ? { ...item, editor, dirty } : item));
     setActiveTabKey(tabKey);
     setEditor(tab.editor);
-    setSelection(null);
     setDirty(tab.dirty);
     setNotice("");
     setError("");
@@ -581,17 +576,22 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
 
   useEffect(() => {
     const closeWithShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && !event.altKey && matchesPhysicalKey(event, "KeyS", "s")) {
+        event.preventDefault();
+        saveShortcutRef.current();
+        return;
+      }
       if (event.ctrlKey && (event.key === "`" || event.code === "Backquote")) {
         event.preventDefault();
         setTerminalOpen((open) => !open);
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "w" && activeTabKey) {
+      if ((event.ctrlKey || event.metaKey) && matchesPhysicalKey(event, "KeyW", "w") && activeTabKey) {
         event.preventDefault();
         closeTab(activeTabKey);
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && event.key.toLowerCase() === "z") {
+      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && matchesPhysicalKey(event, "KeyZ", "z")) {
         const target = event.target as HTMLElement | null;
         if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
         event.preventDefault();
@@ -607,6 +607,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     setBusy(true);
     setSaving(true);
     try {
+      let nextEditor: Exclude<EditorState, null> = editor;
       let nextSelection: Selection | null = selection;
       if (editor.kind === "view") {
         const id = editor.detail.payload.id;
@@ -615,59 +616,64 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
           : editor.detail.id !== id
             ? await api.renameView(workspace.project_id, editor.detail.id, id, editor.detail.revision)
             : await api.saveView(workspace.project_id, id, editor.detail.payload, editor.detail.revision);
-        setEditor({ kind: "view", detail: saved, isNew: false });
+        nextEditor = { kind: "view", detail: saved, isNew: false };
         nextSelection = { kind: "view", id: saved.id };
       } else if (editor.kind === "template") {
         const saved = await api.saveTemplate(workspace.project_id, editor.detail.path, editor.detail.content, editor.isNew ? undefined : editor.detail.revision);
-        setEditor({ kind: "template", detail: saved, isNew: false });
+        nextEditor = { kind: "template", detail: saved, isNew: false };
         nextSelection = { kind: "template", path: saved.path };
       } else if (editor.kind === "flow") {
         const id = editor.detail.payload.id;
         const saved = editor.isNew
           ? await api.createFlow(workspace.project_id, id, editor.detail.payload)
           : await api.saveFlow(workspace.project_id, id, editor.detail.payload, editor.detail.revision);
-        setEditor({ kind: "flow", detail: saved, isNew: false });
+        nextEditor = { kind: "flow", detail: saved, isNew: false };
         nextSelection = { kind: "flow", id: saved.id };
       } else if (editor.kind === "command") {
         const command = commandAt(editor);
         const saved = await api.saveCommands(workspace.project_id, editor.detail.payload, editor.detail.revision);
-        const nextEditor: Exclude<EditorState, null> = {
+        nextEditor = {
           kind: "command",
           detail: saved,
           commandIndex: findCommandIndex(saved, command.name),
         };
-        const previousTabKey = activeTabKey;
-        const nextTabKey = selectionTabKey({ kind: "command", name: command.name });
-        setEditor(nextEditor);
         nextSelection = { kind: "command", name: command.name };
-        if (previousTabKey && previousTabKey !== nextTabKey) {
-          setActiveTabKey(nextTabKey);
-          setTabs((current) => current.map((tab) => tab.key === previousTabKey
-            ? { ...tab, key: nextTabKey, editor: nextEditor, dirty: false }
-            : tab));
-        }
       } else if (editor.kind === "commands") {
-        setEditor({ kind: "commands", detail: await api.saveCommands(workspace.project_id, editor.detail.payload, editor.detail.revision) });
+        nextEditor = { kind: "commands", detail: await api.saveCommands(workspace.project_id, editor.detail.payload, editor.detail.revision) };
       } else if (editor.kind === "schedule") {
         const id = editor.detail.payload.id;
         const saved = editor.isNew
           ? await api.createSchedule(workspace.project_id, id, editor.detail.payload)
           : await api.saveSchedule(workspace.project_id, id, editor.detail.payload, editor.detail.revision);
-        setEditor({ kind: "schedule", detail: saved, isNew: false });
+        nextEditor = { kind: "schedule", detail: saved, isNew: false };
         nextSelection = { kind: "schedule", id: saved.id };
       }
+
+      const nextWorkspace = await api.describe(workspace.project_id);
+      setWorkspace(nextWorkspace);
+      setEditor(nextEditor);
       setSelection(nextSelection);
+      if (activeTabKey) {
+        const nextTabKey = nextSelection ? selectionTabKey(nextSelection) : activeTabKey;
+        setActiveTabKey(nextTabKey);
+        setTabs((current) => current.map((tab) => tab.key === activeTabKey
+          ? { ...tab, key: nextTabKey, editor: nextEditor, dirty: false }
+          : tab));
+      }
       setDirty(false);
       setNotice("");
       setError("");
       setConflict(false);
-      await refreshWorkspace();
     } catch (caught) {
       report(caught);
     } finally {
       setSaving(false);
       setBusy(false);
     }
+  };
+
+  saveShortcutRef.current = () => {
+    if (editor && !busy && canSave(editor)) void save();
   };
 
   const remove = async () => {
@@ -912,7 +918,6 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
           <div key={firstContentKey.current ?? "empty"} className={firstContentKey.current ? "workspace__content workspace__content--enter" : "workspace__content"}>
             {editor && <ResourceEditorHeader category={editorCategory(editor)} title={editorHeaderTitle(editor)} saveAction={isSaveableEditor(editor) ? { disabled: busy || !canSave(editor), saving, onSave: () => void save() } : undefined} />}
             {renderEditor(editor, options, handlerActions, setEditor, setDirty, repairHandler, openHandler, findUsages, createAndOpenHandler, select, (suggestedPath) => addResource("template", suggestedPath))}
-          {editor?.kind === "command" && <footer className="editor__actions editor__actions--danger"><span>Deleting this command removes it from the bot command list.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete command</button></footer>}
           {editor?.kind === "handler" && <footer className="editor__actions editor__actions--danger"><span>Deleting a binding can break the resources that use it.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
           {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
           </div>
@@ -1042,6 +1047,10 @@ function editorHeaderTitle(editor: Exclude<EditorState, null>): string {
   return editor.detail.id || `New ${editor.kind}`;
 }
 
+function matchesPhysicalKey(event: KeyboardEvent, code: string, fallbackKey: string): boolean {
+  return event.code === code || (!event.code && event.key.toLowerCase() === fallbackKey);
+}
+
 function renderEditor(
   editor: EditorState,
   options: ActionOptions,
@@ -1059,7 +1068,7 @@ function renderEditor(
   if (editor.kind === "view") return <ViewEditor value={editor.detail.payload} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onOpenTemplate={(path) => select({ kind: "template", path })} onCreateTemplate={createTemplate} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "template") return <TemplateEditor path={editor.detail.path} content={editor.detail.content} onContentChange={(content) => { setEditor({ ...editor, detail: { ...editor.detail, content } }); setDirty(true); }} />;
   if (editor.kind === "flow") return <FlowEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
-  if (editor.kind === "command") return <CommandEditor value={commandAt(editor)} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onChange={(command) => { setEditor({ ...editor, detail: { ...editor.detail, payload: { ...editor.detail.payload, commands: editor.detail.payload.commands.map((item, index) => index === editor.commandIndex ? command : item) } } }); setDirty(true); }} />;
+  if (editor.kind === "command") return <CommandEditor value={commandAt(editor)} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onOpenResource={select} onChange={(command) => { setEditor({ ...editor, detail: { ...editor.detail, payload: { ...editor.detail.payload, commands: editor.detail.payload.commands.map((item, index) => index === editor.commandIndex ? command : item) } } }); setDirty(true); }} />;
   if (editor.kind === "commands") return <CommandFallbacksEditor value={editor.detail.payload} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "schedule") return <ScheduleEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "handler") return <HandlerInspector handler={editor.detail} onRepair={repairHandler} onOpen={openHandler} onFindUsages={findUsages} />;

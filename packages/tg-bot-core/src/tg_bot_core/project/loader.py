@@ -242,8 +242,8 @@ class ProjectLoader:
         action_type = self._string(value, "type", source)
         fields_by_type = {
             "noop": {"type"},
-            "view.render": {"type", "target"},
-            "flow.start": {"type", "target"},
+            "view.render": {"type", "target", "delivery"},
+            "flow.start": {"type", "target", "delivery"},
             "flow.cancel": {"type", "view"},
             "flow.event": {"type", "target"},
             "flow.goto": {"type", "target"},
@@ -262,9 +262,13 @@ class ProjectLoader:
         outcomes_raw = self._mapping(value.get("outcomes", {}), source, f"{field}.outcomes")
         delay = value.get("delay_seconds", 0)
         normalized_delay = self._finite_number(delay, source, f"{field}.delay_seconds")
+        delivery = value.get("delivery", "edit")
+        if delivery not in {"edit", "send"}:
+            raise ProjectLoadError(f"{source}: {field}.delivery must be 'edit' or 'send'.")
         return ActionSpec(
             type=action_type,
             target=value.get("target") if isinstance(value.get("target"), str) else None,
+            delivery=delivery,
             handler=value.get("handler") if isinstance(value.get("handler"), str) else None,
             outcomes={name: self._action(action, source, f"{field}.outcomes.{name}") for name, action in outcomes_raw.items()},
             payload=self._mapping(value.get("payload", {}), source, f"{field}.payload"),

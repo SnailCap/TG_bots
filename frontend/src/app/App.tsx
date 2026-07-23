@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Workspace } from "../domain/project";
 import { StudioPage } from "../pages/studio/StudioPage";
+import { useFieldHistory } from "../shared/lib/useFieldHistory";
 import { Toast } from "../shared/ui/Toast";
 import { StudioApi, type StudioApiClient } from "../studio/api";
 import { BackendStatusCard } from "./BackendStatusCard";
@@ -52,6 +53,7 @@ export function defaultApiBaseUrl(): string {
 }
 
 export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUrl?: string; apiClient?: StudioApiClient }) {
+  useFieldHistory();
   const api = useMemo(() => apiClient ?? new StudioApi(apiBaseUrl), [apiBaseUrl, apiClient]);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [openPath, setOpenPath] = useState("");

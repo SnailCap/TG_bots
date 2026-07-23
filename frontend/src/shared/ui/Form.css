@@ -7,13 +7,14 @@
   --form-control-background-hover: #292d34;
   --form-control-radius: 2px;
   --form-control-focus-ring: 0 0 0 1px rgb(77 125 187 / 22%);
+  --form-text-font-size: .82rem;
   --form-label-width: 56px;
   --form-label-color: #c7cbd2;
-  --form-label-font-size: .82rem;
   --form-label-font-weight: 400;
   --form-field-gap: 10px;
   --form-row-gap: 14px;
   --form-column-gap: 22px;
+  --form-standard-field-width: 520px;
   --form-compound-leading-width: 104px;
   --form-message-color: #94a0af;
   --form-error-color: #e58a92;
@@ -37,6 +38,10 @@
   grid-column: 1 / -1;
 }
 
+.form-layout--width-standard > :is(.form-field, .action-editor) {
+  max-width: var(--form-standard-field-width);
+}
+
 .form-field {
   display: grid;
   grid-template-columns: var(--form-label-width) minmax(0, 1fr);
@@ -50,15 +55,26 @@
   min-width: 0;
   padding-top: calc((var(--form-control-height) - 1em) / 2);
   color: var(--form-label-color);
-  font-size: var(--form-label-font-size);
+  font-size: var(--form-text-font-size);
   font-weight: var(--form-label-font-weight);
   line-height: 1;
   white-space: nowrap;
 }
 
+.form-field__label-text { white-space: nowrap; }
+
 .form-field__body {
   display: grid;
   min-width: 0;
+}
+
+.form-field--stacked {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 7px;
+}
+
+.form-field--stacked .form-field__label {
+  padding-top: 0;
 }
 
 .form-field :where(input, select, textarea),
@@ -66,6 +82,7 @@
   min-height: var(--form-control-height);
   border-color: var(--form-control-border);
   border-radius: var(--form-control-radius);
+  font-size: var(--form-text-font-size);
   background: var(--form-control-background);
 }
 
@@ -115,6 +132,11 @@
   min-width: 0;
 }
 
+/* ResourceDropTarget is a block by default; compound controls must keep their Grid layout. */
+.form-control-group.resource-drop-target {
+  display: grid;
+}
+
 .form-control-group--split {
   grid-template-columns: var(--form-compound-leading-width) minmax(0, 1fr);
   gap: 8px;
@@ -127,6 +149,19 @@
   border: 1px solid var(--form-control-border);
   border-radius: var(--form-control-radius);
   background: var(--form-control-background);
+}
+
+.form-control-group--attached.form-control-group--prefixed {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+.form-control-group__prefix {
+  display: grid;
+  min-width: 28px;
+  place-items: center;
+  color: #8f9aa8;
+  border-right: 1px solid var(--form-control-border);
+  font-family: "Cascadia Code", Consolas, monospace;
 }
 
 .form-control-group--attached:hover { border-color: var(--form-control-border-hover); }
