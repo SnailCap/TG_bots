@@ -11,7 +11,7 @@ import type {
 import { actionFor } from "../../domain/project";
 import { ActionEditor, type HandlerActions } from "../action-editor/ActionEditor";
 import { AccessSelect, type AccessLevel } from "../../shared/ui/AccessSelect";
-import { FormControlGroup, FormField, FormGrid } from "../../shared/ui/Form";
+import { FormControlGroup, FormField, FormGrid, FormSectionDivider } from "../../shared/ui/Form";
 
 export function CommandEditor({
   value,
@@ -51,6 +51,7 @@ export function CommandEditor({
         <FormField label="Access:">
           {(controlProps) => <AccessSelect {...controlProps} ariaLabel="Command access" value={accessMockup} onChange={setAccessMockup} />}
         </FormField>
+        <FormSectionDivider />
         <FormField label="Description:" span="full">
           {(controlProps) => (
             <input
@@ -64,6 +65,7 @@ export function CommandEditor({
             />
           )}
         </FormField>
+        <FormSectionDivider />
         <ActionEditor
           action={value.action}
           bare

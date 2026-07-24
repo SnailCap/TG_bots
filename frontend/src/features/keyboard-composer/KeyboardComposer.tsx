@@ -259,7 +259,8 @@ export function KeyboardComposer({
                 <div className={dropTarget?.row === rowIndex && dropTarget.index === row.length ? "keyboard-composer__button-slot keyboard-composer__append-slot keyboard-composer__button-slot--active" : "keyboard-composer__button-slot keyboard-composer__append-slot"}>
                   <button type="button" className="keyboard-composer__append" aria-label={`Add button to row ${rowIndex + 1}`} title="Add button" onClick={() => addButton(rowIndex)}><Icon name="plus" /></button>
                 </div>
-                  <div className="keyboard-composer__row-delete-control"><button type="button" className="keyboard-composer__icon-button keyboard-composer__row-delete" aria-label={`Delete row ${rowIndex + 1}`} title="Delete row" onClick={() => deleteRow(rowIndex)}><Icon name="trash" /></button></div>
+                <div className="keyboard-composer__row-divider" aria-hidden="true" />
+                <div className="keyboard-composer__row-delete-control"><button type="button" className="keyboard-composer__icon-button keyboard-composer__row-delete" aria-label={`Delete row ${rowIndex + 1}`} title="Delete row" onClick={() => deleteRow(rowIndex)}><Icon name="trash" /></button></div>
                 </div>
           </div>)}
         </div>

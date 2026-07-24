@@ -4,7 +4,7 @@ import type { ActionOptions, HandlerUsage, ScheduleSpec } from "../../domain/pro
 import { JsonObjectEditor, type HandlerActions } from "../action-editor/ActionEditor";
 import { HandlerControls } from "../handlers/HandlerControls";
 import { ResourceDropTarget } from "../resource-dnd";
-import { FormField, FormGrid } from "../../shared/ui/Form";
+import { FormField, FormGrid, FormSectionDivider } from "../../shared/ui/Form";
 import { Select } from "../../shared/ui/Select";
 
 export function ScheduleEditor({
@@ -50,6 +50,7 @@ export function ScheduleEditor({
         <FormField label="Trigger" layout="stacked" disabled>
           {(controlProps) => <Select {...controlProps} ariaLabel="Trigger" value={value.trigger.type} options={[{ value: "interval", label: "Interval" }]} onChange={() => undefined} />}
         </FormField>
+        <FormSectionDivider />
         <FormField label="Interval, seconds" layout="stacked">
           {(controlProps) => <input {...controlProps} type="number" min="0.001" step="any" value={value.trigger.seconds} onChange={(event) => onChange({ ...value, trigger: { type: "interval", seconds: Number(event.target.value) } })} />}
         </FormField>
@@ -62,6 +63,7 @@ export function ScheduleEditor({
           </>}
         </FormField>
         <HandlerControls handlerId={value.handler} kind="task" handlers={options.handlers} onCreate={handlerActions.create} onRepair={handlerActions.repair} onOpen={handlerActions.open} onFindUsages={handlerActions.usages} createOptions={isNew ? undefined : { attachment: { type: "schedule", schedule_id: value.id }, target_revision: revision }} />
+        <FormSectionDivider />
         <JsonObjectEditor label="Payload" value={value.payload} onChange={(payload) => onChange({ ...value, payload })} />
       </FormGrid>
     </section>

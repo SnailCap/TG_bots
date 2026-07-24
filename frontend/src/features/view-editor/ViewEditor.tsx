@@ -4,7 +4,7 @@ import type { ActionOptions, ViewSpec } from "../../domain/project";
 import { type HandlerActions } from "../action-editor/ActionEditor";
 import { KeyboardComposer } from "../keyboard-composer/KeyboardComposer";
 import { TemplateComposer } from "../template-composer/TemplateComposer";
-import { FormField, FormGrid } from "../../shared/ui/Form";
+import { FormField, FormGrid, FormSectionDivider } from "../../shared/ui/Form";
 import { AccessSelect, type AccessLevel } from "../../shared/ui/AccessSelect";
 
 export function ViewEditor({
@@ -61,9 +61,11 @@ export function ViewEditor({
             <AccessSelect {...controlProps} ariaLabel="Page access" value={accessMockup} onChange={setAccessMockup} />
           )}
         </FormField>
-        <FormField label="Content:" span="full" layout="stacked">
-          {() => <TemplateComposer content={textContent} onContentChange={onTextContentChange} />}
-        </FormField>
+        <FormSectionDivider />
+        <div className="view-settings__content">
+          <TemplateComposer content={textContent} onContentChange={onTextContentChange} />
+        </div>
+        <FormSectionDivider />
         <KeyboardComposer
           viewId={value.id}
           keyboard={value.keyboard}

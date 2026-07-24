@@ -2,11 +2,11 @@
   --form-control-height: 32px;
   --form-control-border: #3a3f47;
   --form-control-border-hover: #566f91;
-  --form-control-border-focus: #4d7dbb;
+  --form-control-border-focus: var(--field-focus-border, #5d88bc);
   --form-control-background: #25282e;
   --form-control-background-hover: #292d34;
   --form-control-radius: 2px;
-  --form-control-focus-ring: 0 0 0 1px rgb(77 125 187 / 22%);
+  --form-control-focus-ring: 0 0 0 1px var(--field-focus-ring, rgb(93 136 188 / 24%));
   --form-text-font-size: .82rem;
   --form-label-width: 56px;
   --form-label-color: #c7cbd2;
@@ -40,6 +40,13 @@
 
 .form-layout--width-standard > :is(.form-field, .action-editor) {
   max-width: var(--form-standard-field-width);
+}
+
+.form-section-divider {
+  height: 0;
+  margin: 6px 0;
+  grid-column: 1 / -1;
+  border-top: 1px solid #3e454d;
 }
 
 .form-field {

@@ -58,9 +58,6 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   const [formatToolbar, setFormatToolbar] = useState<FormattingToolbarState | null>(null);
   const [dialog, setDialog] = useState<FormattingDialogState | null>(null);
   const suggestions = autocomplete ? searchContextFields(autocomplete.query) : [];
-  const renderedNodes = document.nodes.length ? document.nodes : [{ type: "text" as const, text: "" }];
-  const needsTrailingTextSlot = renderedNodes.at(-1)?.type !== "text";
-
   const restorePendingCaret = () => {
     const editor = editorRef.current;
     const caret = pendingCaret.current;
@@ -97,6 +94,8 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   };
 
   useLayoutEffect(() => {
+    const editor = editorRef.current;
+    if (editor) renderEditorDocument(editor, document);
     restorePendingCaret();
   }, [document]);
 
@@ -180,12 +179,13 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
     if (!editor) return;
     const trigger = getAutocompleteTrigger(editor);
     if (!trigger) return;
+    const caretAfterToken = getRangeOffset(editor, trigger.range, false) + 1;
     trigger.range.deleteContents();
     const inserted = window.document.createTextNode(`{{ ${field.path} }}`);
     trigger.range.insertNode(inserted);
     setCaret(inserted, inserted.textContent?.length ?? 0);
     setAutocomplete(null);
-    commitDom();
+    commitDom(caretAfterToken);
   };
 
   const handleInput = (_event: FormEvent<HTMLDivElement>) => {
@@ -373,7 +373,7 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
     <div className="template-visual-shell" ref={shellRef}>
       <div
         ref={editorRef}
-      className="template-visual-editor"
+        className="template-visual-editor"
         contentEditable
         suppressContentEditableWarning
         spellCheck={false}
@@ -389,10 +389,10 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
           if (!isComposingRef.current && !["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) updateAutocomplete();
         }}
         onPaste={handlePaste}
-      >
-        {renderedNodes.map((node, index) => <TemplateNodeView key={`${index}-${nodeKey(node)}`} node={node} path={[index]} />)}
-        {needsTrailingTextSlot ? <TemplateNodeView key="trailing-text-slot" node={{ type: "text", text: "" }} path={[renderedNodes.length]} /> : null}
-      </div>
+        onClick={(event) => {
+          if (event.target instanceof Element && event.target.closest("a")) event.preventDefault();
+        }}
+      />
       {autocomplete ? <ContextAutocomplete fields={suggestions} activeIndex={autocomplete.activeIndex} position={autocomplete.position} onChoose={chooseField} /> : null}
       {formatToolbar ? <FormattingToolbar state={formatToolbar} onAction={runFormattingAction} onClear={clearFormatting} /> : null}
       {dialog ? (
@@ -411,6 +411,197 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
     </div>
   );
 });
+
+// Browser editing owns the contenteditable subtree; React only owns the outer editor node.
+function renderEditorDocument(root: HTMLElement, document: TemplateDocument): void {
+  const nodes = document.nodes.length ? document.nodes : [{ type: "text" as const, text: "" }];
+  const fragment = root.ownerDocument.createDocumentFragment();
+  nodes.forEach((node, index) => fragment.append(createEditorDomNode(root.ownerDocument, node, [index])));
+  if (nodes.at(-1)?.type !== "text") {
+    fragment.append(createEditorDomNode(root.ownerDocument, { type: "text", text: "" }, [nodes.length]));
+  }
+  root.replaceChildren(fragment);
+}
+
+function createEditorDomNode(owner: Document, node: TemplateNode, path: readonly number[]): Node {
+  const nodePath = path.join(".");
+  if (node.type === "text") {
+    const element = owner.createElement("span");
+    element.dataset.templateNode = "text";
+    element.dataset.nodePath = nodePath;
+    element.textContent = node.text;
+    return element;
+  }
+  if (node.type === "context-token") {
+    const field = findContextField(node.path);
+    if (!field) return createUnresolvedDomToken(owner, node.path, node.source ?? `{{ ${node.path} }}`, nodePath);
+    const element = createAtomicDomSpan(owner, "context-token", nodePath);
+    element.dataset.templateNode = "context-token";
+    element.dataset.fieldId = field.id;
+    element.dataset.path = field.path;
+    element.dataset.source = node.source ?? "";
+    element.title = fieldTooltip(field);
+    element.setAttribute("aria-label", `${field.group}: ${field.label}`);
+    element.append(createDomUserIcon(owner), createDomTextElement(owner, "span", field.group));
+    const separator = createDomTextElement(owner, "span", "\u00b7");
+    separator.className = "context-token__separator";
+    element.append(separator, createDomTextElement(owner, "strong", field.label));
+    return element;
+  }
+  if (node.type === "unresolved-token") return createUnresolvedDomToken(owner, node.path, node.source, nodePath);
+  if (node.type === "raw-fragment") {
+    const element = createAtomicDomSpan(owner, "context-token context-token--raw", nodePath);
+    element.dataset.templateNode = "raw-fragment";
+    element.dataset.fragmentKind = node.fragmentKind ?? "jinja";
+    element.dataset.source = node.source;
+    element.title = `This fragment is preserved, but cannot be represented in Visual mode.\n\n${node.source}`;
+    element.setAttribute("aria-label", `Unsupported ${node.fragmentKind === "html" ? "HTML" : "Jinja"} fragment: ${node.source}`);
+    element.append(createDomWarningIcon(owner), createDomTextElement(owner, "code", node.source));
+    return element;
+  }
+  return createTelegramFormatDomNode(owner, node, path);
+}
+
+function createTelegramFormatDomNode(owner: Document, node: TemplateFormatNode, path: readonly number[]): HTMLElement {
+  const tag = node.format === "bold" ? "b"
+    : node.format === "italic" ? "i"
+      : node.format === "underline" ? "u"
+        : node.format === "strikethrough" ? "s"
+          : node.format === "link" || node.format === "mention" ? "a"
+            : node.format === "inline-code" ? "code"
+              : node.format === "code-block" ? "pre"
+                : node.format === "quote" || node.format === "expandable-quote" ? "blockquote"
+                  : "span";
+  const element = owner.createElement(tag);
+  element.dataset.telegramFormat = node.format;
+
+  if (node.format === "spoiler") {
+    element.className = "telegram-spoiler";
+    element.tabIndex = 0;
+    element.title = "Spoiler - focus or hover to reveal while editing";
+  }
+  if (node.format === "link") {
+    element.dataset.href = node.href ?? "";
+    element.setAttribute("href", node.href ?? "");
+  }
+  if (node.format === "mention") {
+    element.dataset.userId = node.userId ?? "";
+    element.setAttribute("href", node.href ?? telegramMentionHref(node.userId ?? ""));
+  }
+  if (node.format === "code-block") {
+    element.dataset.language = node.language ?? "";
+    if (node.language) {
+      const language = createDomTextElement(owner, "span", node.language);
+      language.className = "telegram-code-language";
+      language.dataset.templateDecoration = "true";
+      language.setAttribute("contenteditable", "false");
+      element.append(language);
+    }
+  }
+  if (node.format === "quote" || node.format === "expandable-quote") {
+    element.dataset.expandable = node.format === "expandable-quote" ? "true" : "false";
+  }
+  if (node.format === "custom-emoji") {
+    element.className = "telegram-custom-emoji";
+    markDomAtomic(element, path.join("."));
+    element.dataset.emojiId = node.emojiId ?? "";
+    element.dataset.fallback = node.fallback ?? "";
+    element.title = `Custom emoji ${node.emojiId}`;
+    element.setAttribute("aria-label", `Custom emoji: ${node.fallback}`);
+    element.textContent = node.fallback ?? "";
+    return element;
+  }
+  if (node.format === "date-time") {
+    const preview = renderTelegramDateTime(node.unix ?? Number.NaN, node.dateTimeFormat ?? "", node.fallback ?? "");
+    element.className = "telegram-date-time";
+    markDomAtomic(element, path.join("."));
+    element.dataset.unix = String(node.unix ?? "");
+    element.dataset.dateTimeFormat = node.dateTimeFormat ?? "";
+    element.dataset.fallback = node.fallback ?? "";
+    element.title = `Dynamic date - Unix ${node.unix} - format ${node.dateTimeFormat || "fallback"}`;
+    element.setAttribute("aria-label", `Dynamic date and time: ${preview}`);
+    element.append(createDomClockIcon(owner), owner.createTextNode(preview));
+    return element;
+  }
+
+  node.children.forEach((child, index) => element.append(createEditorDomNode(owner, child, [...path, index])));
+  if (node.format === "expandable-quote") {
+    const indicator = createDomTextElement(owner, "span", "Expandable");
+    indicator.className = "telegram-expandable-indicator";
+    indicator.dataset.templateDecoration = "true";
+    indicator.setAttribute("contenteditable", "false");
+    indicator.setAttribute("aria-label", "Expandable quote");
+    element.append(indicator);
+  }
+  return element;
+}
+
+function createUnresolvedDomToken(owner: Document, path: string, source: string, nodePath: string): HTMLElement {
+  const element = createAtomicDomSpan(owner, "context-token context-token--unresolved", nodePath);
+  element.dataset.templateNode = "unresolved-token";
+  element.dataset.path = path;
+  element.dataset.source = source;
+  element.title = `Unknown field in the current context catalog.\n\n${path}`;
+  element.setAttribute("aria-label", `Unknown context field: ${path}`);
+  element.append(createDomWarningIcon(owner), createDomTextElement(owner, "code", path));
+  return element;
+}
+
+function createAtomicDomSpan(owner: Document, className: string, nodePath: string): HTMLSpanElement {
+  const element = owner.createElement("span");
+  element.className = className;
+  markDomAtomic(element, nodePath);
+  return element;
+}
+
+function markDomAtomic(element: HTMLElement, nodePath: string): void {
+  element.setAttribute("contenteditable", "false");
+  element.dataset.templateAtomic = "true";
+  element.dataset.nodePath = nodePath;
+  element.tabIndex = 0;
+}
+
+function createDomTextElement(owner: Document, tag: string, text: string): HTMLElement {
+  const element = owner.createElement(tag);
+  element.textContent = text;
+  return element;
+}
+
+function createDomUserIcon(owner: Document): SVGSVGElement {
+  const svg = createDomSvg(owner, "context-user-icon");
+  svg.append(createDomSvgShape(owner, "circle", { cx: "8", cy: "5.25", r: "2.45" }));
+  svg.append(createDomSvgShape(owner, "path", { d: "M3.5 13c.35-2.35 2.02-3.7 4.5-3.7s4.15 1.35 4.5 3.7" }));
+  return svg;
+}
+
+function createDomWarningIcon(owner: Document): SVGSVGElement {
+  const svg = createDomSvg(owner, "context-warning-icon");
+  svg.append(createDomSvgShape(owner, "path", { d: "M8 2.1 14 13H2L8 2.1Z" }));
+  svg.append(createDomSvgShape(owner, "path", { d: "M8 5.6v3.6M8 11.4v.1" }));
+  return svg;
+}
+
+function createDomClockIcon(owner: Document): SVGSVGElement {
+  const svg = createDomSvg(owner);
+  svg.append(createDomSvgShape(owner, "circle", { cx: "8", cy: "8", r: "5.4" }));
+  svg.append(createDomSvgShape(owner, "path", { d: "M8 5v3l2.2 1.3" }));
+  return svg;
+}
+
+function createDomSvg(owner: Document, className?: string): SVGSVGElement {
+  const svg = owner.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 16 16");
+  svg.setAttribute("aria-hidden", "true");
+  svg.setAttribute("focusable", "false");
+  if (className) svg.setAttribute("class", className);
+  return svg;
+}
+
+function createDomSvgShape(owner: Document, tag: "circle" | "path", attributes: Record<string, string>): SVGElement {
+  const element = owner.createElementNS("http://www.w3.org/2000/svg", tag);
+  Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, value));
+  return element;
+}
 
 function TemplateNodeView({ node, path }: { node: TemplateNode; path: readonly number[] }) {
   const nodePath = path.join(".");
@@ -692,7 +883,7 @@ function endsWithLineBreak(nodes: TemplateNode[]): boolean {
 
 function getAutocompleteTrigger(root: HTMLElement): { query: string; range: Range } | null {
   const selection = window.getSelection();
-  if (!selection?.rangeCount || !selection.isCollapsed || !root.contains(selection.anchorNode)) return null;
+  if (!selection?.rangeCount || !selection.isCollapsed || !nodeInsideRoot(root, selection.anchorNode)) return null;
   const range = selection.getRangeAt(0);
   if (range.startContainer.nodeType !== Node.TEXT_NODE) return null;
   const text = range.startContainer.textContent?.slice(0, range.startOffset) ?? "";
@@ -706,7 +897,7 @@ function getAutocompleteTrigger(root: HTMLElement): { query: string; range: Rang
 
 function getSelectionOffset(root: HTMLElement): number {
   const selection = window.getSelection();
-  if (!selection?.rangeCount || !root.contains(selection.anchorNode)) return textLength(root);
+  if (!selection?.rangeCount || !nodeInsideRoot(root, selection.anchorNode)) return textLength(root);
   return getRangeOffset(root, selection.getRangeAt(0), false);
 }
 
@@ -770,9 +961,10 @@ function restoreCaretOffset(root: HTMLElement, target: number): void {
   };
   for (const child of Array.from(root.childNodes)) visit(child);
   if (restored) return;
-  const emptyTextNode = root.querySelector<HTMLElement>("[data-template-node='text']");
-  if (emptyTextNode) {
-    setCaret(emptyTextNode, 0);
+  const textSlots = root.querySelectorAll<HTMLElement>("[data-template-node='text']");
+  const trailingTextSlot = textSlots.item(textSlots.length - 1);
+  if (trailingTextSlot) {
+    setCaretInTextSlot(trailingTextSlot, target <= 0 ? 0 : textNodeLength(trailingTextSlot));
     return;
   }
   setCaret(root, target === 0 ? 0 : root.childNodes.length);
@@ -784,6 +976,24 @@ function setCaret(node: Node, offset: number): void {
   range.setStart(node, Math.min(offset, maximumOffset));
   range.collapse(true);
   restoreRange(range);
+}
+
+function setCaretInTextSlot(slot: HTMLElement, offset: number): void {
+  const textNode = ensureTextNode(slot);
+  setCaret(textNode, Math.min(offset, textNode.textContent?.length ?? 0));
+}
+
+function ensureTextNode(node: Node): Text {
+  if (node.nodeType === Node.TEXT_NODE) return node as Text;
+  const existing = Array.from(node.childNodes).find((child): child is Text => child.nodeType === Node.TEXT_NODE);
+  if (existing) return existing;
+  const created = window.document.createTextNode("");
+  node.appendChild(created);
+  return created;
+}
+
+function textNodeLength(node: Node): number {
+  return ensureTextNode(node).textContent?.length ?? 0;
 }
 
 function textLength(root: HTMLElement): number {
@@ -804,6 +1014,17 @@ function adjacentAtomicToken(root: HTMLElement, direction: -1 | 1): HTMLElement 
   const selection = window.getSelection();
   if (!selection?.isCollapsed || !selection.rangeCount) return null;
   const range = selection.getRangeAt(0);
+  if (range.startContainer === root) {
+    const index = direction === -1 ? range.startOffset - 1 : range.startOffset;
+    const sibling = root.children.item(index);
+    if (!(sibling instanceof HTMLElement) || sibling.dataset.templateAtomic !== "true") return null;
+    const boundarySlotIndex = direction === -1 ? range.startOffset : range.startOffset - 1;
+    const boundarySlot = root.children.item(boundarySlotIndex);
+    if (boundarySlot instanceof HTMLElement && boundarySlot.dataset.templateNode === "text" && textNodeLength(boundarySlot) > 0) {
+      return null;
+    }
+    return sibling;
+  }
   const direct = directChildOf(root, range.startContainer);
   if (!direct) return null;
   const length = range.startContainer.textContent?.length ?? 0;
@@ -849,13 +1070,17 @@ function insertHtml(html: string): void {
 }
 
 function selectionInside(root: HTMLElement, selection: Selection): boolean {
-  return Boolean(root.contains(selection.anchorNode) && root.contains(selection.focusNode));
+  return Boolean(nodeInsideRoot(root, selection.anchorNode) && nodeInsideRoot(root, selection.focusNode));
 }
 
 function currentEditorRange(root: HTMLElement, fallback: Range | null): Range | null {
   const selection = window.getSelection();
   if (selection?.rangeCount && selectionInside(root, selection)) return selection.getRangeAt(0).cloneRange();
   return fallback?.cloneRange() ?? null;
+}
+
+function nodeInsideRoot(root: HTMLElement, node: Node | null): boolean {
+  return Boolean(node && (node === root || root.contains(node)));
 }
 
 function cloneEditingRange(root: HTMLElement, range: Range): { root: HTMLElement; range: Range } | null {

@@ -6,7 +6,7 @@ Studio hydrates the editor from either an inline value or an existing template r
 
 ## Source of truth
 
-Visual and Source modes are two projections of one Jinja string. The visual document model is transient frontend state and is never written into the bot project. The Jinja source remains readable outside Studio, useful in Git diffs, and compatible with the autonomous runtime.
+Studio exposes a Visual editor only. The visual document model is transient frontend state and is never written into the bot project. The Jinja source remains readable outside Studio, useful in Git diffs, and compatible with the autonomous runtime.
 
 The conversion boundary is explicit:
 
@@ -16,7 +16,7 @@ Jinja string -> parseTemplate -> TemplateDocument -> serializeTemplate -> Jinja 
 
 Known expressions retain their original source spelling when parsed. Newly inserted tokens use the canonical form `{{ user.first_name }}`. Unknown and unsupported fragments retain their exact source.
 
-Telegram formatting is part of the transient `TemplateDocument`; it is not a second persisted document format. Visual edits serialize to canonical Bot API HTML, and switching from Source back to Visual normalizes official aliases such as `<strong>`, `<em>`, `<ins>`, `<del>`, and `<span class="tg-spoiler">`.
+Telegram formatting is part of the transient `TemplateDocument`; it is not a second persisted document format. Visual parsing normalizes official aliases such as `<strong>`, `<em>`, `<ins>`, `<del>`, and `<span class="tg-spoiler">` into the canonical Telegram HTML model used by the serializer.
 
 ## Context catalog
 
@@ -34,9 +34,9 @@ To add a future scope, add field definitions to a catalog passed to parser, sear
 
 ## Supported expressions
 
-Visual mode recognizes simple two-part references such as `{{ user.first_name }}`. Whitespace inside braces is accepted. Typing `$` opens a searchable field list; choosing a field replaces the query with an atomic token. Backspace or Delete removes the complete token.
+The Visual editor recognizes simple two-part references such as `{{ user.first_name }}`. Whitespace inside braces is accepted. Typing `$` opens a searchable field list; choosing a field replaces the query with an atomic token. Backspace or Delete removes the complete token.
 
-An unknown simple reference such as `{{ order.total }}` becomes an unresolved warning token. A complex expression, Jinja statement, or comment becomes a raw fragment. Both forms preserve the original Jinja and produce an inline diagnostic. Source mode remains available for direct editing.
+An unknown simple reference such as `{{ order.total }}` becomes an unresolved warning token. A complex expression, Jinja statement, or comment becomes a raw fragment. Both forms preserve the original Jinja and produce an inline diagnostic.
 
 ## Preview
 
@@ -53,7 +53,7 @@ Visual mode supports the regular-message HTML entities accepted by Telegram Bot 
 - custom emoji with a required fallback emoji;
 - dynamic date/time entities with Telegram's `r|w?[dD]?[tT]?` format.
 
-Selecting text opens a compact formatting toolbar. Common inline styles are shown directly; block and special entities are available in More. The editor uses Telegram Desktop keyboard shortcuts while focus and selection remain inside Visual mode.
+Selecting text opens a compact formatting toolbar. Common inline styles are shown directly; block and special entities are available in More. The editor uses Telegram Desktop keyboard shortcuts while focus and selection remain inside the Visual editor.
 
 `telegram-formatting.ts` is the shared action catalog for toolbar actions, HTML aliases, and keyboard shortcuts. `paste-sanitizer.ts` removes external styles, classes, unsafe links, and unsupported markup while retaining formatting that can be represented by Telegram HTML.
 

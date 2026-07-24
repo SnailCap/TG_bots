@@ -4,10 +4,7 @@ import { VisualTemplateEditor } from "./editor";
 import { parseTemplate } from "./parser";
 import { defaultPreviewValues, renderTemplatePreview } from "./preview";
 import { TemplatePreviewPanel } from "./preview-panel";
-import { normalizeTelegramHtml } from "./serializer";
 import { validateTemplate } from "./validation";
-
-type EditorMode = "visual" | "source";
 
 export function TemplateComposer({
   content,
@@ -16,50 +13,17 @@ export function TemplateComposer({
   content: string;
   onContentChange(content: string): void;
 }) {
-  const [mode, setMode] = useState<EditorMode>("visual");
   const [previewValues, setPreviewValues] = useState(defaultPreviewValues);
   const document = useMemo(() => parseTemplate(content), [content]);
   const diagnostics = useMemo(() => validateTemplate(document), [document]);
   const preview = useMemo(() => renderTemplatePreview(document, previewValues), [document, previewValues]);
-  const switchMode = (nextMode: EditorMode) => {
-    if (nextMode === "visual") {
-      const normalized = normalizeTelegramHtml(content);
-      if (normalized !== content) onContentChange(normalized);
-    }
-    setMode(nextMode);
-  };
 
   return (
-    <section className="template-composer" aria-label="Message text editor">
+    <fieldset className="template-composer" aria-label="Message text editor">
+      <legend>Content</legend>
       <div className="template-composer__workspace">
         <div className="template-composer__editor-column">
-          <header className="template-composer__toolbar">
-            <div className="template-mode-switch" role="tablist" aria-label="Message editor mode">
-              <button type="button" role="tab" aria-selected={mode === "visual"} className={mode === "visual" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => switchMode("visual")}>Visual</button>
-              <button type="button" role="tab" aria-selected={mode === "source"} className={mode === "source" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => switchMode("source")}>Source</button>
-            </div>
-            <span className="template-composer__hint">Type <kbd>$</kbd> to insert a context field</span>
-          </header>
-          <div className="template-composer__settings-divider" />
-
-          <div className="template-composer__editor-surface">
-            {mode === "visual" ? (
-              <VisualTemplateEditor document={document} onChange={onContentChange} />
-            ) : (
-              <textarea
-                className="template-source-editor"
-                aria-label="Message source"
-                spellCheck={false}
-                value={content}
-                onChange={(event) => onContentChange(event.target.value)}
-                onBlur={() => {
-                  const normalized = normalizeTelegramHtml(content);
-                  if (normalized !== content) onContentChange(normalized);
-                }}
-                placeholder="Write message source..."
-              />
-            )}
-          </div>
+          <VisualTemplateEditor document={document} onChange={onContentChange} />
 
           {diagnostics.length > 0 && (
             <div className="template-diagnostics" role="status" aria-label="Message diagnostics">
@@ -74,7 +38,7 @@ export function TemplateComposer({
 
         <TemplatePreviewPanel preview={preview} values={previewValues} onValuesChange={setPreviewValues} />
       </div>
-    </section>
+    </fieldset>
   );
 }
 

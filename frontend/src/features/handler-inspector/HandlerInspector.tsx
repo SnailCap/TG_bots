@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 import type { HandlerDetail, HandlerKind, HandlerUsage } from "../../domain/project";
-import { FormField, FormGrid } from "../../shared/ui/Form";
+import { FormField, FormGrid, FormSectionDivider } from "../../shared/ui/Form";
 import { Select } from "../../shared/ui/Select";
 
 export function HandlerInspector({
@@ -51,6 +51,7 @@ export function NewHandlerEditor({ onCreate }: { onCreate(id: string, kind: Hand
         <FormField label="Context kind" layout="stacked">
           {(controlProps) => <Select {...controlProps} ariaLabel="Context kind" value={kind} options={[{ value: "button", label: "Button" }, { value: "message", label: "Message" }, { value: "command", label: "Command" }, { value: "lifecycle", label: "Lifecycle" }, { value: "task", label: "Task" }]} onChange={(next) => setKind(next as HandlerKind)} />}
         </FormField>
+        <FormSectionDivider />
         <FormField label="Additional outcomes, comma-separated" layout="stacked" span="full">
           {(controlProps) => <input {...controlProps} value={outcomes} onChange={(event) => setOutcomes(event.target.value)} placeholder="invalid, access_denied" />}
         </FormField>

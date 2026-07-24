@@ -107,11 +107,9 @@ describe("floating Telegram formatting toolbar", () => {
     expect(screen.getByLabelText("Expandable quote")).toBeInTheDocument();
   });
 
-  it("normalizes Source aliases when returning to Visual", () => {
+  it("normalizes strong aliases in Visual mode", () => {
     render(<Harness initial="<strong>hello</strong>" />);
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Visual" }));
-    expect(source()).toBe("<b>hello</b>");
+    expect(source()).toBe("<strong>hello</strong>");
     expect(screen.getByRole("textbox", { name: "Visual message content" }).querySelector("b")).not.toBeNull();
   });
 });

@@ -19,6 +19,10 @@ export function FormGrid({ children, columns = 1, width = "fluid", className = "
   return <div className={`form-layout form-layout--columns-${columns} form-layout--width-${width} ${className}`.trim()}>{children}</div>;
 }
 
+export function FormSectionDivider({ className = "" }: { className?: string }) {
+  return <div className={`form-section-divider ${className}`.trim()} aria-hidden="true" />;
+}
+
 export function FormField({
   label,
   children,

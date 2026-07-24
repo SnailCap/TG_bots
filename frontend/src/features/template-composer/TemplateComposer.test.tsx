@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { describe, expect, it } from "vitest";
 
 import { TemplateComposer } from "./TemplateComposer";
@@ -14,6 +14,10 @@ function HistoryHarness({ initial = "" }: { initial?: string }) {
   const [content, setContent] = useState(initial);
   useFieldHistory();
   return <><TemplateComposer content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
+}
+
+function StrictHarness({ initial = "" }: { initial?: string }) {
+  return <StrictMode><Harness initial={initial} /></StrictMode>;
 }
 
 function typeVisual(value: string) {
@@ -52,6 +56,24 @@ describe("visual template composer", () => {
     const token = screen.getByLabelText("Пользователь: Имя");
     expect(token).toHaveAttribute("title", expect.stringContaining("user.first_name"));
     expect(token).toHaveAttribute("contenteditable", "false");
+  });
+
+  it("keeps the caret after an inserted variable instead of jumping to the start", async () => {
+    render(<Harness initial="Hello $" />);
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
+    const textNode = editor.querySelector<HTMLElement>("[data-template-node='text']")?.firstChild as Node;
+    setCaret(textNode, textNode.textContent?.length ?? 0);
+    fireEvent.input(editor);
+
+    fireEvent.keyDown(editor, { key: "Enter" });
+    await Promise.resolve();
+
+    expect(screen.getByTestId("source-value")).toHaveTextContent("Hello {{ user.first_name }}");
+    const textSlots = editor.querySelectorAll<HTMLElement>("[data-template-node='text']");
+    const trailingSlot = textSlots.item(textSlots.length - 1);
+    expect(trailingSlot).not.toBeNull();
+    expect(trailingSlot?.contains(window.getSelection()?.anchorNode ?? null)).toBe(true);
+    expect(window.getSelection()?.anchorOffset).toBe(0);
   });
 
   it("undoes and redoes a variable inserted from autocomplete", async () => {
@@ -107,6 +129,20 @@ describe("visual template composer", () => {
     expect(screen.getByRole("textbox", { name: "Visual message content" }).querySelector("[data-template-node='text']")).toBeInTheDocument();
   });
 
+  it("keeps the caret in an empty text slot after deleting the only variable", async () => {
+    render(<Harness initial="{{ user.first_name }}" />);
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
+    const token = screen.getByLabelText("Пользователь: Имя");
+    token.focus();
+    fireEvent.keyDown(token, { key: "Backspace" });
+    await Promise.resolve();
+
+    const textSlot = editor.querySelector<HTMLElement>("[data-template-node='text']");
+    expect(textSlot).not.toBeNull();
+    expect(textSlot?.contains(window.getSelection()?.anchorNode ?? null)).toBe(true);
+    expect(window.getSelection()?.anchorOffset).toBe(0);
+  });
+
   it("keeps a live caret after deleting text typed immediately after a token", async () => {
     render(<Harness initial="{{ user.first_name }}x" />);
     const editor = screen.getByRole("textbox", { name: "Visual message content" });
@@ -122,12 +158,94 @@ describe("visual template composer", () => {
     expect(trailingTextSlot?.contains(window.getSelection()?.anchorNode ?? null) || window.getSelection()?.anchorNode === trailingTextSlot).toBe(true);
   });
 
-  it("switches modes and reparses source changes into visual tokens", () => {
-    render(<Harness initial="Hello" />);
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Hi {{ user.username }}" } });
-    fireEvent.click(screen.getByRole("tab", { name: "Visual" }));
-    expect(screen.getByLabelText("Пользователь: Username")).toBeInTheDocument();
+  it("stays stable after inserting a variable, typing after it, and deleting that text back to empty", async () => {
+    render(<Harness />);
+    const editor = typeVisual("$");
+    fireEvent.keyDown(editor, { key: "Enter" });
+    await Promise.resolve();
+
+    const trailingSlot = editor.querySelectorAll<HTMLElement>("[data-template-node='text']").item(0);
+    trailingSlot.textContent = "x";
+    const typedText = trailingSlot.firstChild!;
+    setCaret(typedText, 1);
+    fireEvent.input(editor);
+    await Promise.resolve();
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}x");
+
+    trailingSlot.textContent = "";
+    const range = document.createRange();
+    range.setStart(editor, 1);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.input(editor);
+    await Promise.resolve();
+
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}");
+    const restoredTrailingSlot = editor.querySelectorAll<HTMLElement>("[data-template-node='text']").item(0);
+    expect(restoredTrailingSlot).not.toBeNull();
+    expect(restoredTrailingSlot?.contains(window.getSelection()?.anchorNode ?? null)).toBe(true);
+  });
+
+  it("stays stable in StrictMode after typing and deleting text after a variable", async () => {
+    render(<StrictHarness initial="{{ user.first_name }}x" />);
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
+    const trailingSlot = editor.querySelector<HTMLElement>("[data-template-node='text']")!;
+
+    trailingSlot.textContent = "";
+    const range = document.createRange();
+    range.setStart(editor, 1);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.input(editor);
+    await Promise.resolve();
+
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}");
+    expect(editor.querySelector<HTMLElement>("[data-template-node='text']")).not.toBeNull();
+  });
+
+  it("stays stable when the browser collapses selection to the editor root after deleting text after a token", async () => {
+    render(<Harness initial="{{ user.first_name }}x" />);
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
+    const trailingSlot = editor.querySelectorAll<HTMLElement>("[data-template-node='text']").item(0);
+    trailingSlot.textContent = "";
+
+    const range = document.createRange();
+    range.setStart(editor, 1);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.input(editor);
+    await Promise.resolve();
+
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}");
+    const restoredTrailingSlot = editor.querySelectorAll<HTMLElement>("[data-template-node='text']").item(0);
+    expect(restoredTrailingSlot).not.toBeNull();
+    expect(restoredTrailingSlot?.contains(window.getSelection()?.anchorNode ?? null)).toBe(true);
+  });
+
+  it("does not delete a variable when root-level caret sits before trailing text that still exists", () => {
+    render(<Harness initial="{{ user.first_name }}x" />);
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
+
+    const range = document.createRange();
+    range.setStart(editor, 1);
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+
+    fireEvent.keyDown(editor, { key: "Backspace" });
+
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ user.first_name }}x");
+    expect(screen.getByLabelText("Пользователь: Имя")).toBeInTheDocument();
   });
 
   it("updates preview when source or test values change", () => {
@@ -160,6 +278,19 @@ describe("visual template composer", () => {
     setCaret(textElement.firstChild as Node, 2);
     fireEvent.compositionEnd(editor);
     expect(screen.getByTestId("source-value")).toHaveTextContent("пр");
+  });
+
+  it("survives a browser replacement of React-managed contenteditable children", async () => {
+    render(<StrictHarness initial="Hello {{ user.first_name }}" />);
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
+
+    editor.textContent = "$";
+    setCaret(editor.firstChild!, 1);
+    fireEvent.input(editor);
+    await Promise.resolve();
+
+    expect(screen.getByRole("textbox", { name: "Visual message content" })).toHaveTextContent("$");
+    expect(screen.getByTestId("source-value")).toHaveTextContent("$");
   });
 });
 
