@@ -34,6 +34,12 @@ Schema v3 пересекает core, Studio backend и typed frontend. Изме�
 
 Backend CRUD в основном работает с JSON и затем вызывает общий `ProjectLoader`; не добавляйте локальный validator только ради удобства формы. UI-level constraints допустимы для ранней обратной связи, но authoritative code/semantics остаются в core diagnostics.
 
+## Имена и обязательные значения Studio
+
+Если Studio создаёт сущность с обязательным именем или runtime-required текстом, создавайте безопасное значение сразу: отображайте понятный default как неявную серую подсказку, но сохраняйте технический ID и required content до первого запуска. Human-facing display name хранится отдельно от технического ID; не меняйте ID и ссылки при обычном переименовании. Для кнопки default — непустой видимый текст, для нового view — непустой inline text с его default name.
+
+Не создавайте defaults для optional descriptions. Также не подставляйте обязательные ссылки (`view`, handler, action target) произвольно: они требуют осознанного выбора и должны оставаться validation error, если не настроены.
+
 ## Новый event type
 
 Сначала определите, это transport event или новая декларативная точка handler:

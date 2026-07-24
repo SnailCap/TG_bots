@@ -42,6 +42,19 @@ Loader принимает путь как к project root, так и непос�
 | `start.flow` | Flow, запускаемый встроенной командой `/start` |
 | `start.policy` | `reset` либо `resume`; default — `reset` |
 
+### Studio presentation names
+
+Studio may add an optional `display_names` object to `bot.json`. It maps a resource kind (`views`, `flows`, `schedules`, `handlers`, `commands`, or `templates`) and its stable technical ID/path to a human-facing name. This metadata is additive in schema v3: old projects omit it, and runtime dispatch never reads it.
+
+```json
+"display_names": {
+  "views": {"welcome_screen": "Welcome screen"},
+  "templates": {"welcome.txt": "Welcome message"}
+}
+```
+
+Studio creates IDs from a supplied display name using lowercase ASCII `snake_case`; spaces become `_` and Cyrillic is transliterated. The ID remains stable after a later display-name edit, so references, callback IDs, and resource file paths do not change.
+
 При `resume` активная session только re-rendered; если active flow нет, он запускается как обычно. `/start` зарезервирован и не может повторно объявляться в commands.
 
 ## Views и templates

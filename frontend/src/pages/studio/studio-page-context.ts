@@ -71,6 +71,7 @@ export type StudioPageContext = {
   switchProject(path: string): void;
   createProject(): void;
   save(): Promise<void>;
+  saveAll(): Promise<void>;
   closeTab(tabKey: string): void;
   activateTab(tabKey: string): void;
   performUndo(): Promise<void>;

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -131,6 +132,22 @@ def test_loader_prefers_nested_resources_for_a_project_named_resources(tmp_path:
 
     assert project.root == project_root.resolve()
     assert project.resources == (project_root / "resources").resolve()
+
+
+def test_manifest_display_names_are_optional_presentation_metadata(tmp_path: Path) -> None:
+    make_project(tmp_path)
+
+    legacy = ProjectLoader().load(tmp_path)
+    assert legacy.manifest.display_names == {}
+
+    manifest_path = tmp_path / "resources" / "bot.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["display_names"] = {"views": {"home": "Главный экран"}}
+    write_json(manifest_path, manifest)
+
+    project = ProjectLoader().load(tmp_path)
+    assert project.manifest.display_names == {"views": {"home": "Главный экран"}}
+    assert not [item for item in validate_project(project) if item.level == "error"]
 
 
 @pytest.mark.parametrize(

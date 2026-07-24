@@ -22,8 +22,16 @@ class CreateProjectRequest(BaseModel):
 
 
 class ResourceCreateRequest(BaseModel):
-    id: str = Field(min_length=1, max_length=128)
-    payload: dict[str, Any]
+    id: str | None = Field(default=None, min_length=1, max_length=128)
+    name: str | None = Field(default=None, max_length=160)
+    payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class DisplayNameRequest(BaseModel):
+    kind: Literal["views", "flows", "schedules", "handlers", "commands", "templates"]
+    key: str = Field(min_length=1, max_length=512)
+    name: str = Field(min_length=1, max_length=160)
+    revision: str
 
 
 class ResourceSaveRequest(BaseModel):
@@ -117,6 +125,22 @@ async def create_project(body: CreateProjectRequest, request: Request) -> dict[s
 async def describe(project_id: str, request: Request) -> dict[str, Any]:
     try:
         return service(request).describe(project_id)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.post("/{project_id}/display-names")
+async def set_display_name(
+    project_id: str, body: DisplayNameRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).set_display_name(
+            project_id,
+            kind=body.kind,
+            key=body.key,
+            name=body.name,
+            revision=body.revision,
+        )
     except WorkspaceError as error:
         fail(error)
 
@@ -219,7 +243,7 @@ async def create_view(
     project_id: str, body: ResourceCreateRequest, request: Request
 ) -> dict[str, Any]:
     try:
-        return service(request).create_view(project_id, body.id, body.payload)
+        return service(request).create_view(project_id, body.id, body.payload, name=body.name)
     except WorkspaceError as error:
         fail(error)
 
@@ -284,7 +308,7 @@ async def create_flow(
     project_id: str, body: ResourceCreateRequest, request: Request
 ) -> dict[str, Any]:
     try:
-        return service(request).create_flow(project_id, body.id, body.payload)
+        return service(request).create_flow(project_id, body.id, body.payload, name=body.name)
     except WorkspaceError as error:
         fail(error)
 
@@ -372,7 +396,7 @@ async def create_schedule(
     project_id: str, body: ResourceCreateRequest, request: Request
 ) -> dict[str, Any]:
     try:
-        return service(request).create_schedule(project_id, body.id, body.payload)
+        return service(request).create_schedule(project_id, body.id, body.payload, name=body.name)
     except WorkspaceError as error:
         fail(error)
 

@@ -49,6 +49,7 @@ export function KeyboardComposer({
     ? { ...createOptions, attachment: { ...createOptions.attachment, button_id: selectedButton.id } }
     : createOptions;
   const existingIds = rows.flat().map((button) => button.id);
+  const existingLabels = rows.flat().map((button) => button.text);
   const hasButtons = rows.some((row) => row.length > 0);
 
   useEffect(() => {
@@ -107,7 +108,7 @@ export function KeyboardComposer({
       : row));
   };
   const addButton = (rowIndex: number) => {
-    const button = newButton(viewId, existingIds);
+    const button = newButton(viewId, existingIds, existingLabels);
     pendingButtonEntranceIdsRef.current.add(button.id);
     const next = rows.map((row, index) => index === rowIndex ? [...row, button] : row);
     onChange(next);
@@ -115,7 +116,7 @@ export function KeyboardComposer({
     setFocusText(true);
   };
   const addRow = () => {
-    const button = newButton(viewId, existingIds);
+    const button = newButton(viewId, existingIds, existingLabels);
     pendingButtonEntranceIdsRef.current.add(button.id);
     onChange([...rows, [button]]);
     setSelectedId(button.id);
@@ -124,7 +125,7 @@ export function KeyboardComposer({
   const duplicateButton = (location: ButtonLocation) => {
     const source = rows[location.row]?.[location.button];
     if (!source) return;
-    const copy = { ...structuredClone(source), id: nextButtonId(viewId, existingIds) };
+    const copy = { ...structuredClone(source), id: nextButtonId(viewId, existingIds), text: nextButtonLabel(existingLabels) };
     pendingButtonEntranceIdsRef.current.add(copy.id);
     const next = rows.map((row, rowIndex) => rowIndex === location.row
       ? [...row.slice(0, location.button + 1), copy, ...row.slice(location.button + 1)]
@@ -304,8 +305,15 @@ function transparentDragImage(): HTMLImageElement {
   return emptyDragImage;
 }
 
-function newButton(viewId: string, existingIds: string[]): ButtonSpec {
-  return { id: nextButtonId(viewId, existingIds), text: "", action: actionFor("noop") };
+function newButton(viewId: string, existingIds: string[], existingLabels: string[]): ButtonSpec {
+  return { id: nextButtonId(viewId, existingIds), text: nextButtonLabel(existingLabels), action: actionFor("noop") };
+}
+
+function nextButtonLabel(existing: string[]): string {
+  if (!existing.includes("Button")) return "Button";
+  let suffix = 2;
+  while (existing.includes(`Button ${suffix}`)) suffix += 1;
+  return `Button ${suffix}`;
 }
 
 function nextButtonId(viewId: string, existing: string[]): string {

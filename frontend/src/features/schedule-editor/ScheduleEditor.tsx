@@ -1,4 +1,4 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 
 import type { ActionOptions, HandlerUsage, ScheduleSpec } from "../../domain/project";
 import { JsonObjectEditor, type HandlerActions } from "../action-editor/ActionEditor";
@@ -15,6 +15,9 @@ export function ScheduleEditor({
   options,
   handlerActions,
   onChange,
+  displayName,
+  nameIsDefault = false,
+  onRename,
 }: {
   value: ScheduleSpec;
   sourcePath: string;
@@ -23,14 +26,26 @@ export function ScheduleEditor({
   options: ActionOptions;
   handlerActions: HandlerActions;
   onChange(value: ScheduleSpec): void;
+  displayName?: string;
+  nameIsDefault?: boolean;
+  onRename?(name: string): void;
 }) {
   const listId = useId().replace(/:/g, "");
+  const [nameDraft, setNameDraft] = useState("");
   const taskHandlers = options.handlers.filter((handler) => handler.kind === "task");
+  const effectiveName = displayName ?? value.id;
   return (
     <section className="editor" aria-label="Schedule editor">
       <FormGrid columns={2}>
-        <FormField label="Schedule ID" layout="stacked" disabled={!isNew}>
-          {(controlProps) => <input {...controlProps} value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} />}
+        <FormField label="Name" layout="stacked">
+          {(controlProps) => <input {...controlProps} value={nameIsDefault ? nameDraft : (nameDraft || effectiveName)} placeholder={nameIsDefault ? effectiveName : undefined} onChange={(event) => {
+            if (displayName === undefined) onChange({ ...value, id: event.target.value });
+            else setNameDraft(event.target.value);
+          }} onBlur={() => {
+            const next = nameDraft.trim();
+            if (next && next !== effectiveName) onRename?.(next);
+            setNameDraft("");
+          }} />}
         </FormField>
         <FormField label="Trigger" layout="stacked" disabled>
           {(controlProps) => <Select {...controlProps} ariaLabel="Trigger" value={value.trigger.type} options={[{ value: "interval", label: "Interval" }]} onChange={() => undefined} />}

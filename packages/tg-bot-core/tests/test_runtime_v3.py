@@ -270,7 +270,7 @@ async def test_standalone_project_runs_flow_across_restart_without_studio(tmp_pa
     assert trace == ["start", "enter:ask"]
 
     await first_transport.emit(MessageEvent(actor, 3, "Ada"))
-    assert first_transport.messages[-1].text == "Confirm Ada"
+    assert (first_transport.messages[-1].text, first_transport.messages[-1].edit_message_id) == ("Confirm Ada", None)
     assert [button.callback_data for button in first_transport.messages[-1].keyboard[0]] == [
         "v3:a:confirm_order",
         "v3:a:cancel_order",

@@ -20,7 +20,7 @@ describe("KeyboardComposer", () => {
     expect(screen.getByLabelText("Keyboard rows").querySelectorAll(".keyboard-composer__row")).toHaveLength(0);
   });
 
-  it("adds a blank button into the focused label editor and marks it incomplete", () => {
+  it("adds a safely named button into the focused label editor", () => {
     const { container } = render(<KeyboardHarness keyboard={[]} />);
     expect(screen.getByText("No buttons added yet")).toBeInTheDocument();
 
@@ -28,8 +28,17 @@ describe("KeyboardComposer", () => {
 
     const label = screen.getByLabelText("Button text");
     expect(label).toHaveFocus();
+    expect(label).toHaveValue("Button");
     expect(container.querySelector(".keyboard-composer__button--invalid")).toBeInTheDocument();
     expect(screen.queryByText("Add a button label")).not.toBeInTheDocument();
+  });
+
+  it("uses the next free default label for an added button", () => {
+    render(<KeyboardHarness keyboard={[[button("first", "Button")]]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add button to row 1" }));
+
+    expect(screen.getByLabelText("Button text")).toHaveValue("Button 2");
   });
 
   it("plays the entrance animation only for a newly added button", () => {

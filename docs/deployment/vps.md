@@ -26,10 +26,10 @@ README.md
 Установите Python 3.12 с venv support и Git. Git нужен, потому что текущий starter pin-ит core прямой Git dependency:
 
 ```toml
-"tg-bot-core @ git+https://github.com/SnailCap/TG_bots.git@b183a173a3f46f2b096a0b6ec877ad5cba41566a#subdirectory=packages/tg-bot-core"
+"tg-bot-core @ git+https://github.com/SnailCap/TG_bots.git@119f2200566021ebf4d5bafa44c08805dcf236ed#subdirectory=packages/tg-bot-core"
 ```
 
-Commit `b183a173a3f46f2b096a0b6ec877ad5cba41566a` опубликован в remote repository. Для обновления используйте только другой проверенный immutable commit или опубликованный tag.
+Commit `119f2200566021ebf4d5bafa44c08805dcf236ed` опубликован в remote repository. Для обновления используйте только другой проверенный immutable commit или опубликованный tag.
 
 Создайте отдельного непривилегированного пользователя и разместите project, например, в `/opt/my-bot`. Конкретные package-manager commands зависят от Linux distribution; после установки Python/Git:
 

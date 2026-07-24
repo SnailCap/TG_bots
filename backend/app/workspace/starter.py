@@ -128,6 +128,10 @@ class StarterScaffolder:
             "*.py[cod]\n"
             ".pytest_cache/\n"
             "*.egg-info/\n"
+            ".idea/\n"
+            ".vscode/\n"
+            ".botstudio/backups/\n"
+            ".botstudio/*.credentials*\n"
             "build/\n"
             "dist/\n",
         )
@@ -156,7 +160,7 @@ name = "{slug}"
 version = "0.1.0"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "tg-bot-core @ git+https://github.com/SnailCap/TG_bots.git@b183a173a3f46f2b096a0b6ec877ad5cba41566a#subdirectory=packages/tg-bot-core",
+    "tg-bot-core @ git+https://github.com/SnailCap/TG_bots.git@119f2200566021ebf4d5bafa44c08805dcf236ed#subdirectory=packages/tg-bot-core",
 ]
 
 [project.optional-dependencies]

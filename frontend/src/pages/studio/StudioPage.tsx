@@ -17,6 +17,7 @@ import {
   selectionForEditor,
   selectionKeyEquals,
   selectionTabKey,
+  isEditorInvalid,
   type DeletedResource,
   type EditorState,
   type EditorTab,
@@ -343,6 +344,49 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     }
   };
 
+  const saveAll = async () => {
+    const pending = tabsRef.current.filter((tab) => tab.dirty);
+    if (!pending.length) return;
+    const invalid = pending.filter((tab) => isEditorInvalid(tab.editor));
+    if (invalid.length) {
+      throw new Error(`Fix invalid editor data before using Git: ${invalid.map((tab) => tab.key).join(", ")}`);
+    }
+    const commandDrafts = pending.filter((tab) => tab.editor.kind === "command" || tab.editor.kind === "commands");
+    if (commandDrafts.length > 1) {
+      throw new Error("Save the open command editors individually before using Git.");
+    }
+    setBusy(true);
+    setSaving(true);
+    try {
+      const saved = new Map<string, Awaited<ReturnType<typeof saveEditor>>>();
+      for (const tab of pending) {
+        saved.set(tab.key, await saveEditor(api, workspace.project_id, tab.editor, selectionForEditor(tab.editor)));
+      }
+      setTabs((current) => current.map((tab) => {
+        const result = saved.get(tab.key);
+        return result ? { ...tab, editor: result.editor, dirty: false } : tab;
+      }));
+      if (activeTabKey) {
+        const result = saved.get(activeTabKey);
+        if (result) {
+          setEditor(result.editor);
+          setSelection(result.selection);
+          setDirty(false);
+        }
+      }
+      setWorkspace(await api.describe(workspace.project_id));
+      setNotice("");
+      setError("");
+      setConflict(false);
+    } catch (caught) {
+      report(caught);
+      throw caught;
+    } finally {
+      setSaving(false);
+      setBusy(false);
+    }
+  };
+
   saveShortcutRef.current = () => {
     if (editor && !busy && canSave(editor)) void save();
   };
@@ -380,8 +424,8 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   };
 
   const renameResource = useCallback(async (next: Exclude<Selection, { kind: "commands" }>, name: string): Promise<{ selection: Exclude<Selection, { kind: "commands" }>; editor: Exclude<EditorState, null> }> => {
-    return renameResourceViaApi(api, workspace.project_id, next, name);
-  }, [api, workspace.project_id]);
+    return renameResourceViaApi(api, workspace.project_id, workspace.manifest.revision, next, name);
+  }, [api, workspace.manifest.revision, workspace.project_id]);
 
   const applyRenameToTabs = useCallback((from: Selection, to: Selection, toEditor: Exclude<EditorState, null>) => {
     const previousTabKey = selectionTabKey(from);
@@ -503,6 +547,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     switchProject={switchProject}
     createProject={createProject}
     save={save}
+    saveAll={saveAll}
     closeTab={closeTab}
     activateTab={activateTab}
     performUndo={performUndo}

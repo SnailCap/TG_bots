@@ -30,3 +30,24 @@ export async function localProjectStatus(projectRoot: string): Promise<LocalRunS
 export function onLocalProjectOutput(listener: (event: ProjectProcessEvent) => void): () => void {
   return window.studioDesktop?.onProjectOutput?.(listener) ?? (() => undefined);
 }
+
+export async function saveGitHubToken(token: string): Promise<void> {
+  if (!window.studioDesktop?.saveGitHubToken) throw new Error("Secure GitHub sign-in is available in the desktop Studio application.");
+  await window.studioDesktop.saveGitHubToken(token);
+}
+
+export async function loadGitHubToken(): Promise<string | undefined> {
+  return (await window.studioDesktop?.loadGitHubToken?.()) ?? undefined;
+}
+
+export async function clearGitHubToken(): Promise<void> {
+  await window.studioDesktop?.clearGitHubToken?.();
+}
+
+export async function openGitHubUrl(url: string): Promise<void> {
+  if (window.studioDesktop?.openExternal) {
+    await window.studioDesktop.openExternal(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener,noreferrer");
+}

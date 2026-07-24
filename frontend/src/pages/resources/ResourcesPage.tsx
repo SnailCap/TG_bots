@@ -67,7 +67,7 @@ export function ResourcesPage() {
       </nav>}
       <div key={firstContentKey ?? "empty"} className={firstContentKey ? "workspace__content workspace__content--enter" : "workspace__content"}>
         {editor && <ResourceEditorHeader category={editorCategory(editor)} title={editorHeaderTitle(editor)} saveAction={isSaveableEditor(editor) ? { disabled: busy || !canSave(editor), saving, onSave: () => void save() } : undefined} />}
-        <StudioEditor editor={editor} options={options} handlerActions={handlerActions} setEditor={setEditor} setDirty={setDirty} repairHandler={repairHandler} openHandler={openHandler} findUsages={findUsages} createHandler={createAndOpenHandler} select={select} createTemplate={(suggestedPath) => { void addResource("template", suggestedPath); }} />
+        <StudioEditor editor={editor} options={options} handlerActions={handlerActions} setEditor={setEditor} setDirty={setDirty} repairHandler={repairHandler} openHandler={openHandler} findUsages={findUsages} createHandler={createAndOpenHandler} select={select} renameDisplayName={renameFromExplorer} createTemplate={(suggestedPath) => { void addResource("template", suggestedPath); }} />
         {editor?.kind === "handler" && <footer className="editor__actions editor__actions--danger"><span>Deleting a binding can break the resources that use it.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
         {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
       </div>

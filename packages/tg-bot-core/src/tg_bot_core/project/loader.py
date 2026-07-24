@@ -95,7 +95,20 @@ class ProjectLoader:
             package=self._string(data, "package", source),
             entry_view=self._string(data, "entry_view", source),
             start=StartSpec(self._string(start, "flow", source), policy),
+            display_names=self._display_names(data.get("display_names", {}), source),
         )
+
+    def _display_names(self, raw: Any, source: str) -> Mapping[str, Mapping[str, str]]:
+        values = self._mapping(raw, source, "display_names")
+        result: dict[str, Mapping[str, str]] = {}
+        for kind, names in values.items():
+            if not isinstance(kind, str):
+                raise ProjectLoadError(f"{source}: display_names keys must be strings.")
+            mapping = self._mapping(names, source, f"display_names.{kind}")
+            if not all(isinstance(key, str) and isinstance(value, str) for key, value in mapping.items()):
+                raise ProjectLoadError(f"{source}: display_names.{kind} must map strings to strings.")
+            result[kind] = dict(mapping)
+        return result
 
     def _view(self, data: Mapping[str, Any], source: str) -> ViewSpec:
         self._version(data, source)

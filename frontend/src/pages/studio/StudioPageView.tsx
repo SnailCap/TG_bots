@@ -118,7 +118,7 @@ function StudioShell({ context }: { context: StudioPageContext }) {
       </header>
       {error && <Toast message={error} tone="error" action={conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>} onDismiss={dismissError} />}
       {notice && <Toast message={notice} tone="notice" onDismiss={dismissNotice} />}
-      <div ref={workspaceRef} className={`workspace${activeRoute === "users" ? " workspace--users" : ""}${activeRoute === "resources" && previewOpen ? " workspace--preview-open" : ""}${terminalOpen ? " workspace--terminal-open" : ""}`} style={{ "--explorer-width": `${explorerWidth}px`, "--terminal-height": `${terminalHeight}px` } as CSSProperties}>
+      <div ref={workspaceRef} className={`workspace${activeRoute === "users" ? " workspace--users" : ""}${activeRoute === "git" ? " workspace--git" : ""}${activeRoute === "resources" && previewOpen ? " workspace--preview-open" : ""}${terminalOpen ? " workspace--terminal-open" : ""}`} style={{ "--explorer-width": `${explorerWidth}px`, "--terminal-height": `${terminalHeight}px` } as CSSProperties}>
         <StudioActivityRail routes={STUDIO_ROUTES} terminalOpen={terminalOpen} onToggleTerminal={() => setTerminalOpen((open) => !open)} settingsOpen={settingsOpen} onOpenSettings={openProjectSettings} />
         <Outlet context={context} />
         {terminalOpen && <>

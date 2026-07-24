@@ -10,6 +10,12 @@ import { BackendStatusCard } from "./BackendStatusCard";
 export const LAST_PROJECT_STORAGE_KEY = "tg-bot-studio.dev.last-project";
 export const RECENT_PROJECTS_STORAGE_KEY = "tg-bot-studio.dev.recent-projects";
 
+type LauncherScreen = "projects" | "create" | "open";
+
+function projectLabel(projectPath: string): string {
+  return projectPath.split(/[\\/]/).filter(Boolean).at(-1) || projectPath;
+}
+
 function loadLastProjectPath(): string | null {
   if (!import.meta.env.DEV) return null;
   try {
@@ -56,10 +62,11 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
   useFieldHistory();
   const api = useMemo(() => apiClient ?? new StudioApi(apiBaseUrl), [apiBaseUrl, apiClient]);
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [launcherScreen, setLauncherScreen] = useState<LauncherScreen>("projects");
   const [openPath, setOpenPath] = useState("");
   const [parentPath, setParentPath] = useState("");
   const [name, setName] = useState("my-bot");
-  const [packageName, setPackageName] = useState("my_bot");
+  const [packageName] = useState("my_bot");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [recentProjects, setRecentProjects] = useState(loadRecentProjectPaths);
@@ -113,8 +120,18 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
     await load(() => api.open(path));
   };
 
+  const openProjectFromDisk = async () => {
+    const selectDirectory = window.studioDesktop?.selectDirectory;
+    if (!selectDirectory) {
+      setLauncherScreen("open");
+      return;
+    }
+    const selected = await selectDirectory();
+    if (selected) await load(() => api.open(selected));
+  };
+
   const createProject = async () => {
-    const next = await api.create(parentPath, name, packageName);
+    const next = await api.create(parentPath, name);
     try {
       if (window.studioDesktop?.prepareProject) {
         await window.studioDesktop.approveProjectRoot?.(next.project_root);
@@ -136,28 +153,60 @@ export function App({ apiBaseUrl = defaultApiBaseUrl(), apiClient }: { apiBaseUr
   if (workspace) return <StudioPage key={workspace.project_id} api={api} apiBaseUrl={apiBaseUrl} initialWorkspace={workspace} recentProjects={recentProjects} onOpenProject={(path) => void openProjectFromSwitcher(path)} onNewProject={() => { autoOpenCancelled.current = true; setWorkspace(null); }} />;
   return (
     <main className="welcome" aria-busy={busy}>
-      <section className="welcome__content">
-        <header className="welcome__intro">
-          <p className="eyebrow">Declarative Project Studio</p>
-          <h1>Build a Telegram bot with a visible project graph.</h1>
-          <p>Open an existing project or create an autonomous Python starter. Studio edits deployable files; it is not part of the bot runtime.</p>
-          <BackendStatusCard apiBaseUrl={apiBaseUrl} />
-        </header>
-        {error && <Toast message={error} tone="error" onDismiss={() => setError("")} />}
-        <section className="welcome-card" aria-labelledby="open-project-title">
-          <div className="section-heading"><div><p className="eyebrow">Continue working</p><h2 id="open-project-title">Open a project</h2></div><p>Load the folder that contains <code>resources/</code>.</p></div>
-          <label>Existing project<input value={openPath} onChange={(event) => setOpenPath(event.target.value)} placeholder="C:\projects\my-bot" /></label>
+      <header className="welcome__titlebar">
+        <span className="welcome__brand">Telegram Bot Studio</span>
+        <div className="welcome__backend"><BackendStatusCard apiBaseUrl={apiBaseUrl} /></div>
+      </header>
+      <section className="welcome__launcher" key={launcherScreen}>
+        {launcherScreen === "projects" && <>
+          <header className="welcome__launcher-header">
+            <h1>Projects</h1>
+            <div className="welcome__actions">
+              <button type="button" className="button--secondary" onClick={() => void openProjectFromDisk()}>Open</button>
+              <button type="button" onClick={() => setLauncherScreen("create")}>New project</button>
+            </div>
+          </header>
+          {recentProjects.length > 0
+            ? <div className="welcome__project-list" role="list">
+              {recentProjects.map((projectPath) => <button type="button" className="welcome__project" role="listitem" key={projectPath} disabled={busy} onClick={() => void load(() => api.open(projectPath))}>
+                <ProjectMark />
+                <span><strong>{projectLabel(projectPath)}</strong><small>{projectPath}</small></span>
+                <ChevronRight />
+              </button>)}
+            </div>
+            : <div className="welcome__empty"><ProjectMark /><p>No recent projects</p></div>}
+        </>}
+        {launcherScreen === "open" && <section className="welcome__form-panel" aria-label="Open project">
+          <LauncherHeader title="Open project" onBack={() => setLauncherScreen("projects")} />
+          <label>Project folder<input autoFocus value={openPath} onChange={(event) => setOpenPath(event.target.value)} /></label>
           <div className="form-actions"><button type="button" className="button--secondary" onClick={() => void pick(setOpenPath)}>Choose folder…</button><button type="button" disabled={!openPath || busy} onClick={() => void load(() => api.open(openPath))}>{busy ? "Opening…" : "Open project"}</button></div>
-        </section>
-        <section className="welcome-card" aria-labelledby="create-project-title">
-          <div className="section-heading"><div><p className="eyebrow">Start from a safe baseline</p><h2 id="create-project-title">Create a new bot project</h2></div><p>Creates the project, selects a compatible Python and installs its local environment automatically.</p></div>
-          <div className="form-grid form-grid--two"><label>New project name<input value={name} onChange={(event) => setName(event.target.value)} /></label><label>Python package<input value={packageName} onChange={(event) => setPackageName(event.target.value)} /></label></div>
-          <label>Parent directory<input value={parentPath} onChange={(event) => setParentPath(event.target.value)} placeholder="C:\projects" /></label>
+        </section>}
+        {launcherScreen === "create" && <section className="welcome__form-panel" aria-label="New project">
+          <LauncherHeader title="New project" onBack={() => setLauncherScreen("projects")} />
+          <label>Project name<input autoFocus value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label>Location<input value={parentPath} onChange={(event) => setParentPath(event.target.value)} /></label>
           <div className="form-actions"><button type="button" className="button--secondary" onClick={() => void pick(setParentPath)}>Choose parent folder…</button><button type="button" disabled={!parentPath || !name || !packageName || busy} onClick={() => void load(createProject)}>{busy ? "Creating and configuring…" : "Create project"}</button></div>
-        </section>
+        </section>}
       </section>
+      {error && <Toast message={error} tone="error" onDismiss={() => setError("")} />}
     </main>
   );
+}
+
+function LauncherHeader({ title, onBack }: { title: string; onBack(): void }) {
+  return <header className="welcome__launcher-header"><button type="button" className="welcome__back" aria-label="Back to projects" onClick={onBack}><ChevronLeft /></button><h1>{title}</h1></header>;
+}
+
+function ProjectMark() {
+  return <span className="welcome__project-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l1.8 2H20.5v8.8a2.2 2.2 0 0 1-2.2 2.2H5.7a2.2 2.2 0 0 1-2.2-2.2z" /><path d="M3.5 9.5h17" /></svg></span>;
+}
+
+function ChevronRight() {
+  return <svg className="welcome__project-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>;
+}
+
+function ChevronLeft() {
+  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>;
 }
 
 export { BackendStatusCard } from "./BackendStatusCard";

@@ -49,4 +49,8 @@ export interface StudioDesktop {
   stopProject?(projectRoot: string): Promise<void>;
   projectRunStatus?(projectRoot: string): Promise<LocalRunStatus>;
   onProjectOutput?(listener: (event: ProjectProcessEvent) => void): () => void;
+  saveGitHubToken?(token: string): Promise<void>;
+  loadGitHubToken?(): Promise<string | null>;
+  clearGitHubToken?(): Promise<void>;
+  openExternal?(url: string): Promise<void>;
 }

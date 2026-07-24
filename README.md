@@ -67,6 +67,7 @@ Starter pin-ит core на опубликованный immutable commit `b183a1
 - [Project schema v3](docs/architecture/project-schema-v3.md)
 - [Runtime dispatch](docs/architecture/runtime-dispatch.md)
 - [Работа с custom code в Studio](docs/studio/custom-code-workflow.md)
+- [Совместная работа и публикация через Git](docs/studio/git-workflow.md)
 - [Расширение schema/runtime](docs/development/extending-schema.md)
 - [Развёртывание на VPS](docs/deployment/vps.md)
 - [Переход с v2](docs/migration/v2-to-v3.md)

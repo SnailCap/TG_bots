@@ -173,6 +173,29 @@ describe("flow action scopes", () => {
 });
 
 describe("view button IDs", () => {
+  it("shows an implicit display name as a gray input hint without changing the technical ID", () => {
+    const onRename = vi.fn();
+    const value: ViewSpec = { schema_version: 3, id: "view_1", text: { inline: "View 1" }, keyboard: [] };
+    render(<ViewEditor
+      value={value}
+      displayName="View 1"
+      nameIsDefault
+      revision="view-one"
+      isNew={false}
+      options={{ views: ["view_1"], flows: [], states: [], handlers: [] }}
+      handlerActions={handlerActions()}
+      onChange={vi.fn()}
+      onRename={onRename}
+    />);
+
+    const input = screen.getByLabelText("Name:");
+    expect(input).toHaveValue("");
+    expect(input).toHaveAttribute("placeholder", "View 1");
+    fireEvent.change(input, { target: { value: "Welcome screen" } });
+    fireEvent.blur(input);
+    expect(onRename).toHaveBeenCalledWith("Welcome screen");
+  });
+
   it("generates stable view-namespaced IDs and advances past existing IDs", () => {
     const onChange = vi.fn();
     const base: ViewSpec = { schema_version: 3, id: "home", text: { inline: "Home" }, keyboard: [] };

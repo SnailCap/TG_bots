@@ -197,11 +197,22 @@ describe("Studio", () => {
     const api = apiMock();
     render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
     expect(await screen.findByText("Backend online")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Existing project"), { target: { value: "C:/demo" } });
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    fireEvent.change(screen.getByLabelText("Project folder"), { target: { value: "C:/demo" } });
     fireEvent.click(screen.getByRole("button", { name: "Open project" }));
     expect((await screen.findAllByText("demo")).length).toBeGreaterThan(0);
     expect(api.open).toHaveBeenCalledWith("C:/demo");
     expect(window.localStorage.getItem(LAST_PROJECT_STORAGE_KEY)).toBe("C:/demo");
+  });
+
+  it("provides a titlebar drag region before a project is open", () => {
+    const { container } = render(<App apiBaseUrl="http://studio.test" apiClient={apiMock()} />);
+
+    expect(container.querySelector(".welcome__titlebar")).toHaveTextContent("Telegram Bot Studio");
+    expect(screen.queryByLabelText("Project name")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    expect(screen.getByLabelText("Project name")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Project folder")).not.toBeInTheDocument();
   });
 
   it("prepares a managed Python environment while creating a project", async () => {
@@ -218,10 +229,11 @@ describe("Studio", () => {
     const api = apiMock();
     render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
 
-    fireEvent.change(screen.getByLabelText("Parent directory"), { target: { value: "C:/bots" } });
+    fireEvent.click(screen.getByRole("button", { name: "New project" }));
+    fireEvent.change(screen.getByLabelText("Location"), { target: { value: "C:/bots" } });
     fireEvent.click(screen.getByRole("button", { name: "Create project" }));
 
-    await waitFor(() => expect(api.create).toHaveBeenCalledWith("C:/bots", "my-bot", "my_bot"));
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith("C:/bots", "my-bot"));
     expect(approveProjectRoot).toHaveBeenCalledWith("C:/demo");
     expect(prepareProject).toHaveBeenCalledWith({ projectRoot: "C:/demo", packageName: "demo" });
     expect((await screen.findAllByText("demo")).length).toBeGreaterThan(0);
@@ -257,8 +269,8 @@ describe("Studio", () => {
     window.localStorage.setItem(LAST_PROJECT_STORAGE_KEY, "C:/stale-project");
     const api = apiMock({ open: vi.fn().mockReturnValue(new Promise<Workspace>(() => undefined)) });
     render(<App apiBaseUrl="http://studio.test" apiClient={api} />);
-    fireEvent.change(screen.getByLabelText("Existing project"), { target: { value: "C:/demo" } });
-    expect(screen.getByRole("button", { name: "Open project" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Open" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "New project" })).toBeEnabled();
   });
 
   it("renders all typed explorer sections", () => {
@@ -279,7 +291,7 @@ describe("Studio", () => {
     const createdCommands: CommandsDetail = {
       ...emptyCommands,
       revision: "commands-two",
-      payload: { schema_version: 3, commands: [{ name: "new_command", action: { type: "noop" } }] },
+      payload: { schema_version: 3, commands: [{ name: "command_1", action: { type: "noop" } }] },
     };
     const commandsWorkspace: Workspace = {
       ...workspace,
@@ -291,7 +303,7 @@ describe("Studio", () => {
       saveCommands,
       describe: vi.fn().mockResolvedValue({
         ...commandsWorkspace,
-        commands: { ...commandsWorkspace.commands, revision: "commands-two", items: [{ name: "new_command" }] },
+        commands: { ...commandsWorkspace.commands, revision: "commands-two", items: [{ name: "command_1" }] },
       }),
     });
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={commandsWorkspace} />);
@@ -301,10 +313,10 @@ describe("Studio", () => {
 
     await waitFor(() => expect(saveCommands).toHaveBeenCalledWith("project-1", {
       schema_version: 3,
-      commands: [{ name: "new_command", action: { type: "noop" } }],
+      commands: [{ name: "command_1", action: { type: "noop" } }],
     }, "commands-one"));
     expect(await screen.findByLabelText("Command editor")).toBeInTheDocument();
-    expect(screen.getByLabelText("Command name")).toHaveValue("new_command");
+    expect(screen.getByLabelText("Command name")).toHaveValue("command_1");
   });
 
   it("edits one selected command without exposing the aggregate list", async () => {
@@ -336,7 +348,7 @@ describe("Studio", () => {
     });
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={commandsWorkspace} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "/help" }));
+    fireEvent.click(screen.getByRole("button", { name: "help" }));
     expect(await screen.findByLabelText("Command editor")).toBeInTheDocument();
     expect(screen.getAllByLabelText("Command name")).toHaveLength(1);
     expect(screen.getByLabelText("Command access")).toBeInTheDocument();
@@ -789,6 +801,16 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     handlerUsages: vi.fn().mockResolvedValue([]),
     preview: vi.fn().mockResolvedValue({ text: "Hello", keyboard: [], warnings: [] }),
     validate: vi.fn().mockResolvedValue([]),
+    gitStatus: vi.fn().mockResolvedValue({ connected: false, git_installed: true }),
+    gitChanges: vi.fn().mockResolvedValue({ changes: [], suggested_message: "" }),
+    gitHistory: vi.fn().mockResolvedValue([]),
+    gitConnect: vi.fn(),
+    gitCreateRepository: vi.fn(),
+    gitDisconnect: vi.fn(),
+    gitFetch: vi.fn(),
+    gitSync: vi.fn(),
+    gitPush: vi.fn(),
+    gitPublish: vi.fn(),
     ...overrides,
   };
 }

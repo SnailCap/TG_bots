@@ -1,10 +1,4 @@
-import {
-  emptyFlow,
-  emptySchedule,
-  emptyView,
-  type Selection,
-  type Workspace,
-} from "../../domain/project";
+import { emptyFlow, emptySchedule, emptyView, type Selection, type Workspace } from "../../domain/project";
 import type { StudioApiClient } from "../../studio/api";
 import type { CreatableResource } from "../../widgets/project-explorer/ProjectExplorer";
 import {
@@ -39,8 +33,10 @@ export async function createResource(
   templatePath = "",
 ): Promise<{ editor: PersistedEditor; selection: Selection }> {
   if (kind === "view") {
-    const id = nextAvailableResourceName("new-view", workspace.views.map((item) => item.id));
-    const detail = await api.createView(workspace.project_id, id, emptyView(id));
+    const fallbackId = nextAvailableResourceName("new-view", workspace.views.map((item) => item.id));
+    const detail = api.createNamedView
+      ? await api.createNamedView(workspace.project_id)
+      : await api.createView(workspace.project_id, fallbackId, emptyView(fallbackId));
     return { editor: { kind, isNew: false, detail }, selection: { kind, id: detail.id } };
   }
   if (kind === "template") {
@@ -49,8 +45,10 @@ export async function createResource(
     return { editor: { kind, isNew: false, detail }, selection: { kind, path: detail.path } };
   }
   if (kind === "flow") {
-    const id = nextAvailableResourceName("new-flow", workspace.flows.map((item) => item.id));
-    const detail = await api.createFlow(workspace.project_id, id, emptyFlow(id));
+    const fallbackId = nextAvailableResourceName("new-flow", workspace.flows.map((item) => item.id));
+    const detail = api.createNamedFlow
+      ? await api.createNamedFlow(workspace.project_id)
+      : await api.createFlow(workspace.project_id, fallbackId, emptyFlow(fallbackId));
     return { editor: { kind, isNew: false, detail }, selection: { kind, id: detail.id } };
   }
   if (kind === "command") {
@@ -65,8 +63,10 @@ export async function createResource(
       selection: { kind, name },
     };
   }
-  const id = nextAvailableResourceName("new-schedule", workspace.schedules.map((item) => item.id));
-  const detail = await api.createSchedule(workspace.project_id, id, emptySchedule(id));
+  const fallbackId = nextAvailableResourceName("new-schedule", workspace.schedules.map((item) => item.id));
+  const detail = api.createNamedSchedule
+    ? await api.createNamedSchedule(workspace.project_id)
+    : await api.createSchedule(workspace.project_id, fallbackId, emptySchedule(fallbackId));
   return { editor: { kind, isNew: false, detail }, selection: { kind, id: detail.id } };
 }
 
@@ -201,6 +201,32 @@ export async function restoreDeletedResource(api: StudioApiClient, projectId: st
 export async function renameResource(
   api: StudioApiClient,
   projectId: string,
+  manifestRevision: string,
+  selection: RenameableSelection,
+  name: string,
+): Promise<{ selection: RenameableSelection; editor: PersistedEditor }> {
+  const kind = selection.kind === "view" ? "views"
+    : selection.kind === "flow" ? "flows"
+      : selection.kind === "schedule" ? "schedules"
+        : selection.kind === "handler" ? "handlers"
+          : selection.kind === "command" ? "commands"
+            : "templates";
+  const key = selection.kind === "template" ? selection.path : selection.kind === "command" ? selection.name : selection.id;
+  if (!api.setDisplayName) return renameTechnicalResource(api, projectId, selection, name);
+  await api.setDisplayName(projectId, kind, key, name, manifestRevision);
+  if (selection.kind === "view") return { selection, editor: { kind: "view", detail: await api.getView(projectId, selection.id), isNew: false } };
+  if (selection.kind === "template") return { selection, editor: { kind: "template", detail: await api.getTemplate(projectId, selection.path), isNew: false } };
+  if (selection.kind === "flow") return { selection, editor: { kind: "flow", detail: await api.getFlow(projectId, selection.id), isNew: false } };
+  if (selection.kind === "schedule") return { selection, editor: { kind: "schedule", detail: await api.getSchedule(projectId, selection.id), isNew: false } };
+  if (selection.kind === "command") {
+    const detail = await api.getCommands(projectId);
+    return { selection, editor: { kind: "command", detail, commandIndex: findCommandIndex(detail, selection.name) } };
+  }
+  return { selection, editor: { kind: "handler", detail: await api.getHandler(projectId, selection.id) } };
+}
+async function renameTechnicalResource(
+  api: StudioApiClient,
+  projectId: string,
   selection: RenameableSelection,
   name: string,
 ): Promise<{ selection: RenameableSelection; editor: PersistedEditor }> {
@@ -226,18 +252,9 @@ export async function renameResource(
   }
   if (selection.kind === "command") {
     const detail = await api.getCommands(projectId);
-    const index = findCommandIndex(detail, selection.name);
     const commandName = normalizeCommandName(name);
-    const renamed = await api.saveCommands(projectId, {
-      ...detail.payload,
-      commands: detail.payload.commands.map((command, current) => current === index
-        ? { ...command, name: commandName }
-        : command),
-    }, detail.revision);
-    return {
-      selection: { kind: "command", name: commandName },
-      editor: { kind: "command", detail: renamed, commandIndex: findCommandIndex(renamed, commandName) },
-    };
+    const renamed = await api.saveCommands(projectId, { ...detail.payload, commands: detail.payload.commands.map((command, index) => index === findCommandIndex(detail, selection.name) ? { ...command, name: commandName } : command) }, detail.revision);
+    return { selection: { kind: "command", name: commandName }, editor: { kind: "command", detail: renamed, commandIndex: findCommandIndex(renamed, commandName) } };
   }
   const detail = await api.getHandler(projectId, selection.id);
   const renamed = await api.renameHandler(projectId, selection.id, name, detail.revision);
@@ -254,18 +271,16 @@ function nextAvailableResourceName(base: string, existing: string[]): string {
 
 function nextAvailableTemplatePath(existing: string[]): string {
   const paths = new Set(existing);
-  if (!paths.has("new-template.txt")) return "new-template.txt";
-  let suffix = 2;
-  while (paths.has(`new-template-${suffix}.txt`)) suffix += 1;
-  return `new-template-${suffix}.txt`;
+  let suffix = 1;
+  while (paths.has(`template_${suffix}.txt`)) suffix += 1;
+  return `template_${suffix}.txt`;
 }
 
 function nextAvailableCommandName(existing: string[]): string {
   const names = new Set(existing);
-  if (!names.has("new_command")) return "new_command";
-  let suffix = 2;
-  while (names.has(`new_command_${suffix}`)) suffix += 1;
-  return `new_command_${suffix}`;
+  let suffix = 1;
+  while (names.has(`command_${suffix}`)) suffix += 1;
+  return `command_${suffix}`;
 }
 
 function normalizeCommandName(value: string): string {

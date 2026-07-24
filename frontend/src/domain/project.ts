@@ -143,12 +143,14 @@ export interface ScheduleSpec {
 
 export interface ResourceSummary {
   id: string;
+  name?: string;
   source_path: string;
   revision: string;
 }
 
 export interface TemplateSummary {
   path: string;
+  name?: string;
   revision?: string;
 }
 
@@ -162,7 +164,7 @@ export interface AggregateSummary {
 }
 
 export interface CommandsSummary extends AggregateSummary {
-  items: Pick<CommandSpec, "name" | "description">[];
+  items: Array<Pick<CommandSpec, "name" | "description"> & { display_name?: string }>;
 }
 
 export interface ManifestSpec {
@@ -186,6 +188,8 @@ export interface HandlerInspection {
 
 export interface HandlerSummary {
   id: string;
+  name?: string;
+  name_is_default?: boolean;
   kind: HandlerKind;
   module: string;
   symbol: string;
@@ -217,6 +221,7 @@ export interface Workspace {
 }
 
 export interface ResourceDetail<T> extends ResourceSummary {
+  name_is_default?: boolean;
   payload: T;
 }
 
@@ -231,6 +236,7 @@ export interface CommandsDetail {
 }
 
 export interface TemplateDetail extends TemplateSummary {
+  name_is_default?: boolean;
   content: string;
   revision: string;
 }

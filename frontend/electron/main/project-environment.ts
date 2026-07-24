@@ -11,8 +11,11 @@ const PYTHON_COMPATIBILITY_CHECK = [
   "raise SystemExit(0 if (3, 12) <= sys.version_info[:2] < (3, 14) else 1)",
 ].join("; ");
 const ENVIRONMENT_MARKER_VERSION = 1;
-const LEGACY_CORE_PIN = "git+https://github.com/SnailCap/TG_bots.git@core-v3.0.0#subdirectory=packages/tg-bot-core";
-const CURRENT_CORE_PIN = "git+https://github.com/SnailCap/TG_bots.git@b183a173a3f46f2b096a0b6ec877ad5cba41566a#subdirectory=packages/tg-bot-core";
+const OUTDATED_CORE_PINS = [
+  "git+https://github.com/SnailCap/TG_bots.git@core-v3.0.0#subdirectory=packages/tg-bot-core",
+  "git+https://github.com/SnailCap/TG_bots.git@b183a173a3f46f2b096a0b6ec877ad5cba41566a#subdirectory=packages/tg-bot-core",
+];
+const CURRENT_CORE_PIN = "git+https://github.com/SnailCap/TG_bots.git@119f2200566021ebf4d5bafa44c08805dcf236ed#subdirectory=packages/tg-bot-core";
 
 export interface PythonCommand {
   executable: string;
@@ -60,7 +63,10 @@ export function compatiblePythonCandidates(
 }
 
 export function migrateLegacyCorePin(pyproject: string): string {
-  return pyproject.replace(LEGACY_CORE_PIN, CURRENT_CORE_PIN);
+  return OUTDATED_CORE_PINS.reduce(
+    (updated, pin) => updated.replaceAll(pin, CURRENT_CORE_PIN),
+    pyproject,
+  );
 }
 
 export async function prepareProjectEnvironment(

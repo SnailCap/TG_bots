@@ -1,7 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, safeStorage, shell } from "electron";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { existsSync } from "node:fs";
-import { realpath } from "node:fs/promises";
+import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -121,6 +121,10 @@ function stopBackend(): void {
 function stopLocalRuns(): void {
   for (const process of localRunProcesses.values()) process.kill();
   localRunProcesses.clear();
+}
+
+function githubCredentialPath(): string {
+  return path.join(app.getPath("userData"), "credentials", "github-token.bin");
 }
 
 function ensureProjectEnvironment(target: Awaited<ReturnType<typeof resolveRunProject>>): Promise<string> {
@@ -269,6 +273,33 @@ ipcMain.handle("desktop:project-run-status", async (_event, projectRoot: unknown
   const child = localRunProcesses.get(canonicalRoot);
   const running = Boolean(child && !child.killed && child.exitCode === null);
   return { running, pid: running ? child?.pid ?? null : null };
+});
+ipcMain.handle("desktop:save-github-token", async (_event, token: unknown) => {
+  if (typeof token !== "string" || !token.trim() || token.length > 4096) throw new Error("A GitHub token is required.");
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("Secure system storage is not available.");
+  const target = githubCredentialPath();
+  const temporary = `${target}.${process.pid}.tmp`;
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(temporary, safeStorage.encryptString(token.trim()), { mode: 0o600 });
+  await rm(target, { force: true });
+  await rename(temporary, target);
+});
+ipcMain.handle("desktop:load-github-token", async () => {
+  if (!safeStorage.isEncryptionAvailable()) return null;
+  try {
+    return safeStorage.decryptString(await readFile(githubCredentialPath()));
+  } catch {
+    return null;
+  }
+});
+ipcMain.handle("desktop:clear-github-token", async () => {
+  await rm(githubCredentialPath(), { force: true });
+});
+ipcMain.handle("desktop:open-external", async (_event, url: unknown) => {
+  if (typeof url !== "string") throw new Error("URL is required.");
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:" || parsed.hostname !== "github.com") throw new Error("Only GitHub links can be opened.");
+  await shell.openExternal(parsed.toString());
 });
 
 app.whenReady().then(async () => {

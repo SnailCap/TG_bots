@@ -1,8 +1,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routers.git import router as git_router
 from app.api.routers.health import router as health_router
 from app.api.routers.projects import router as projects_router
+from app.integrations.git import GitService
 from app.workspace import ProjectService
 
 
@@ -25,8 +27,13 @@ def create_app() -> FastAPI:
         allow_headers=["Accept", "Content-Type"],
     )
     app.state.project_service = ProjectService()
+    app.state.git_service = GitService(
+        app.state.project_service.repository,
+        app.state.project_service.validate,
+    )
     app.include_router(health_router, prefix="/api/v1")
     app.include_router(projects_router, prefix="/api/v1")
+    app.include_router(git_router, prefix="/api/v1")
     return app
 
 

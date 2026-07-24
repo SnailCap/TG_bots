@@ -159,6 +159,9 @@ class BotManifest:
     package: str
     entry_view: str
     start: StartSpec
+    # Studio-only presentation metadata. It deliberately does not affect
+    # runtime dispatch: all graph references continue to use technical ids.
+    display_names: Mapping[str, Mapping[str, str]] = field(default_factory=dict)
     schema_version: int = SCHEMA_VERSION
 
 

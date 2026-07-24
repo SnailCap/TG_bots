@@ -92,6 +92,72 @@ export interface ManagedUserUpdate {
   note: string;
 }
 
+export type GitSyncState = "synced" | "changes" | "conflict";
+export type GitChangeStatus = "modified" | "added" | "deleted" | "renamed" | "untracked";
+
+export interface GitCommit {
+  hash: string;
+  short_hash: string;
+  author: string;
+  authored_at: string;
+  message: string;
+  branch?: string;
+  published?: boolean;
+  url?: string;
+}
+
+export interface GitStatus {
+  connected: boolean;
+  git_installed: boolean;
+  account?: string;
+  repository?: string;
+  remote_name?: string;
+  branch?: string;
+  development_branch?: string;
+  production_branch?: string;
+  local_changes?: number;
+  remote_changes?: number;
+  ahead?: number;
+  behind?: number;
+  sync_state?: GitSyncState;
+  last_commit?: GitCommit | null;
+  last_publication?: { version: string | null; commit: string | null; at: string | null } | null;
+}
+
+export interface GitChange {
+  path: string;
+  old_path: string | null;
+  status: GitChangeStatus;
+  staged: boolean;
+  summary: string;
+  binary: boolean;
+  diff: string | null;
+}
+
+export interface GitChanges {
+  changes: GitChange[];
+  suggested_message: string;
+}
+
+export interface GitConnectInput {
+  repository: string;
+  remote_name?: string;
+  development_branch: string;
+  production_branch: string;
+  token?: string;
+}
+
+export interface GitCreateRepositoryInput extends Omit<GitConnectInput, "repository"> {
+  repository: string;
+  visibility: "private" | "public";
+}
+
+export interface GitPublishInput {
+  version: "patch" | "minor" | "major" | "none" | "custom";
+  custom_version?: string;
+  token?: string;
+}
+
 interface ManagedUserWire {
   telegram_id: string;
   username: string | null;
@@ -126,6 +192,7 @@ export interface StudioApiClient {
   updateUser(projectId: string, telegramId: string, payload: ManagedUserUpdate): Promise<ManagedUser>;
   getView(projectId: string, id: string): Promise<ViewDetail>;
   createView(projectId: string, id: string, payload: ViewSpec): Promise<ViewDetail>;
+  createNamedView?(projectId: string, name?: string): Promise<ViewDetail>;
   saveView(projectId: string, id: string, payload: ViewSpec, revision: string): Promise<ViewDetail>;
   renameView(projectId: string, id: string, name: string, revision: string): Promise<ViewDetail>;
   deleteView(projectId: string, id: string, revision: string): Promise<void>;
@@ -135,6 +202,7 @@ export interface StudioApiClient {
   deleteTemplate(projectId: string, path: string, revision: string): Promise<void>;
   getFlow(projectId: string, id: string): Promise<FlowDetail>;
   createFlow(projectId: string, id: string, payload: FlowSpec): Promise<FlowDetail>;
+  createNamedFlow?(projectId: string, name?: string): Promise<FlowDetail>;
   saveFlow(projectId: string, id: string, payload: FlowSpec, revision: string): Promise<FlowDetail>;
   renameFlow(projectId: string, id: string, name: string, revision: string): Promise<FlowDetail>;
   deleteFlow(projectId: string, id: string, revision: string): Promise<void>;
@@ -142,6 +210,7 @@ export interface StudioApiClient {
   saveCommands(projectId: string, payload: CommandsSpec, revision: string): Promise<CommandsDetail>;
   getSchedule(projectId: string, id: string): Promise<ScheduleDetail>;
   createSchedule(projectId: string, id: string, payload: ScheduleSpec): Promise<ScheduleDetail>;
+  createNamedSchedule?(projectId: string, name?: string): Promise<ScheduleDetail>;
   saveSchedule(projectId: string, id: string, payload: ScheduleSpec, revision: string): Promise<ScheduleDetail>;
   renameSchedule(projectId: string, id: string, name: string, revision: string): Promise<ScheduleDetail>;
   deleteSchedule(projectId: string, id: string, revision: string): Promise<void>;
@@ -154,6 +223,17 @@ export interface StudioApiClient {
   handlerUsages(projectId: string, id: string): Promise<HandlerUsage[]>;
   preview(projectId: string, payload: ViewSpec): Promise<Preview>;
   validate(projectId: string): Promise<Diagnostic[]>;
+  setDisplayName?(projectId: string, kind: "views" | "flows" | "schedules" | "handlers" | "commands" | "templates", key: string, name: string, manifestRevision: string): Promise<{ name: string; name_is_default: boolean }>;
+  gitStatus(projectId: string): Promise<GitStatus>;
+  gitChanges(projectId: string): Promise<GitChanges>;
+  gitHistory(projectId: string): Promise<GitCommit[]>;
+  gitConnect(projectId: string, payload: GitConnectInput): Promise<GitStatus>;
+  gitCreateRepository(projectId: string, payload: GitCreateRepositoryInput): Promise<GitStatus>;
+  gitDisconnect(projectId: string): Promise<GitStatus>;
+  gitFetch(projectId: string, token?: string): Promise<GitStatus>;
+  gitSync(projectId: string, token?: string): Promise<GitStatus>;
+  gitPush(projectId: string, message: string, token?: string): Promise<{ pushed: boolean; reason?: string; commit?: GitCommit; changed_files?: number; status: GitStatus }>;
+  gitPublish(projectId: string, payload: GitPublishInput): Promise<{ published: boolean; commit: string; version: string | null; published_at: string; status: GitStatus }>;
 }
 
 export class StudioApi implements StudioApiClient {
@@ -203,6 +283,10 @@ export class StudioApi implements StudioApiClient {
     return this.request(`/projects/${projectId}/views`, { method: "POST", body: { id, payload } });
   }
 
+  createNamedView(projectId: string, name?: string): Promise<ViewDetail> {
+    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { name } });
+  }
+
   saveView(projectId: string, id: string, payload: ViewSpec, revision: string): Promise<ViewDetail> {
     return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -245,6 +329,10 @@ export class StudioApi implements StudioApiClient {
     return this.request(`/projects/${projectId}/flows`, { method: "POST", body: { id, payload } });
   }
 
+  createNamedFlow(projectId: string, name?: string): Promise<FlowDetail> {
+    return this.request(`/projects/${projectId}/flows`, { method: "POST", body: { name } });
+  }
+
   saveFlow(projectId: string, id: string, payload: FlowSpec, revision: string): Promise<FlowDetail> {
     return this.request(`/projects/${projectId}/flows/${encodeURIComponent(id)}`, {
       method: "PUT",
@@ -274,6 +362,10 @@ export class StudioApi implements StudioApiClient {
 
   createSchedule(projectId: string, id: string, payload: ScheduleSpec): Promise<ScheduleDetail> {
     return this.request(`/projects/${projectId}/schedules`, { method: "POST", body: { id, payload } });
+  }
+
+  createNamedSchedule(projectId: string, name?: string): Promise<ScheduleDetail> {
+    return this.request(`/projects/${projectId}/schedules`, { method: "POST", body: { name } });
   }
 
   saveSchedule(projectId: string, id: string, payload: ScheduleSpec, revision: string): Promise<ScheduleDetail> {
@@ -340,6 +432,51 @@ export class StudioApi implements StudioApiClient {
     const value = await this.request<Diagnostic[] | { issues?: Diagnostic[]; diagnostics?: Diagnostic[] }>(`/projects/${projectId}/validation`);
     if (Array.isArray(value)) return value;
     return value.diagnostics ?? value.issues ?? [];
+  }
+
+  setDisplayName(projectId: string, kind: "views" | "flows" | "schedules" | "handlers" | "commands" | "templates", key: string, name: string, manifestRevision: string): Promise<{ name: string; name_is_default: boolean }> {
+    return this.request(`/projects/${projectId}/display-names`, { method: "POST", body: { kind, key, name, revision: manifestRevision } });
+  }
+
+  gitStatus(projectId: string): Promise<GitStatus> {
+    return this.request(`/projects/${projectId}/git/status`);
+  }
+
+  gitChanges(projectId: string): Promise<GitChanges> {
+    return this.request(`/projects/${projectId}/git/changes`);
+  }
+
+  async gitHistory(projectId: string): Promise<GitCommit[]> {
+    const value = await this.request<{ commits: GitCommit[] }>(`/projects/${projectId}/git/history`);
+    return value.commits;
+  }
+
+  gitConnect(projectId: string, payload: GitConnectInput): Promise<GitStatus> {
+    return this.request(`/projects/${projectId}/git/connect`, { method: "POST", body: payload });
+  }
+
+  gitCreateRepository(projectId: string, payload: GitCreateRepositoryInput): Promise<GitStatus> {
+    return this.request(`/projects/${projectId}/git/create-repository`, { method: "POST", body: payload });
+  }
+
+  gitDisconnect(projectId: string): Promise<GitStatus> {
+    return this.request(`/projects/${projectId}/git/disconnect`, { method: "POST" });
+  }
+
+  gitFetch(projectId: string, token?: string): Promise<GitStatus> {
+    return this.request(`/projects/${projectId}/git/fetch`, { method: "POST", body: { token } });
+  }
+
+  gitSync(projectId: string, token?: string): Promise<GitStatus> {
+    return this.request(`/projects/${projectId}/git/sync`, { method: "POST", body: { token } });
+  }
+
+  gitPush(projectId: string, message: string, token?: string): Promise<{ pushed: boolean; reason?: string; commit?: GitCommit; changed_files?: number; status: GitStatus }> {
+    return this.request(`/projects/${projectId}/git/push`, { method: "POST", body: { message, token } });
+  }
+
+  gitPublish(projectId: string, payload: GitPublishInput): Promise<{ published: boolean; commit: string; version: string | null; published_at: string; status: GitStatus }> {
+    return this.request(`/projects/${projectId}/git/publish`, { method: "POST", body: payload });
   }
 
   private async workspace(path: string, options?: RequestOptions): Promise<Workspace> {

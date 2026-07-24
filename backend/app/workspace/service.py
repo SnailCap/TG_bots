@@ -14,6 +14,7 @@ from tg_bot_core.project import (
     validate_project,
 )
 from tg_bot_core.store import BotUser, SqliteStore, StoredUserAvatar
+from unidecode import unidecode
 
 from .handlers import (
     HandlerInspector,
@@ -38,6 +39,15 @@ from .starter import StarterScaffolder
 
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 _RESOURCE_KINDS = {"views", "flows", "schedules"}
+_DISPLAY_NAME_KINDS = frozenset({"views", "flows", "schedules", "handlers", "commands", "templates"})
+_DISPLAY_KIND_LABELS = {
+    "views": "View",
+    "flows": "Flow",
+    "schedules": "Schedule",
+    "handlers": "Handler",
+    "commands": "Command",
+    "templates": "Template",
+}
 _JINJA = Environment()
 _ENV_ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 _TELEGRAM_TOKEN_MAX_LENGTH = 4096
@@ -109,6 +119,11 @@ class ProjectService:
                     {
                         "name": command.name,
                         **(
+                            {"display_name": self._display_name(project, "commands", command.name)}
+                            if not self._has_default_display_name(project, "commands", command.name)
+                            else {}
+                        ),
+                        **(
                             {"description": command.description}
                             if command.description is not None
                             else {}
@@ -118,12 +133,15 @@ class ProjectService:
                 ],
             },
             "handlers_revision": content_revision(handlers_path.read_bytes()),
-            "views": self._catalog_summaries(workspace, project.views.values()),
-            "flows": self._catalog_summaries(workspace, project.flows.values()),
-            "schedules": self._catalog_summaries(workspace, project.schedules.values()),
+            "views": self._catalog_summaries(workspace, project.views.values(), project, "views"),
+            "flows": self._catalog_summaries(workspace, project.flows.values(), project, "flows"),
+            "schedules": self._catalog_summaries(workspace, project.schedules.values(), project, "schedules"),
             "handlers": self._handler_summaries(workspace, project),
             "templates": [
-                {"path": path.relative_to(workspace.resources / "templates").as_posix()}
+                {
+                    "path": path.relative_to(workspace.resources / "templates").as_posix(),
+                    "name": self._display_name(project, "templates", path.relative_to(workspace.resources / "templates").as_posix()),
+                }
                 for path in sorted((workspace.resources / "templates").rglob("*.txt"))
             ],
         }
@@ -281,16 +299,16 @@ class ProjectService:
     def get_schedule(self, project_id: str, schedule_id: str) -> dict[str, Any]:
         return self._get_resource(project_id, "schedules", schedule_id)
 
-    def create_view(self, project_id: str, view_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._create_resource(project_id, "views", view_id, payload)
+    def create_view(self, project_id: str, view_id: str | None, payload: dict[str, Any], *, name: str | None = None) -> dict[str, Any]:
+        return self._create_resource_with_display_name(project_id, "views", view_id, payload, name)
 
-    def create_flow(self, project_id: str, flow_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._create_resource(project_id, "flows", flow_id, payload)
+    def create_flow(self, project_id: str, flow_id: str | None, payload: dict[str, Any], *, name: str | None = None) -> dict[str, Any]:
+        return self._create_resource_with_display_name(project_id, "flows", flow_id, payload, name)
 
     def create_schedule(
-        self, project_id: str, schedule_id: str, payload: dict[str, Any]
+        self, project_id: str, schedule_id: str | None, payload: dict[str, Any], *, name: str | None = None
     ) -> dict[str, Any]:
-        return self._create_resource(project_id, "schedules", schedule_id, payload)
+        return self._create_resource_with_display_name(project_id, "schedules", schedule_id, payload, name)
 
     def save_view(
         self, project_id: str, view_id: str, payload: dict[str, Any], revision: str
@@ -439,7 +457,14 @@ class ProjectService:
         if not target.is_file():
             raise ResourceNotFound(f"Template '{path}' does not exist.")
         raw = target.read_bytes()
-        return {"path": path, "content": raw.decode("utf-8"), "revision": content_revision(raw)}
+        project = self._load(workspace)
+        return {
+            "path": path,
+            "name": self._display_name(project, "templates", path),
+            "name_is_default": self._has_default_display_name(project, "templates", path),
+            "content": raw.decode("utf-8"),
+            "revision": content_revision(raw),
+        }
 
     def save_template(
         self,
@@ -646,7 +671,7 @@ class ProjectService:
         usages = handler_usages(project, handler_id)
         registry_path = workspace.resources / "handlers.json"
         return {
-            **self._binding_payload(binding),
+            **self._binding_payload(binding, project),
             "source_path": "handlers.json",
             "revision": content_revision(registry_path.read_bytes()),
             "inspection": self.inspector.inspect(workspace, binding, usages),
@@ -985,21 +1010,187 @@ class ProjectService:
         )
         return [item.as_dict() for item in diagnostics]
 
+    # Studio presentation names -------------------------------------------------------
+
+    def set_display_name(
+        self,
+        project_id: str,
+        *,
+        kind: str,
+        key: str,
+        name: str,
+        revision: str,
+    ) -> dict[str, str | bool]:
+        if kind not in _DISPLAY_NAME_KINDS:
+            raise WorkspaceError(f"Unsupported display name kind '{kind}'.")
+        normalized = name.strip()
+        if not normalized:
+            raise WorkspaceError("Resource name cannot be empty.")
+        if len(normalized) > 160:
+            raise WorkspaceError("Resource name must be at most 160 characters.")
+        workspace = self.repository.workspace(project_id)
+        manifest_path = workspace.resources / "bot.json"
+        with self.repository.lock(workspace):
+            self.repository.assert_revision(manifest_path, revision)
+            project = self._load(workspace)
+            if not self._display_name_target_exists(workspace, project, kind, key):
+                raise ResourceNotFound(f"{_DISPLAY_KIND_LABELS[kind]} '{key}' does not exist.")
+            payload = self.repository.read_json(manifest_path)
+            names = payload.setdefault("display_names", {})
+            if not isinstance(names, dict):
+                raise WorkspaceError("bot.json: display_names must be an object.")
+            values = names.setdefault(kind, {})
+            if not isinstance(values, dict):
+                raise WorkspaceError(f"bot.json: display_names.{kind} must be an object.")
+            if normalized == self._default_display_name(kind, key):
+                values.pop(key, None)
+            else:
+                values[key] = normalized
+            if not values:
+                names.pop(kind, None)
+            if not names:
+                payload.pop("display_names", None)
+            before = manifest_path.read_bytes()
+            try:
+                self.repository.atomic_write_json(manifest_path, payload)
+                self._load(workspace)
+            except BaseException:
+                self.repository.restore(manifest_path, before)
+                raise
+        return {
+            "name": self._display_name(self._load(workspace), kind, key),
+            "name_is_default": self._has_default_display_name(self._load(workspace), kind, key),
+        }
+
     # Internal resource operations ----------------------------------------------------
+
+    @staticmethod
+    def slugify_display_name(value: str, prefix: str) -> str:
+        ascii_value = unidecode(value).lower()
+        slug = re.sub(r"[^a-z0-9]+", "_", ascii_value).strip("_")
+        if not slug:
+            slug = prefix
+        if not slug[0].isalpha():
+            slug = f"{prefix}_{slug}"
+        return slug[:128].rstrip("_") or prefix
+
+    def _display_name(self, project, kind: str, key: str) -> str:
+        return project.manifest.display_names.get(kind, {}).get(key) or self._default_display_name(kind, key)
+
+    def _has_default_display_name(self, project, kind: str, key: str) -> bool:
+        return key not in project.manifest.display_names.get(kind, {})
+
+    @staticmethod
+    def _default_display_name(kind: str, key: str) -> str:
+        label = _DISPLAY_KIND_LABELS[kind]
+        stem = kind[:-1]
+        match = re.fullmatch(rf"{re.escape(stem)}_(\d+)", key.removesuffix(".txt"))
+        return f"{label} {match.group(1)}" if match else key
+
+    def _display_name_target_exists(self, workspace: Workspace, project, kind: str, key: str) -> bool:
+        if kind in _RESOURCE_KINDS:
+            return key in getattr(project, kind)
+        if kind == "handlers":
+            return key in project.handlers
+        if kind == "commands":
+            return any(command.name == key for command in project.commands.commands)
+        if kind == "templates":
+            try:
+                return self.repository.safe_path(workspace.resources / "templates", key, suffix=".txt").is_file()
+            except WorkspaceError:
+                return False
+        return False
 
     def _list_resources(self, project_id: str, kind: str) -> list[dict[str, Any]]:
         workspace = self.repository.workspace(project_id)
         project = self._load(workspace)
         values = getattr(project, kind)
-        return self._catalog_summaries(workspace, values.values())
+        return self._catalog_summaries(workspace, values.values(), project, kind)
 
     def _get_resource(self, project_id: str, kind: str, entity_id: str) -> dict[str, Any]:
         workspace = self.repository.workspace(project_id)
         project = self._load(workspace)
         path = self._entity_path(workspace, project, kind, entity_id)
-        return self.repository.detail(
+        detail = self.repository.detail(
             path, resource_root=workspace.resources, entity_id=entity_id
         )
+        detail["name"] = self._display_name(project, kind, entity_id)
+        detail["name_is_default"] = self._has_default_display_name(project, kind, entity_id)
+        return detail
+
+    def _create_resource_with_display_name(
+        self,
+        project_id: str,
+        kind: str,
+        entity_id: str | None,
+        payload: dict[str, Any],
+        name: str | None,
+    ) -> dict[str, Any]:
+        # Existing API callers may continue to supply an explicit technical id.
+        if entity_id is not None and name is None:
+            return self._create_resource(project_id, kind, entity_id, payload)
+
+        workspace = self.repository.workspace(project_id)
+        manifest_path = workspace.resources / "bot.json"
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            display_name = name.strip() if isinstance(name, str) and name.strip() else self._next_display_name(project, kind)
+            generated_id = self.slugify_display_name(display_name, kind[:-1])
+            path = self.repository.safe_path(
+                workspace.resources, Path(kind) / f"{generated_id}.json", suffix=".json"
+            )
+            if generated_id in getattr(project, kind) or path.exists():
+                raise ResourceConflict(
+                    f"{_DISPLAY_KIND_LABELS[kind]} name '{display_name}' conflicts with technical id '{generated_id}'."
+                )
+            self.repository.assert_revision(path, None, creating=True)
+            normalized = self._normalize_entity(
+                payload or self._default_resource_payload(kind, display_name), generated_id
+            )
+            manifest = self.repository.read_json(manifest_path)
+            before_manifest = manifest_path.read_bytes()
+            names = manifest.setdefault("display_names", {})
+            if not isinstance(names, dict):
+                raise WorkspaceError("bot.json: display_names must be an object.")
+            values = names.setdefault(kind, {})
+            if not isinstance(values, dict):
+                raise WorkspaceError(f"bot.json: display_names.{kind} must be an object.")
+            if display_name == self._default_display_name(kind, generated_id):
+                values.pop(generated_id, None)
+            else:
+                values[generated_id] = display_name
+            if not values:
+                names.pop(kind, None)
+            if not names:
+                manifest.pop("display_names", None)
+            try:
+                self.repository.atomic_write_json(path, normalized)
+                self.repository.atomic_write_json(manifest_path, manifest)
+                self._load(workspace)
+            except BaseException:
+                path.unlink(missing_ok=True)
+                self.repository.restore(manifest_path, before_manifest)
+                raise
+        return self._get_resource(project_id, kind, generated_id)
+
+    def _next_display_name(self, project, kind: str) -> str:
+        existing = {
+            self._display_name(project, kind, entity.id)
+            for entity in getattr(project, kind).values()
+        }
+        label = _DISPLAY_KIND_LABELS[kind]
+        ordinal = 1
+        while f"{label} {ordinal}" in existing:
+            ordinal += 1
+        return f"{label} {ordinal}"
+
+    @staticmethod
+    def _default_resource_payload(kind: str, display_name: str) -> dict[str, Any]:
+        if kind == "views":
+            return {"text": {"inline": display_name}, "keyboard": []}
+        if kind == "flows":
+            return {"initial_state": "start", "lifecycle": {}, "states": {"start": {"view": "", "events": {}}}}
+        return {"handler": "", "trigger": {"type": "interval", "seconds": 3600}, "payload": {}}
 
     def _create_resource(
         self,
@@ -1148,8 +1339,7 @@ class ProjectService:
             workspace.resources, entity.source_path, suffix=".json"
         )
 
-    @staticmethod
-    def _catalog_summaries(workspace: Workspace, entities) -> list[dict[str, Any]]:
+    def _catalog_summaries(self, workspace: Workspace, entities, project, kind: str) -> list[dict[str, Any]]:
         values: list[dict[str, Any]] = []
         for entity in sorted(entities, key=lambda item: item.id):
             path = WorkspaceRepository.safe_path(
@@ -1158,6 +1348,7 @@ class ProjectService:
             values.append(
                 {
                     "id": entity.id,
+                    "name": self._display_name(project, kind, entity.id),
                     "source_path": entity.source_path,
                     "revision": content_revision(path.read_bytes()),
                 }
@@ -1171,7 +1362,7 @@ class ProjectService:
             usages = handler_usages(project, binding.id)
             values.append(
                 {
-                    **self._binding_payload(binding),
+                    **self._binding_payload(binding, project),
                     "revision": revision,
                     "inspection": self.inspector.inspect(workspace, binding, usages),
                     "usage_count": len(usages),
@@ -1179,10 +1370,11 @@ class ProjectService:
             )
         return values
 
-    @staticmethod
-    def _binding_payload(binding) -> dict[str, Any]:
+    def _binding_payload(self, binding, project) -> dict[str, Any]:
         return {
             "id": binding.id,
+            "name": self._display_name(project, "handlers", binding.id),
+            "name_is_default": self._has_default_display_name(project, "handlers", binding.id),
             "module": binding.module,
             "symbol": binding.symbol,
             "kind": binding.kind,

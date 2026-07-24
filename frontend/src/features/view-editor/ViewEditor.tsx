@@ -18,6 +18,9 @@ export function ViewEditor({
   onChange,
   onOpenTemplate,
   onCreateTemplate,
+  displayName,
+  nameIsDefault = false,
+  onRename,
 }: {
   value: ViewSpec;
   isNew: boolean;
@@ -27,14 +30,32 @@ export function ViewEditor({
   onChange(value: ViewSpec): void;
   onOpenTemplate?(path: string): void;
   onCreateTemplate?(suggestedPath: string): void;
+  displayName?: string;
+  nameIsDefault?: boolean;
+  onRename?(name: string): void;
 }) {
   const [accessMockup, setAccessMockup] = useState<AccessLevel>("everyone");
+  const [nameDraft, setNameDraft] = useState("");
+  const effectiveName = displayName ?? value.id;
   return (
     <section className="editor" aria-label="View editor">
       <FormGrid columns={2} className="view-settings">
         <FormField label="Name:">
           {(controlProps) => (
-            <input {...controlProps} value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} />
+            <input
+              {...controlProps}
+              value={nameIsDefault ? nameDraft : (nameDraft || effectiveName)}
+              placeholder={nameIsDefault ? effectiveName : undefined}
+              onChange={(event) => {
+                if (displayName === undefined) onChange({ ...value, id: event.target.value });
+                else setNameDraft(event.target.value);
+              }}
+              onBlur={() => {
+                const next = nameDraft.trim();
+                if (next && next !== effectiveName) onRename?.(next);
+                setNameDraft("");
+              }}
+            />
           )}
         </FormField>
         <FormField label="Access:">

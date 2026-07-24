@@ -24,6 +24,9 @@ export function FlowEditor({
   options,
   handlerActions,
   onChange,
+  displayName,
+  nameIsDefault = false,
+  onRename,
 }: {
   value: FlowSpec;
   sourcePath: string;
@@ -32,15 +35,27 @@ export function FlowEditor({
   options: ActionOptions;
   handlerActions: HandlerActions;
   onChange(value: FlowSpec): void;
+  displayName?: string;
+  nameIsDefault?: boolean;
+  onRename?(name: string): void;
 }) {
   const [newState, setNewState] = useState("");
+  const [nameDraft, setNameDraft] = useState("");
   const stateIds = Object.keys(value.states);
   const flowOptions = { ...options, states: stateIds };
+  const effectiveName = displayName ?? value.id;
   return (
     <section className="editor editor--wide" aria-label="Flow editor">
       <FormGrid columns={2}>
-        <FormField label="Flow ID" layout="stacked" disabled={!isNew}>
-          {(controlProps) => <input {...controlProps} value={value.id} onChange={(event) => onChange({ ...value, id: event.target.value })} />}
+        <FormField label="Name" layout="stacked">
+          {(controlProps) => <input {...controlProps} value={nameIsDefault ? nameDraft : (nameDraft || effectiveName)} placeholder={nameIsDefault ? effectiveName : undefined} onChange={(event) => {
+            if (displayName === undefined) onChange({ ...value, id: event.target.value });
+            else setNameDraft(event.target.value);
+          }} onBlur={() => {
+            const next = nameDraft.trim();
+            if (next && next !== effectiveName) onRename?.(next);
+            setNameDraft("");
+          }} />}
         </FormField>
         <FormField label="Initial state" layout="stacked">
           {(controlProps) => <Select {...controlProps} ariaLabel="Initial state" value={value.initial_state} options={stateIds.map((stateId) => ({ value: stateId, label: stateId }))} onChange={(initial_state) => onChange({ ...value, initial_state })} />}

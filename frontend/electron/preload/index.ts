@@ -16,6 +16,10 @@ const desktop: StudioDesktop = {
     ipcRenderer.on("desktop:project-output", receive);
     return () => ipcRenderer.removeListener("desktop:project-output", receive);
   },
+  saveGitHubToken: (token: string): Promise<void> => ipcRenderer.invoke("desktop:save-github-token", token),
+  loadGitHubToken: (): Promise<string | null> => ipcRenderer.invoke("desktop:load-github-token"),
+  clearGitHubToken: (): Promise<void> => ipcRenderer.invoke("desktop:clear-github-token"),
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke("desktop:open-external", url),
 };
 
 contextBridge.exposeInMainWorld("studioDesktop", desktop);

@@ -9,11 +9,44 @@ from tg_bot_core.project import ProjectLoader, validate_project
 
 from app.workspace import ProjectService
 from app.workspace.service import (
+    ResourceConflict,
     ResourceInUse,
     RevisionConflict,
     WorkspaceError,
     WorkspaceNotFound,
 )
+
+
+def test_display_names_are_presentation_metadata_with_safe_generated_ids(tmp_path: Path) -> None:
+    service = ProjectService()
+    workspace = service.create_starter(parent_path=str(tmp_path), name="Display names")
+    project_id = workspace["project_id"]
+
+    created = service.create_view(project_id, None, {}, name="Первый экран")
+    assert created["id"] == "pervyi_ekran"
+    assert created["name"] == "Первый экран"
+    assert created["payload"]["text"] == {"inline": "Первый экран"}
+    assert created["name_is_default"] is False
+
+    with pytest.raises(ResourceConflict, match="pervyi_ekran"):
+        service.create_view(project_id, None, {}, name="Первый экран")
+
+    default_view = service.create_view(project_id, None, {})
+    assert default_view["id"] == "view_1"
+    assert default_view["name"] == "View 1"
+    assert default_view["name_is_default"] is True
+
+    manifest = service.get_manifest(project_id)
+    renamed = service.set_display_name(
+        project_id,
+        kind="views",
+        key=default_view["id"],
+        name="Welcome screen",
+        revision=manifest["revision"],
+    )
+    assert renamed == {"name": "Welcome screen", "name_is_default": False}
+    assert service.get_view(project_id, "view_1")["id"] == "view_1"
+    assert service.get_view(project_id, "view_1")["name"] == "Welcome screen"
 
 
 def test_starter_is_atomic_autonomous_v3_project(
@@ -60,7 +93,7 @@ def test_starter_is_atomic_autonomous_v3_project(
     assert not [item for item in validate_project(project, inspect_code=True) if item.level == "error"]
 
     pyproject = (root / "pyproject.toml").read_text(encoding="utf-8")
-    assert "b183a173a3f46f2b096a0b6ec877ad5cba41566a" in pyproject
+    assert "119f2200566021ebf4d5bafa44c08805dcf236ed" in pyproject
     assert "subdirectory=packages/tg-bot-core" in pyproject
     generated_python = "\n".join(
         path.read_text(encoding="utf-8") for path in (root / "src").rglob("*.py")
