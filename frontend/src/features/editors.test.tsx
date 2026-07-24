@@ -37,7 +37,7 @@ describe("handler UX", () => {
 });
 
 describe("flow outcome editor", () => {
-  it("updates a declarative outcome route without exposing runtime transitions", () => {
+  it("shows only the shared Name field and renames through display names", () => {
     const value: FlowSpec = {
       schema_version: 3,
       id: "checkout",
@@ -54,7 +54,7 @@ describe("flow outcome editor", () => {
         },
       },
     };
-    const onChange = vi.fn();
+    const onRename = vi.fn();
     render(<FlowEditor
       value={value}
       sourcePath="flows/checkout.json"
@@ -62,18 +62,20 @@ describe("flow outcome editor", () => {
       isNew={false}
       options={{ views: ["home"], flows: ["checkout"], states: ["details"], handlers: [handler("ready", 1, "message")] }}
       handlerActions={handlerActions()}
-      onChange={onChange}
+      onChange={vi.fn()}
+      displayName="Checkout"
+      onRename={onRename}
     />);
-    expect(screen.getByText("success")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByLabelText("Action")[0]);
-    fireEvent.click(screen.getByRole("option", { name: "Go to state" }));
-    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
-      states: expect.objectContaining({
-        details: expect.objectContaining({
-          on_message: expect.objectContaining({ outcomes: { success: { type: "flow.goto", target: "" } } }),
-        }),
-      }),
-    }));
+
+    const input = screen.getByLabelText("Name:");
+    expect(input).toHaveValue("Checkout");
+    expect(screen.queryByLabelText("Initial state:")).not.toBeInTheDocument();
+    expect(screen.queryByText("Flow lifecycle")).not.toBeInTheDocument();
+    expect(screen.queryByText("States")).not.toBeInTheDocument();
+
+    fireEvent.change(input, { target: { value: "Cart flow" } });
+    fireEvent.blur(input);
+    expect(onRename).toHaveBeenCalledWith("Cart flow");
   });
 });
 
@@ -143,35 +145,6 @@ describe("action editor", () => {
   });
 });
 
-describe("flow action scopes", () => {
-  it("allows flow.goto for on_start but not the other lifecycle hooks", () => {
-    const invocation = { handler: "checkout.lifecycle", outcomes: { success: { type: "noop" as const } } };
-    const value: FlowSpec = {
-      schema_version: 3,
-      id: "checkout",
-      initial_state: "start",
-      lifecycle: { on_start: invocation, on_complete: invocation, on_cancel: invocation, on_error: invocation },
-      states: { start: { view: "home", events: {} } },
-    };
-    render(<FlowEditor
-      value={value}
-      sourcePath="flows/checkout.json"
-      revision="flow-one"
-      isNew={false}
-      options={{ views: ["home"], flows: ["checkout"], states: ["start"], handlers: [] }}
-      handlerActions={handlerActions()}
-      onChange={vi.fn()}
-    />);
-    const [onStart, ...withoutCurrentFlow] = screen.getAllByLabelText("Action");
-    expect(selectValues(onStart)).toContain("Go to state");
-    expect(selectValues(onStart)).not.toContain("Emit flow event");
-    for (const select of withoutCurrentFlow) {
-      expect(selectValues(select)).not.toContain("Go to state");
-      expect(selectValues(select)).not.toContain("Emit flow event");
-    }
-  });
-});
-
 describe("view button IDs", () => {
   it("shows an implicit display name as a gray input hint without changing the technical ID", () => {
     const onRename = vi.fn();
@@ -185,6 +158,8 @@ describe("view button IDs", () => {
       options={{ views: ["view_1"], flows: [], states: [], handlers: [] }}
       handlerActions={handlerActions()}
       onChange={vi.fn()}
+      textContent="View 1"
+      onTextContentChange={vi.fn()}
       onRename={onRename}
     />);
 
@@ -205,6 +180,8 @@ describe("view button IDs", () => {
       options: { views: ["home", "settings"], flows: [], states: [], handlers: [] },
       handlerActions: handlerActions(),
       onChange,
+      textContent: "Home",
+      onTextContentChange: vi.fn(),
     };
     const { rerender } = render(<ViewEditor {...props} value={base} />);
     fireEvent.click(screen.getByRole("button", { name: "Add row" }));
@@ -233,111 +210,25 @@ describe("view button IDs", () => {
   });
 });
 
-describe("template selection", () => {
-  it("creates a new template from the suggestion list", () => {
-    const onCreateTemplate = vi.fn();
+describe("view message editor", () => {
+  it("edits message source without exposing template resource controls", () => {
+    const onTextContentChange = vi.fn();
     render(<ViewEditor
-      value={{ schema_version: 3, id: "home", text: { template: "receipt.txt" }, keyboard: [] }}
+      value={{ schema_version: 3, id: "home", text: { template: "views/home.txt" }, keyboard: [] }}
+      textContent="Hello {{ user.first_name }}"
       revision="view-one"
       isNew={false}
-      options={{ views: ["home"], flows: [], states: [], handlers: [], templates: [] }}
+      options={{ views: ["home"], flows: [], states: [], handlers: [] }}
       handlerActions={handlerActions()}
       onChange={vi.fn()}
-      onCreateTemplate={onCreateTemplate}
+      onTextContentChange={onTextContentChange}
     />);
 
-    fireEvent.focus(screen.getByLabelText("Template"));
-    fireEvent.mouseDown(screen.getByRole("button", { name: "Create template" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create template" }));
-    expect(onCreateTemplate).toHaveBeenCalledWith("receipt.txt");
-  });
-
-  it("shows recent templates on first focus, then filters after typing", () => {
-    window.localStorage.setItem("tg-bot-studio.recent-templates", JSON.stringify(["recent.txt"]));
-    const onChange = vi.fn();
-    const props = {
-      revision: "view-one",
-      isNew: false,
-      options: { views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "recent.txt", "receipt.txt"] },
-      handlerActions: handlerActions(),
-      onChange,
-    };
-    const { rerender } = render(<ViewEditor
-      value={{ schema_version: 3, id: "home", text: { template: "home.txt" }, keyboard: [] }}
-      {...props}
-    />);
-
-    const input = screen.getByLabelText("Template");
-    fireEvent.focus(input);
-    expect(screen.queryByRole("option", { name: "home.txt" })).not.toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "recent.txt" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "receipt.txt" })).toBeInTheDocument();
-
-    fireEvent.change(input, { target: { value: "receipt" } });
-    rerender(<ViewEditor {...props} value={{ schema_version: 3, id: "home", text: { template: "receipt" }, keyboard: [] }} />);
-    expect(screen.queryByRole("option", { name: "recent.txt" })).not.toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "receipt.txt" })).toBeInTheDocument();
-    window.localStorage.removeItem("tg-bot-studio.recent-templates");
-  });
-
-  it("allows typing a template name or choosing one from the template picker", () => {
-    const onChange = vi.fn();
-    render(<ViewEditor
-      value={{ schema_version: 3, id: "home", text: { template: "home.txt" }, keyboard: [] }}
-      revision="view-one"
-      isNew={false}
-      options={{ views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "checkout/receipt.txt"] }}
-      handlerActions={handlerActions()}
-      onChange={onChange}
-    />);
-
-    const input = screen.getByLabelText("Template") as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "checkout/receipt.txt" } });
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "checkout/receipt.txt" } }));
-    fireEvent.click(screen.getByRole("button", { name: "Browse templates" }));
-    expect(screen.getByRole("dialog", { name: "Choose template" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "home.txt" }));
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "home.txt" } }));
-  });
-
-  it("selects an inline template suggestion with arrow keys", () => {
-    const onChange = vi.fn();
-    const value = { schema_version: 3 as const, id: "home", text: { template: "" }, keyboard: [] };
-    const props = {
-      revision: "view-one",
-      isNew: false,
-      options: { views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "help.txt"] },
-      handlerActions: handlerActions(),
-      onChange,
-    };
-    const { rerender } = render(<ViewEditor {...props} value={value} />);
-
-    const input = screen.getByLabelText("Template");
-    fireEvent.change(input, { target: { value: "h" } });
-    rerender(<ViewEditor {...props} value={{ ...value, text: { template: "h" } }} />);
-    fireEvent.keyDown(input, { key: "ArrowDown" });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "home.txt" } }));
-  });
-
-  it("selects the first inline template suggestion with Enter", () => {
-    const onChange = vi.fn();
-    const value = { schema_version: 3 as const, id: "home", text: { template: "" }, keyboard: [] };
-    const props = {
-      revision: "view-one",
-      isNew: false,
-      options: { views: ["home"], flows: [], states: [], handlers: [], templates: ["home.txt", "help.txt"] },
-      handlerActions: handlerActions(),
-      onChange,
-    };
-    const { rerender } = render(<ViewEditor {...props} value={value} />);
-
-    const input = screen.getByLabelText("Template");
-    fireEvent.change(input, { target: { value: "h" } });
-    rerender(<ViewEditor {...props} value={{ ...value, text: { template: "h" } }} />);
-    fireEvent.keyDown(input, { key: "Enter" });
-
-    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ text: { template: "home.txt" } }));
+    expect(screen.getByLabelText("Message text editor")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Text source")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Updated" } });
+    expect(onTextContentChange).toHaveBeenCalledWith("Updated");
   });
 });
 

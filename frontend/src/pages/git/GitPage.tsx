@@ -308,7 +308,7 @@ function detailsFor(caught: unknown): string[] {
   return [];
 }
 
-function GitMark() { return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="5" r="2.2" /><circle cx="17" cy="8" r="2.2" /><circle cx="7" cy="19" r="2.2" /><path d="M7 7.2v9.6M9.2 8h4.2A3.6 3.6 0 0 0 17 4.4V5.8" /></svg>; }
+function GitMark() { return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.4" /><path d="M4.8 12h4.8M14.4 12h4.8" /></svg>; }
 function RefreshIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.7 7.4A6.2 6.2 0 1 0 16 11M15.7 3.8v3.6h-3.6" /></svg>; }
 function DownloadIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8v9.1m-3.4-3.4 3.4 3.4 3.4-3.4M3.3 14v2.7h13.4V14" /></svg>; }
 function UploadIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3.9M6.6 7.3 10 3.9l3.4 3.4M3.3 14v2.7h13.4V14" /></svg>; }

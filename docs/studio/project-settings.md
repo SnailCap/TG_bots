@@ -27,5 +27,5 @@ Use `frontend/src/shared/ui/OverlayDialog.tsx` for any temporary full-screen Stu
 It owns the backdrop, Escape handling, focus trapping, focus restoration, and backdrop click
 dismissal. Feature components provide only their dialog content and a labelled `onClose` action.
 
-The template browser and project settings are both built on this primitive. New overlays should
-reuse it rather than implementing another fixed backdrop or modal keyboard handler.
+Project settings and confirmation dialogs are built on this primitive. New overlays should reuse
+it rather than implementing another fixed backdrop or modal keyboard handler.

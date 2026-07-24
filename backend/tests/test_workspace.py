@@ -25,7 +25,8 @@ def test_display_names_are_presentation_metadata_with_safe_generated_ids(tmp_pat
     created = service.create_view(project_id, None, {}, name="Первый экран")
     assert created["id"] == "pervyi_ekran"
     assert created["name"] == "Первый экран"
-    assert created["payload"]["text"] == {"inline": "Первый экран"}
+    assert created["payload"]["text"] == {"template": "views/pervyi_ekran.txt"}
+    assert created["text_content"] == "Первый экран"
     assert created["name_is_default"] is False
 
     with pytest.raises(ResourceConflict, match="pervyi_ekran"):
@@ -49,6 +50,12 @@ def test_display_names_are_presentation_metadata_with_safe_generated_ids(tmp_pat
     assert service.get_view(project_id, "view_1")["name"] == "Welcome screen"
 
 
+def test_slugify_display_name_transliterates_without_runtime_dependency() -> None:
+    assert ProjectService.slugify_display_name("Первый экран", "view") == "pervyi_ekran"
+    assert ProjectService.slugify_display_name("Crème brûlée", "view") == "creme_brulee"
+    assert ProjectService.slugify_display_name("123", "view") == "view_123"
+
+
 def test_starter_is_atomic_autonomous_v3_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -63,7 +70,7 @@ def test_starter_is_atomic_autonomous_v3_project(
         "resources/schedules/.gitkeep",
         "resources/views/home.json",
         "resources/flows/home.json",
-        "resources/templates/home.txt",
+        "resources/templates/views/home.txt",
         "src/my_v3_bot/__init__.py",
         "src/my_v3_bot/__main__.py",
         "src/my_v3_bot/handlers/__init__.py",
@@ -210,6 +217,11 @@ def test_v3_resource_crud_revisions_commands_and_reference_safe_delete(
     with pytest.raises(RevisionConflict):
         service.save_flow(project_id, "details", changed["payload"], flow["revision"])
 
+    described_flow = next(
+        item for item in service.describe(project_id)["flows"] if item["id"] == "details"
+    )
+    assert described_flow["states"] == ["show"]
+
     with pytest.raises(ResourceInUse):
         service.delete_view(project_id, "details", view["revision"])
 
@@ -246,38 +258,101 @@ def test_v3_resource_crud_revisions_commands_and_reference_safe_delete(
     assert service.list_schedules(project_id) == []
 
 
-def test_preview_templates_manifest_and_path_containment(tmp_path: Path) -> None:
+def test_view_text_storage_hydrates_and_canonicalizes_legacy_sources(tmp_path: Path) -> None:
     service = ProjectService()
     workspace = service.create_starter(parent_path=str(tmp_path), name="Preview Bot")
     project_id = workspace["project_id"]
+    root = Path(workspace["project_root"])
 
-    template = service.get_template(project_id, "home.txt")
-    saved = service.save_template(
+    home = service.get_view(project_id, "home")
+    assert home["payload"]["text"] == {"template": "views/home.txt"}
+    assert home["text_content"] == "Welcome to your bot!\n"
+    saved = service.save_view(
         project_id,
-        "home.txt",
-        "Hello {{ user.first_name }}",
-        template["revision"],
+        "home",
+        home["payload"],
+        home["revision"],
+        text_content="Hello {{ user.first_name }}",
+        text_revision=home["text_revision"],
     )
     preview = service.preview(
         project_id,
         {
-            "text": {"template": "home.txt"},
+            "text": saved["payload"]["text"],
             "keyboard": [[{"id": "noop", "text": "OK", "action": {"type": "noop"}}]],
         },
     )
-    assert saved["content"] == "Hello {{ user.first_name }}"
-    assert preview["text"] == saved["content"]
+    assert saved["text_content"] == "Hello {{ user.first_name }}"
+    assert preview["text"] == saved["text_content"]
     assert preview["keyboard"][0][0]["id"] == "noop"
 
-    with pytest.raises(ResourceInUse):
-        service.delete_template(project_id, "home.txt", saved["revision"])
+    (root / "resources" / "templates" / "views" / "home.txt").write_text(
+        "Changed outside Studio", encoding="utf-8"
+    )
+    with pytest.raises(RevisionConflict):
+        service.save_view(
+            project_id,
+            "home",
+            saved["payload"],
+            saved["revision"],
+            text_content="Overwrite external change",
+            text_revision=saved["text_revision"],
+        )
 
-    unused = service.save_template(project_id, "unused.txt", "", None)
-    service.delete_template(project_id, "unused.txt", unused["revision"])
-    assert {item["path"] for item in service.describe(project_id)["templates"]} == {"home.txt"}
+    inline_path = root / "resources" / "views" / "legacy_inline.json"
+    service.repository.atomic_write_json(
+        inline_path,
+        {
+            "schema_version": 3,
+            "id": "legacy_inline",
+            "text": {"inline": "Legacy inline"},
+            "keyboard": [],
+        },
+    )
+    inline = service.get_view(project_id, "legacy_inline")
+    assert inline["text_content"] == "Legacy inline"
+    assert inline["text_revision"] is None
+    canonical_inline = service.save_view(
+        project_id,
+        "legacy_inline",
+        inline["payload"],
+        inline["revision"],
+        text_content="Updated inline",
+        text_revision=None,
+    )
+    assert canonical_inline["payload"]["text"] == {
+        "template": "views/legacy_inline.txt"
+    }
+    assert (root / "resources" / "templates" / "views" / "legacy_inline.txt").read_text(
+        encoding="utf-8"
+    ) == "Updated inline"
 
-    with pytest.raises(WorkspaceError):
-        service.save_template(project_id, "../escape.txt", "no", None)
+    legacy_template = root / "resources" / "templates" / "legacy.txt"
+    legacy_template.write_text("Legacy template", encoding="utf-8")
+    legacy_view_path = root / "resources" / "views" / "legacy_template.json"
+    service.repository.atomic_write_json(
+        legacy_view_path,
+        {
+            "schema_version": 3,
+            "id": "legacy_template",
+            "text": {"template": "legacy.txt"},
+            "keyboard": [],
+        },
+    )
+    legacy = service.get_view(project_id, "legacy_template")
+    assert legacy["text_content"] == "Legacy template"
+    canonical_legacy = service.save_view(
+        project_id,
+        "legacy_template",
+        legacy["payload"],
+        legacy["revision"],
+        text_content="Canonical template",
+        text_revision=legacy["text_revision"],
+    )
+    assert canonical_legacy["payload"]["text"] == {
+        "template": "views/legacy_template.txt"
+    }
+    assert legacy_template.read_text(encoding="utf-8") == "Legacy template"
 
     manifest = service.get_manifest(project_id)
     invalid = json.loads(json.dumps(manifest["payload"]))
@@ -298,9 +373,54 @@ def test_renaming_a_view_updates_project_references(tmp_path: Path) -> None:
     assert service.get_manifest(project_id)["payload"]["entry_view"] == "welcome"
     assert service.get_flow(project_id, "home")["payload"]["states"]["home"]["view"] == "welcome"
     assert [item["id"] for item in service.describe(project_id)["views"]] == ["welcome"]
+    root = Path(workspace["project_root"])
+    assert not (root / "resources" / "templates" / "views" / "home.txt").exists()
+    assert (root / "resources" / "templates" / "views" / "welcome.txt").is_file()
+    assert renamed["payload"]["text"] == {"template": "views/welcome.txt"}
 
 
-def test_renaming_flow_template_and_schedule_updates_resources(tmp_path: Path) -> None:
+def test_legacy_view_rename_rollback_preserves_unowned_target_template(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service = ProjectService()
+    workspace = service.create_starter(parent_path=str(tmp_path), name="Legacy Rename")
+    project_id = workspace["project_id"]
+    root = Path(workspace["project_root"])
+    resources = root / "resources"
+
+    (resources / "templates" / "legacy.txt").write_text("Legacy", encoding="utf-8")
+    target_template = resources / "templates" / "views" / "renamed.txt"
+    target_template.write_text("Keep me", encoding="utf-8")
+    service.repository.atomic_write_json(
+        resources / "views" / "legacy.json",
+        {
+            "schema_version": 3,
+            "id": "legacy",
+            "text": {"template": "legacy.txt"},
+            "keyboard": [],
+        },
+    )
+    legacy = service.get_view(project_id, "legacy")
+    original_load = service._load
+    load_count = 0
+
+    def fail_after_writes(workspace):
+        nonlocal load_count
+        load_count += 1
+        if load_count == 2:
+            raise WorkspaceError("simulated rename validation failure")
+        return original_load(workspace)
+
+    monkeypatch.setattr(service, "_load", fail_after_writes)
+    with pytest.raises(WorkspaceError, match="simulated rename validation failure"):
+        service.rename_view(project_id, "legacy", "renamed", legacy["revision"])
+
+    assert (resources / "views" / "legacy.json").is_file()
+    assert not (resources / "views" / "renamed.json").exists()
+    assert target_template.read_text(encoding="utf-8") == "Keep me"
+
+
+def test_renaming_flow_and_schedule_updates_resources(tmp_path: Path) -> None:
     service = ProjectService()
     workspace = service.create_starter(parent_path=str(tmp_path), name="Rename Resources")
     project_id = workspace["project_id"]
@@ -317,13 +437,6 @@ def test_renaming_flow_template_and_schedule_updates_resources(tmp_path: Path) -
     assert service.get_manifest(project_id)["payload"]["start"]["flow"] == "welcome"
     assert service.get_commands(project_id)["payload"]["commands"][0]["action"]["target"] == "welcome"
 
-    template = service.get_template(project_id, "home.txt")
-    renamed_template = service.rename_template(
-        project_id, "home.txt", "welcome.txt", template["revision"]
-    )
-    assert renamed_template["path"] == "welcome.txt"
-    assert service.get_view(project_id, "home")["payload"]["text"]["template"] == "welcome.txt"
-
     schedule = service.create_schedule(
         project_id,
         "daily",
@@ -332,6 +445,39 @@ def test_renaming_flow_template_and_schedule_updates_resources(tmp_path: Path) -
     renamed_schedule = service.rename_schedule(project_id, "daily", "nightly", schedule["revision"])
     assert renamed_schedule["id"] == "nightly"
     assert [item["id"] for item in service.list_schedules(project_id)] == ["nightly"]
+
+
+def test_delete_view_removes_only_its_owned_template(tmp_path: Path) -> None:
+    service = ProjectService()
+    workspace = service.create_starter(parent_path=str(tmp_path), name="Delete View Text")
+    project_id = workspace["project_id"]
+    root = Path(workspace["project_root"])
+
+    owned = service.create_view(
+        project_id,
+        "owned",
+        {"text": {"inline": "Owned"}, "keyboard": []},
+    )
+    owned_template = root / "resources" / "templates" / "views" / "owned.txt"
+    assert owned_template.is_file()
+    service.delete_view(project_id, "owned", owned["revision"])
+    assert not owned_template.exists()
+
+    shared_template = root / "resources" / "templates" / "shared.txt"
+    shared_template.write_text("Shared", encoding="utf-8")
+    legacy_view_path = root / "resources" / "views" / "legacy.json"
+    service.repository.atomic_write_json(
+        legacy_view_path,
+        {
+            "schema_version": 3,
+            "id": "legacy",
+            "text": {"template": "shared.txt"},
+            "keyboard": [],
+        },
+    )
+    legacy = service.get_view(project_id, "legacy")
+    service.delete_view(project_id, "legacy", legacy["revision"])
+    assert shared_template.read_text(encoding="utf-8") == "Shared"
 
 
 def test_validation_uses_the_shared_project_load_code(tmp_path: Path) -> None:

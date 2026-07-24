@@ -1,8 +1,7 @@
-import type { CommandsSpec, FlowSpec, ScheduleSpec, TemplateDetail, ViewSpec, Workspace } from "../../domain/project";
+import type { CommandsSpec, FlowSpec, ScheduleSpec, ViewDetail, Workspace } from "../../domain/project";
 
 export type PreviewEditor =
-  | { kind: "view"; payload: ViewSpec }
-  | { kind: "template"; detail: TemplateDetail }
+  | { kind: "view"; detail: ViewDetail }
   | { kind: "flow"; payload: FlowSpec }
   | { kind: "commands"; payload: CommandsSpec }
   | { kind: "schedule"; payload: ScheduleSpec }
@@ -28,34 +27,22 @@ export function createTelegramPreviewModel(workspace: Workspace, editor: Preview
   if (!editor) return {
     ...base,
     key: "empty",
-    messages: [{ id: "empty", author: "bot", text: "Choose a view, template, flow, or command to see its conversation here." }],
+    messages: [{ id: "empty", author: "bot", text: "Choose a view, flow, or command to see its conversation here." }],
   };
 
   if (editor.kind === "view") {
-    const text = "inline" in editor.payload.text
-      ? editor.payload.text.inline || "This message is empty."
-      : editor.payload.text.template ? `Template: ${editor.payload.text.template}` : "Choose a template for this message.";
-    const keyboard = editor.payload.keyboard.map((row) => row.map((button) => button.text || "Button")).filter((row) => row.length > 0);
+    const text = editor.detail.text_content || "This message is empty.";
+    const keyboard = editor.detail.payload.keyboard.map((row) => row.map((button) => button.text || "Button")).filter((row) => row.length > 0);
     return {
       ...base,
-      key: `view:${editor.payload.id}:${text}:${JSON.stringify(keyboard)}`,
-      contextLabel: `View · ${editor.payload.id || "new view"}`,
+      key: `view:${editor.detail.payload.id}:${text}:${JSON.stringify(keyboard)}`,
+      contextLabel: `View · ${editor.detail.payload.id || "new view"}`,
       messages: [
         { id: "view-request", author: "user", text: "Open this screen" },
         { id: "view-response", author: "bot", text, buttons: keyboard.length ? keyboard : undefined },
       ],
     };
   }
-
-  if (editor.kind === "template") return {
-    ...base,
-    key: `template:${editor.detail.path}:${editor.detail.content}`,
-    contextLabel: `Template · ${editor.detail.path || "new template"}`,
-    messages: [
-      { id: "template-request", author: "user", text: "Show the template" },
-      { id: "template-response", author: "bot", text: editor.detail.content || "This template is empty." },
-    ],
-  };
 
   if (editor.kind === "flow") {
     const initial = editor.payload.states[editor.payload.initial_state];

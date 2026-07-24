@@ -86,11 +86,11 @@ describe("GitPage", () => {
       gitStatus: vi.fn().mockResolvedValue(changed),
       gitFetch: vi.fn().mockResolvedValue(changed),
       gitChanges: vi.fn().mockResolvedValue({
-        suggested_message: "Update 1 templates",
-        changes: [{ path: "resources/templates/welcome.txt", old_path: null, status: "modified", staged: false, summary: "Template “welcome” updated", binary: false, diff: "@@ -1 +1 @@\n-Hello\n+Hello team" }],
+        suggested_message: "Update 1 view texts",
+        changes: [{ path: "resources/templates/views/welcome.txt", old_path: null, status: "modified", staged: false, summary: "View text “welcome” updated", binary: false, diff: "@@ -1 +1 @@\n-Hello\n+Hello team" }],
       }),
     }));
-    const summary = await screen.findByText("Template “welcome” updated");
+    const summary = await screen.findByText("View text “welcome” updated");
     fireEvent.click(summary.closest("summary")!);
     expect(screen.getByText("+Hello team")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Push" })).toBeEnabled();
@@ -112,8 +112,8 @@ describe("GitPage", () => {
       gitFetch: vi.fn().mockResolvedValue(changed),
       gitPush: push,
       gitChanges: vi.fn().mockResolvedValue({
-        suggested_message: "Update welcome template",
-        changes: [{ path: "resources/templates/home.txt", old_path: null, status: "modified", staged: false, summary: "Template “home” updated", binary: false, diff: "-A\n+B" }],
+        suggested_message: "Update welcome text",
+        changes: [{ path: "resources/templates/views/home.txt", old_path: null, status: "modified", staged: false, summary: "View text “home” updated", binary: false, diff: "-A\n+B" }],
       }),
     });
     renderPage(api);

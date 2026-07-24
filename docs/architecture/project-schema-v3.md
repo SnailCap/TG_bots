@@ -44,12 +44,11 @@ Loader принимает путь как к project root, так и непос�
 
 ### Studio presentation names
 
-Studio may add an optional `display_names` object to `bot.json`. It maps a resource kind (`views`, `flows`, `schedules`, `handlers`, `commands`, or `templates`) and its stable technical ID/path to a human-facing name. This metadata is additive in schema v3: old projects omit it, and runtime dispatch never reads it.
+Studio may add an optional `display_names` object to `bot.json`. It maps a Studio resource kind (`views`, `flows`, `schedules`, `handlers`, or `commands`) and its stable technical ID to a human-facing name. This metadata is additive in schema v3: old projects omit it, and runtime dispatch never reads it.
 
 ```json
 "display_names": {
-  "views": {"welcome_screen": "Welcome screen"},
-  "templates": {"welcome.txt": "Welcome message"}
+  "views": {"welcome_screen": "Welcome screen"}
 }
 ```
 
@@ -66,7 +65,7 @@ Studio creates IDs from a supplied display name using lowercase ASCII `snake_cas
   "schema_version": 3,
   "id": "home",
   "text": {
-    "template": "home.txt"
+    "template": "views/home.txt"
   },
   "keyboard": [
     [
@@ -94,9 +93,11 @@ Studio creates IDs from a supplied display name using lowercase ASCII `snake_cas
 `text` должен содержать ровно одно поле:
 
 - `{"inline": "Hello {{ user.first_name }}"}`;
-- `{"template": "home.txt"}` — POSIX-style relative path внутри `resources/templates/`.
+- `{"template": "views/home.txt"}` — POSIX-style relative path внутри `resources/templates/`.
 
 Templates читаются только из `*.txt`. Validation проверяет каждый template один раз, включая неиспользуемые, и выдаёт diagnostics с его собственным `templates/<path>`. Runtime использует `StrictUndefined`, передаёт session values и объект `user`, а PTB отправляет результат как обычный текст без неявного HTML/Markdown parse mode. Пустой результат и текст длиннее 4096 символов отклоняются до вызова Telegram API.
+
+Studio не показывает templates как отдельный ресурс. Редактор всегда работает с текстом выбранного view, а backend при сохранении пишет его в owned path `resources/templates/views/<view-id>.txt` и обновляет `text.template`. Открытые legacy `inline` или non-canonical template references читаются как обычно и канонизируются только при следующем сохранении через Studio. Это UI/storage policy Studio, а не изменение schema v3 или runtime contract.
 
 `keyboard` — массив rows, каждая row — массив buttons. Button `id` является глобальным action ID всего проекта. Core кодирует callback как `v3:a:<button-id>`; UTF-8 payload обязан помещаться в 64 bytes. Текст, handler ID или target в callback не включаются. При dispatch ID дополнительно должен принадлежать текущему сохранённому view session, поэтому кнопка из старого экрана не выполняет action другого экрана.
 

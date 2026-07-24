@@ -11,7 +11,6 @@ export interface DraggableResource {
 }
 
 export type ResourceDropTargetSpec =
-  | { type: "template-reference" }
   | { type: "view-reference" }
   | { type: "flow-reference" }
   | { type: "handler-reference"; handlerKind: HandlerKind };

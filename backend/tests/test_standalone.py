@@ -45,7 +45,12 @@ def test_generated_project_runs_without_studio_runtime_and_restores_session(
     ]
     saved_home = client.put(
         f"/api/v1/projects/{project_id}/views/home",
-        json={"payload": home_payload, "revision": home["revision"]},
+        json={
+            "payload": home_payload,
+            "revision": home["revision"],
+            "text_content": home["text_content"],
+            "text_revision": home["text_revision"],
+        },
     )
     assert saved_home.status_code == 200
     flow = client.get(f"/api/v1/projects/{project_id}/flows/home").json()

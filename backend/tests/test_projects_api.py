@@ -86,21 +86,45 @@ def test_v3_api_resource_and_handler_contract(tmp_path: Path) -> None:
     project_id = workspace["project_id"]
     assert workspace["schema_version"] == 3
     assert workspace["package"] == "api_bot"
+    assert "templates" not in workspace
 
     home = client.get(f"/api/v1/projects/{project_id}/views/home").json()
+    assert home["payload"]["text"] == {"template": "views/home.txt"}
+    assert home["text_content"] == "Welcome to your bot!\n"
+    assert home["text_revision"]
     home["payload"]["keyboard"] = [
         [{"id": "api_action", "text": "Run", "action": {"type": "noop"}}]
     ]
+    missing_text_revision = client.put(
+        f"/api/v1/projects/{project_id}/views/home",
+        json={
+            "payload": home["payload"],
+            "revision": home["revision"],
+            "text_content": "Missing text revision",
+        },
+    )
+    assert missing_text_revision.status_code == 422
     saved = client.put(
         f"/api/v1/projects/{project_id}/views/home",
-        json={"payload": home["payload"], "revision": home["revision"]},
+        json={
+            "payload": home["payload"],
+            "revision": home["revision"],
+            "text_content": "Updated API text",
+            "text_revision": home["text_revision"],
+        },
     )
     assert saved.status_code == 200
     saved_view = saved.json()
+    assert saved_view["text_content"] == "Updated API text"
 
     stale = client.put(
         f"/api/v1/projects/{project_id}/views/home",
-        json={"payload": home["payload"], "revision": home["revision"]},
+        json={
+            "payload": home["payload"],
+            "revision": home["revision"],
+            "text_content": "Stale API text",
+            "text_revision": home["text_revision"],
+        },
     )
     assert stale.status_code == 409
     assert stale.json()["detail"]["code"] == "revision_conflict"
@@ -203,7 +227,7 @@ def test_v3_api_resource_and_handler_contract(tmp_path: Path) -> None:
     assert not [item for item in validation["issues"] if item["level"] == "error"]
 
 
-def test_resource_rename_routes_cover_every_named_resource(tmp_path: Path) -> None:
+def test_resource_rename_routes_cover_studio_named_resources(tmp_path: Path) -> None:
     client = TestClient(create_app())
     workspace = client.post(
         "/api/v1/projects", json={"parent_path": str(tmp_path), "name": "Rename API Bot"}
@@ -226,13 +250,7 @@ def test_resource_rename_routes_cover_every_named_resource(tmp_path: Path) -> No
     assert renamed_flow.status_code == 200
     assert renamed_flow.json()["id"] == "launch"
 
-    template = client.get(f"/api/v1/projects/{project_id}/templates/home.txt").json()
-    renamed_template = client.post(
-        f"/api/v1/projects/{project_id}/templates/home.txt/rename",
-        json={"path": "welcome.txt", "revision": template["revision"]},
-    )
-    assert renamed_template.status_code == 200
-    assert renamed_template.json()["path"] == "welcome.txt"
+    assert client.get(f"/api/v1/projects/{project_id}/templates/home.txt").status_code == 404
 
     handlers = client.get(f"/api/v1/projects/{project_id}/handlers").json()
     handler = client.post(

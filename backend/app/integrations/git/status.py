@@ -46,6 +46,7 @@ def semantic_summary(change: dict) -> str:
     status = change["status"]
     label = {"modified": "updated", "added": "added", "deleted": "removed", "renamed": "renamed", "untracked": "added"}.get(status, status)
     patterns = (
+        (r"^resources/templates/views/(.+)\.txt$", "View text"),
         (r"^resources/templates/(.+)\.txt$", "Template"),
         (r"^resources/views/(.+)\.json$", "View"),
         (r"^resources/flows/(.+)\.json$", "Flow"),

@@ -27,7 +27,7 @@ from app.integrations.git.models import (
 )
 from app.integrations.git.github_client import GitHubClient
 from app.integrations.git.service import GitService
-from app.integrations.git.status import parse_porcelain
+from app.integrations.git.status import parse_porcelain, semantic_summary
 from app.workspace import ProjectService
 
 
@@ -151,6 +151,15 @@ def test_status_parser_supports_renames_and_untracked_files() -> None:
     ]
 
 
+def test_internal_view_text_changes_are_presented_as_view_edits() -> None:
+    change = {
+        "path": "resources/templates/views/welcome.txt",
+        "status": "modified",
+    }
+    assert semantic_summary(change) == "View text “welcome” updated"
+    assert GitService._suggested_message([change]) == "Update 1 view texts"
+
+
 def test_sync_fast_forwards_clean_project(connected, tmp_path: Path) -> None:
     service, project_id, root, bare = connected
     other = collaborator(tmp_path, bare)
@@ -181,7 +190,7 @@ def test_push_rechecks_remote_and_is_rejected_when_behind(connected, tmp_path: P
     git(other, "add", "README.md")
     git(other, "commit", "-m", "Remote change")
     git(other, "push", "origin", "dev")
-    (root / "resources" / "templates" / "home.txt").write_text("Local\n", encoding="utf-8")
+    (root / "resources" / "templates" / "views" / "home.txt").write_text("Local\n", encoding="utf-8")
     with pytest.raises(RemoteChangesDetected):
         service.push(project_id, GitPushRequest(message="Local change"))
 
@@ -199,18 +208,18 @@ def test_push_blocks_secrets_and_keeps_them_uncommitted(connected) -> None:
 
 def test_successful_push_and_history(connected) -> None:
     service, project_id, root, _bare = connected
-    (root / "resources" / "templates" / "home.txt").write_text("Welcome team!\n", encoding="utf-8")
-    result = service.push(project_id, GitPushRequest(message="Update welcome template"))
+    (root / "resources" / "templates" / "views" / "home.txt").write_text("Welcome team!\n", encoding="utf-8")
+    result = service.push(project_id, GitPushRequest(message="Update welcome text"))
     assert result["pushed"] is True
-    assert result["commit"]["message"] == "Update welcome template"
+    assert result["commit"]["message"] == "Update welcome text"
     changes = service.changes(project_id)
     assert changes["changes"] == []
-    assert service.history(project_id)["commits"][0]["message"] == "Update welcome template"
+    assert service.history(project_id)["commits"][0]["message"] == "Update welcome text"
 
 
 def test_publish_fast_forwards_production_and_creates_tag(connected) -> None:
     service, project_id, root, bare = connected
-    (root / "resources" / "templates" / "home.txt").write_text("Release\n", encoding="utf-8")
+    (root / "resources" / "templates" / "views" / "home.txt").write_text("Release\n", encoding="utf-8")
     service.push(project_id, GitPushRequest(message="Prepare release"))
     result = service.publish(project_id, GitPublishRequest(version="patch"))
     assert result["version"] == "v0.0.1"
@@ -228,7 +237,7 @@ def test_publish_stops_when_production_diverged(connected, tmp_path: Path) -> No
     git(production, "add", "production-note.txt")
     git(production, "commit", "-m", "Production-only hotfix")
     git(production, "push", "origin", "production")
-    (root / "resources" / "templates" / "home.txt").write_text("Next release\n", encoding="utf-8")
+    (root / "resources" / "templates" / "views" / "home.txt").write_text("Next release\n", encoding="utf-8")
     service.push(project_id, GitPushRequest(message="Next development"))
     with pytest.raises(ProductionDiverged):
         service.publish(project_id, GitPublishRequest(version="none"))

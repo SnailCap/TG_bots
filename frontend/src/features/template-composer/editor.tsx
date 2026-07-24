@@ -1,4 +1,5 @@
 import {
+  type CompositionEvent,
   memo,
   useEffect,
   useLayoutEffect,
@@ -48,6 +49,7 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const isComposingRef = useRef(false);
   const pendingCaret = useRef<number | null>(null);
   const savedRange = useRef<Range | null>(null);
   const source = serializeTemplate(document);
@@ -81,6 +83,7 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
       history.index = history.entries.length - 1;
     }
     onChange(nextSource);
+    return nextSource !== source;
   };
 
   const replayHistory = (direction: -1 | 1) => {
@@ -91,7 +94,6 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
     const editor = editorRef.current;
     if (editor) pendingCaret.current = getSelectionOffset(editor);
     onChange(history.entries[nextIndex]);
-    deferCaretRestore();
   };
 
   useLayoutEffect(() => {
@@ -135,20 +137,22 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   const commitDom = (caretOffset?: number) => {
     const editor = editorRef.current;
     if (!editor) return;
+    const nextSource = serializeTemplate(readEditorDocument(editor));
     pendingCaret.current = caretOffset ?? getSelectionOffset(editor);
-    publishSource(serializeTemplate(readEditorDocument(editor)));
+    const willRerender = publishSource(nextSource);
     setAutocomplete(null);
     setFormatToolbar(null);
-    deferCaretRestore();
+    if (!willRerender) deferCaretRestore();
   };
 
   const publishEditedDom = (editedRoot: HTMLElement, editedRange: Range) => {
+    const nextSource = serializeTemplate(readEditorDocument(editedRoot));
     pendingCaret.current = getRangeOffset(editedRoot, editedRange, true);
-    publishSource(serializeTemplate(readEditorDocument(editedRoot)));
+    const willRerender = publishSource(nextSource);
     savedRange.current = null;
     setAutocomplete(null);
     setFormatToolbar(null);
-    deferCaretRestore();
+    if (!willRerender) deferCaretRestore();
   };
 
   const updateAutocomplete = () => {
@@ -185,6 +189,18 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   };
 
   const handleInput = (_event: FormEvent<HTMLDivElement>) => {
+    if (isComposingRef.current) return;
+    commitDom();
+    updateAutocomplete();
+  };
+
+  const handleCompositionStart = (_event: CompositionEvent<HTMLDivElement>) => {
+    isComposingRef.current = true;
+    setAutocomplete(null);
+  };
+
+  const handleCompositionEnd = (_event: CompositionEvent<HTMLDivElement>) => {
+    isComposingRef.current = false;
     commitDom();
     updateAutocomplete();
   };
@@ -230,6 +246,8 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   };
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (isComposingRef.current) return;
+
     if ((event.ctrlKey || event.metaKey) && !event.altKey) {
       const key = event.key.toLowerCase();
       const redo = key === "y" || (key === "z" && event.shiftKey);
@@ -286,10 +304,10 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
         if (!nodePath) return;
         const nextDocument = removeNodeAtPath(document, nodePath);
         pendingCaret.current = Math.max(0, caret);
-        publishSource(serializeTemplate(nextDocument));
+        const willRerender = publishSource(serializeTemplate(nextDocument));
         setAutocomplete(null);
         setFormatToolbar(null);
-        deferCaretRestore();
+        if (!willRerender) deferCaretRestore();
       }
     }
   };
@@ -358,14 +376,17 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
       className="template-visual-editor"
         contentEditable
         suppressContentEditableWarning
+        spellCheck={false}
         role="textbox"
-        aria-label="Visual template content"
+        aria-label="Visual message content"
         aria-multiline="true"
         data-empty={document.nodes.length === 0 || (document.nodes.length === 1 && document.nodes[0].type === "text" && !document.nodes[0].text) ? "true" : "false"}
         onInput={handleInput}
+        onCompositionStart={handleCompositionStart}
+        onCompositionEnd={handleCompositionEnd}
         onKeyDown={handleKeyDown}
         onKeyUp={(event) => {
-          if (!["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) updateAutocomplete();
+          if (!isComposingRef.current && !["ArrowDown", "ArrowUp", "Enter", "Escape"].includes(event.key)) updateAutocomplete();
         }}
         onPaste={handlePaste}
       >

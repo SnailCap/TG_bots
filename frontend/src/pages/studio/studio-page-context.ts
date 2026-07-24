@@ -79,7 +79,7 @@ export type StudioPageContext = {
   dismissError(): void;
   dismissNotice(): void;
   select(selection: Selection): void;
-  addResource(kind: CreatableResource, templatePath?: string): Promise<void>;
+  addResource(kind: CreatableResource): Promise<void>;
   renameFromExplorer(selection: Exclude<Selection, { kind: "commands" }>, name: string): Promise<void>;
   removeFromExplorer(selection: Selection): void;
   remove(): Promise<void>;

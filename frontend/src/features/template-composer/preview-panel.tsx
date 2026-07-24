@@ -11,8 +11,15 @@ export function TemplatePreviewPanel({
   onValuesChange(values: PreviewValues): void;
 }) {
   return (
-    <aside className="template-preview" aria-label="Template preview">
-      <header><div><span className="template-panel-kicker">Preview</span><h3>Test message</h3></div><PreviewIcon /></header>
+    <aside className="template-preview" aria-label="Message preview">
+      <header>
+        <div>
+          <span className="template-panel-kicker">Preview</span>
+          <h3>Test message</h3>
+        </div>
+        <PreviewIcon />
+      </header>
+      <div className="template-preview__divider" />
       <div className="template-preview__message" data-empty={preview ? "false" : "true"}>{preview || "Your rendered message will appear here."}</div>
       <details className="template-preview__values">
         <summary>Test user values</summary>
@@ -40,4 +47,3 @@ export function TemplatePreviewPanel({
 function PreviewIcon() {
   return <svg className="template-preview__icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10s2.6-4.75 7.5-4.75S17.5 10 17.5 10s-2.6 4.75-7.5 4.75S2.5 10 2.5 10Z" /><circle cx="10" cy="10" r="2.1" /></svg>;
 }
-

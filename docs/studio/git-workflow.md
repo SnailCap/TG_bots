@@ -32,7 +32,7 @@ runtime.
 force push не используются.
 
 **Push** сохраняет текущие редакторы, повторно проверяет GitHub, запускает schema/graph/
-handler/template validation, показывает файлы и commit message, затем создаёт commit и
+handler/view-text validation, показывает файлы и commit message, затем создаёт commit и
 отправляет development-ветку. Если другой человек уже отправил новую версию, Push
 останавливается до Sync.
 
@@ -60,7 +60,7 @@ handler/template validation, показывает файлы и commit message, 
 ## History и Changes
 
 **Changes** показывает added/modified/deleted/renamed/untracked файлы, semantic summary
-для templates/views/flows/commands/schedules/handlers и обычный text diff. Binary diff
+для views, включая внутренние `templates/views/*.txt`, flows/commands/schedules/handlers и обычный text diff. Binary diff
 не отображается.
 
 **History** показывает автора, дату, short hash, development/production status и ссылку

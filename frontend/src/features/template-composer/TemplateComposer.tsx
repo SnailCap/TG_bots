@@ -11,11 +11,9 @@ type EditorMode = "visual" | "source";
 
 export function TemplateComposer({
   content,
-  path,
   onContentChange,
 }: {
   content: string;
-  path: string;
   onContentChange(content: string): void;
 }) {
   const [mode, setMode] = useState<EditorMode>("visual");
@@ -32,36 +30,39 @@ export function TemplateComposer({
   };
 
   return (
-    <section className="template-composer" aria-label={`Template composer for ${path}`}>
+    <section className="template-composer" aria-label="Message text editor">
       <div className="template-composer__workspace">
         <div className="template-composer__editor-column">
           <header className="template-composer__toolbar">
-            <div className="template-mode-switch" role="tablist" aria-label="Template editor mode">
+            <div className="template-mode-switch" role="tablist" aria-label="Message editor mode">
               <button type="button" role="tab" aria-selected={mode === "visual"} className={mode === "visual" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => switchMode("visual")}>Visual</button>
               <button type="button" role="tab" aria-selected={mode === "source"} className={mode === "source" ? "template-mode-switch__button template-mode-switch__button--active" : "template-mode-switch__button"} onClick={() => switchMode("source")}>Source</button>
             </div>
             <span className="template-composer__hint">Type <kbd>$</kbd> to insert a context field</span>
           </header>
+          <div className="template-composer__settings-divider" />
 
-          {mode === "visual" ? (
-            <VisualTemplateEditor document={document} onChange={onContentChange} />
-          ) : (
-            <textarea
-              className="template-source-editor"
-              aria-label="Template source"
-              spellCheck={false}
-              value={content}
-              onChange={(event) => onContentChange(event.target.value)}
-              onBlur={() => {
-                const normalized = normalizeTelegramHtml(content);
-                if (normalized !== content) onContentChange(normalized);
-              }}
-              placeholder="Write Jinja template source…"
-            />
-          )}
+          <div className="template-composer__editor-surface">
+            {mode === "visual" ? (
+              <VisualTemplateEditor document={document} onChange={onContentChange} />
+            ) : (
+              <textarea
+                className="template-source-editor"
+                aria-label="Message source"
+                spellCheck={false}
+                value={content}
+                onChange={(event) => onContentChange(event.target.value)}
+                onBlur={() => {
+                  const normalized = normalizeTelegramHtml(content);
+                  if (normalized !== content) onContentChange(normalized);
+                }}
+                placeholder="Write message source..."
+              />
+            )}
+          </div>
 
           {diagnostics.length > 0 && (
-            <div className="template-diagnostics" role="status" aria-label="Template diagnostics">
+            <div className="template-diagnostics" role="status" aria-label="Message diagnostics">
               {diagnostics.map((diagnostic, index) => (
                 <div className="template-diagnostic" key={`${diagnostic.code}-${index}`}>
                   <WarningIcon /><span>{diagnostic.message}</span>

@@ -1,10 +1,12 @@
-# Template Composer
+# View message composer
 
-Template Composer adds a visual editing mode for Telegram HTML templates without changing the project format. The editor shows supported context references as atomic tokens and Telegram formatting as a visual projection, while Studio continues to save a normal UTF-8 Jinja `.txt` file through the existing template API.
+The view editor includes a full-width visual editing mode for Telegram HTML messages without changing the project format. The editor shows supported context references as atomic tokens and Telegram formatting as a visual projection. Templates are not a separate Studio resource: users edit message text directly in a view.
+
+Studio hydrates the editor from either an inline value or an existing template reference. On save, the backend writes the Jinja source to `resources/templates/views/<view-id>.txt` and stores only `{"template": "views/<view-id>.txt"}` in the view JSON. This canonical file is an internal persistence detail owned by the view; schema v3 and the runtime still support both inline text and arbitrary template paths.
 
 ## Source of truth
 
-Visual and Source modes are two projections of one Jinja string. The visual document model is transient frontend state and is never written into the bot project. This keeps templates readable outside Studio, useful in Git diffs, and compatible with the autonomous runtime.
+Visual and Source modes are two projections of one Jinja string. The visual document model is transient frontend state and is never written into the bot project. The Jinja source remains readable outside Studio, useful in Git diffs, and compatible with the autonomous runtime.
 
 The conversion boundary is explicit:
 

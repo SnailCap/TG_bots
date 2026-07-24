@@ -39,8 +39,7 @@ const workspace: Workspace = {
   schema_version: 3,
   manifest: { source_path: "bot.json", revision: "manifest-one", payload: { schema_version: 3, id: "demo", package: "demo", entry_view: "home", start: { flow: "checkout", policy: "reset" } } },
   views: [{ id: "home", source_path: "views/home.json", revision: "view-one" }],
-  templates: [{ path: "home.txt" }],
-  flows: [{ id: "checkout", source_path: "flows/checkout.json", revision: "flow-one" }],
+  flows: [{ id: "checkout", source_path: "flows/checkout.json", revision: "flow-one", states: ["details", "confirm"] }],
   handlers: [handler],
   handlers_revision: "handlers-one",
   commands: { source_path: "commands.json", revision: "commands-one", items: [] },
@@ -49,10 +48,12 @@ const workspace: Workspace = {
 
 const viewDetail: ViewDetail = {
   ...workspace.views[0],
+  text_content: "Hello",
+  text_revision: "text-one",
   payload: {
     schema_version: 3,
     id: "home",
-    text: { inline: "Hello" },
+    text: { template: "views/home.txt" },
     keyboard: [[{
       id: "submit_order",
       text: "Submit",
@@ -167,14 +168,15 @@ describe("Studio", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Saved");
     expect(screen.getByText("View · home")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Inline text"), { target: { value: "Changed" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Changed" } });
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
     expect(screen.getByText("Schema v3")).toBeInTheDocument();
   });
 
   it("keeps explorer selection independent from switching editor tabs", async () => {
     const { container } = render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
-    const resourceButton = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(".explorer__item"))
+    const resourceButton = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(".explorer__item, .explorer__flow-main"))
       .find((button) => button.textContent?.trim() === label)!;
 
     fireEvent.click(resourceButton("home"));
@@ -275,7 +277,7 @@ describe("Studio", () => {
 
   it("renders all typed explorer sections", () => {
     render(<ProjectExplorer workspace={workspace} selection={null} onSelect={vi.fn()} onAdd={vi.fn()} />);
-    for (const section of ["views", "templates", "flows", "handlers", "commands", "schedules"]) {
+    for (const section of ["views", "flows", "handlers", "commands", "schedules"]) {
       expect(screen.getAllByText(section).length).toBeGreaterThan(0);
     }
     expect(screen.getByRole("button", { name: "checkout.submit" })).toBeInTheDocument();
@@ -549,8 +551,9 @@ describe("Studio", () => {
     });
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "home" }));
-    const text = await screen.findByLabelText("Inline text");
-    fireEvent.change(text, { target: { value: "Changed" } });
+    await screen.findByLabelText("Message text editor");
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Changed" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Changed outside Studio")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reload from disk" })).toBeInTheDocument();
@@ -561,24 +564,14 @@ describe("Studio", () => {
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "home" }));
 
-    fireEvent.change(await screen.findByLabelText("Inline text"), { target: { value: "   " } });
+    await screen.findByLabelText("Message text editor");
+    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "   " } });
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(screen.getByLabelText("Invalid unsaved changes")).toBeInTheDocument();
-    expect(screen.queryByText("Inline text cannot be empty.")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Inline text"), { target: { value: "Visible" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Visible" } });
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByLabelText("Text source"));
-    fireEvent.click(screen.getByRole("option", { name: "Template" }));
-    expect(screen.queryByRole("listbox", { name: "Text source" })).not.toBeInTheDocument();
-    const templateInput = screen.getByLabelText("Template");
-    fireEvent.change(templateInput, { target: { value: "ho" } });
-    fireEvent.mouseDown(screen.getByRole("option", { name: "home.txt" }));
-    expect(templateInput).toHaveValue("home.txt");
-    fireEvent.change(templateInput, { target: { value: "  " } });
-    expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
-    expect(screen.queryByText("Template path is required.")).not.toBeInTheDocument();
   });
 
   it("persists a new resource immediately and adds it to Resources", async () => {
@@ -586,7 +579,9 @@ describe("Studio", () => {
       id: "new-view",
       source_path: "views/new-view.json",
       revision: "view-new",
-      payload: { schema_version: 3, id: "new-view", text: { inline: "" }, keyboard: [] },
+      text_content: "",
+      text_revision: "text-new",
+      payload: { schema_version: 3, id: "new-view", text: { template: "views/new-view.txt" }, keyboard: [] },
     };
     const api = apiMock({
       createView: vi.fn().mockResolvedValue(created),
@@ -597,7 +592,12 @@ describe("Studio", () => {
     fireEvent.contextMenu(screen.getByRole("button", { name: "views" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "New view" }));
 
-    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "new-view", created.payload));
+    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "new-view", {
+      schema_version: 3,
+      id: "new-view",
+      text: { inline: "" },
+      keyboard: [],
+    }));
     expect((await screen.findAllByText("new-view")).length).toBeGreaterThan(0);
     expect(screen.getByDisplayValue("new-view")).toBeInTheDocument();
   });
@@ -684,7 +684,7 @@ describe("Studio", () => {
 
     fireEvent.keyDown(window, { key: "я", code: "KeyZ", ctrlKey: true });
 
-    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "home", viewDetail.payload));
+    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "home", viewDetail.payload, viewDetail.text_content));
   });
 
   it("undoes a rename with Ctrl+Z", async () => {
@@ -704,9 +704,8 @@ describe("Studio", () => {
     await waitFor(() => expect(api.renameView).toHaveBeenCalledWith("project-1", "welcome", "home", "view-one"));
   });
 
-  it("renames every resource type inline, including with F2", async () => {
+  it("renames resources inline, including with F2", async () => {
     const api = apiMock({
-      renameTemplate: vi.fn().mockResolvedValue({ path: "welcome.txt", content: "Hello", revision: "template-renamed" }),
       renameFlow: vi.fn().mockResolvedValue({ id: "purchase", source_path: "flows/purchase.json", revision: "flow-renamed", payload: { schema_version: 3, id: "purchase", initial_state: "start", lifecycle: {}, states: { start: { view: "home", events: {} } } } }),
       renameSchedule: vi.fn().mockResolvedValue({ id: "nightly", source_path: "schedules/nightly.json", revision: "schedule-renamed", payload: { schema_version: 3, id: "nightly", handler: "task.daily", trigger: { type: "interval", seconds: 60 }, payload: {} } }),
       renameHandler: vi.fn().mockResolvedValue({ ...handler, id: "checkout.process" }),
@@ -720,29 +719,12 @@ describe("Studio", () => {
       fireEvent.change(input, { target: { value: name } });
       fireEvent.keyDown(input, { key: "Enter" });
     };
-    await rename("home.txt", "welcome.txt");
-    await waitFor(() => expect(api.renameTemplate).toHaveBeenCalledWith("project-1", "home.txt", "welcome.txt", "template-one"));
     await rename("checkout", "purchase");
     await waitFor(() => expect(api.renameFlow).toHaveBeenCalledWith("project-1", "checkout", "purchase", "flow-one"));
     await rename("daily", "nightly");
     await waitFor(() => expect(api.renameSchedule).toHaveBeenCalledWith("project-1", "daily", "nightly", "schedule-one"));
     await rename("checkout.submit", "checkout.process");
     await waitFor(() => expect(api.renameHandler).toHaveBeenCalledWith("project-1", "checkout.submit", "checkout.process", "handler-one"));
-  });
-
-  it("opens a new template tab from the template suggestion list", async () => {
-    const api = apiMock({ saveTemplate: vi.fn().mockResolvedValue({ path: "new-template.txt", content: "", revision: "template-new" }) });
-    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
-    fireEvent.click(screen.getByRole("button", { name: "home" }));
-    await screen.findByLabelText("Inline text");
-    fireEvent.click(screen.getByLabelText("Text source"));
-    fireEvent.click(screen.getByRole("option", { name: "Template" }));
-    fireEvent.focus(screen.getByLabelText("Template"));
-    fireEvent.mouseDown(screen.getByRole("button", { name: "Create template" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create template" }));
-
-    expect(await screen.findByLabelText("Template editor")).toBeInTheDocument();
-    expect(screen.getAllByText("new-template.txt").length).toBeGreaterThan(0);
   });
 
   it("renders stable cross-resource diagnostic fields", () => {
@@ -776,10 +758,6 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     saveView: vi.fn().mockResolvedValue(viewDetail),
     renameView: vi.fn().mockResolvedValue(viewDetail),
     deleteView: vi.fn().mockResolvedValue(undefined),
-    getTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
-    saveTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
-    renameTemplate: vi.fn().mockResolvedValue({ path: "home.txt", content: "Hello", revision: "template-one" }),
-    deleteTemplate: vi.fn().mockResolvedValue(undefined),
     getFlow: vi.fn().mockResolvedValue({ id: "checkout", source_path: "flows/checkout.json", revision: "flow-one", payload: { schema_version: 3, id: "checkout", initial_state: "start", lifecycle: {}, states: { start: { view: "home", events: {} } } } }),
     createFlow: vi.fn(),
     saveFlow: vi.fn(),

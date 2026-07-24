@@ -4,6 +4,7 @@ import { createPortal } from "react-dom";
 import { actionFor, type ActionOptions, type ButtonSpec, type HandlerCreateOptions, type ViewSpec } from "../../domain/project";
 import { useInertialDragPreview } from "../../shared/lib/useInertialDragPreview";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
+import { FormField, FormGrid } from "../../shared/ui/Form";
 import { ActionEditor, type HandlerActions, VIEW_BUTTON_ACTION_TYPES } from "../action-editor/ActionEditor";
 
 type ButtonLocation = { row: number; button: number };
@@ -269,8 +270,12 @@ export function KeyboardComposer({
           ? <div className="keyboard-composer__inspector-content">
               <header className="keyboard-composer__inspector-header"><h3>Button settings</h3><button type="button" className="keyboard-composer__inspector-delete" aria-label="Delete selected button" title="Delete button" onClick={() => deleteButton(selected)}><Icon name="trash" /></button></header>
               <div className="keyboard-composer__settings-divider" />
-              <div className="keyboard-composer__label-settings"><span className="keyboard-composer__section-label">Label</span><input ref={labelInputRef} aria-label="Button text" value={selectedButton.text} placeholder="Button label" onChange={(event) => updateButton(selected, { ...selectedButton, text: event.target.value })} /></div>
-              <div className="keyboard-composer__action-settings"><span className="keyboard-composer__section-label">Action</span><ActionEditor action={selectedButton.action} compact hideActionLabel options={options} scope={{ expectedKind: "button", placement: "view_button" }} handlerActions={handlerActions} createOptions={selectedCreateOptions} onChange={(action) => updateButton(selected, { ...selectedButton, action })} /></div>
+              <FormGrid width="standard" className="keyboard-composer__form">
+                <FormField label="Label" layout="stacked">
+                  {(controlProps) => <input {...controlProps} ref={labelInputRef} aria-label="Button text" value={selectedButton.text} placeholder="Button label" onChange={(event) => updateButton(selected, { ...selectedButton, text: event.target.value })} />}
+                </FormField>
+                <ActionEditor action={selectedButton.action} bare options={options} scope={{ expectedKind: "button", placement: "view_button" }} handlerActions={handlerActions} createOptions={selectedCreateOptions} onChange={(action) => updateButton(selected, { ...selectedButton, action })} />
+              </FormGrid>
             </div>
           : <div className="keyboard-composer__empty-state keyboard-composer__inspector-content"><KeyboardIcon /><strong>{hasButtons ? "Select a button" : "No buttons added yet"}</strong></div>}
       </aside>

@@ -6,7 +6,7 @@ import { TemplateComposer } from "./TemplateComposer";
 
 function Harness({ initial = "" }: { initial?: string }) {
   const [content, setContent] = useState(initial);
-  return <><TemplateComposer path="welcome.txt" content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
+  return <><TemplateComposer content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
 }
 
 describe("floating Telegram formatting toolbar", () => {
@@ -112,7 +112,7 @@ describe("floating Telegram formatting toolbar", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));
     fireEvent.click(screen.getByRole("tab", { name: "Visual" }));
     expect(source()).toBe("<b>hello</b>");
-    expect(screen.getByRole("textbox", { name: "Visual template content" }).querySelector("b")).not.toBeNull();
+    expect(screen.getByRole("textbox", { name: "Visual message content" }).querySelector("b")).not.toBeNull();
   });
 });
 
@@ -150,7 +150,7 @@ describe("Telegram Desktop hotkeys", () => {
 });
 
 function selectVisualText(value: string): HTMLElement {
-  const editor = screen.getByRole("textbox", { name: "Visual template content" });
+  const editor = screen.getByRole("textbox", { name: "Visual message content" });
   fireEvent.focus(editor);
   const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
   let textNode: Text | null = null;

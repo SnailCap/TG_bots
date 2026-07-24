@@ -37,7 +37,7 @@ flowchart LR
 `resources/` полностью описывает визуальный application graph:
 
 - manifest и `/start` policy;
-- views, templates и keyboard actions;
+- views, принадлежащие им text templates и keyboard actions;
 - flows, states, state views, hooks и named events;
 - commands и global fallbacks;
 - explicit handler bindings и outcome routes;
@@ -139,7 +139,7 @@ sequenceDiagram
 
 ## Граница Studio
 
-Backend читает и сохраняет manifest, views/templates, flows, commands, schedules и handlers; для file-per-entity resources есть create/delete операции. Он поддерживает revision conflicts, reference-safe deletion, validation, usages и handler inspection. Scaffolding может атомарно создать binding, безопасный Python path и привязку к выбранной сущности. Существующий source file не перезаписывается.
+Backend читает и сохраняет manifest, views, flows, commands, schedules и handlers; для file-per-entity resources есть create/delete операции. Текст view гидратируется из inline/template schema и при сохранении Studio канонизируется во внутренний `templates/views/<view-id>.txt`. Отдельного публичного template CRUD в Studio нет. Backend поддерживает revision conflicts, reference-safe deletion, validation, usages и handler inspection. Scaffolding может атомарно создать binding, безопасный Python path и привязку к выбранной сущности. Существующий source file не перезаписывается.
 
 ### Граница frontend Studio page
 

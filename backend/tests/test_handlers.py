@@ -21,7 +21,14 @@ def add_button(service: ProjectService, project_id: str) -> dict:
     payload["keyboard"] = [
         [{"id": "run_custom", "text": "Run", "action": {"type": "noop"}}]
     ]
-    return service.save_view(project_id, "home", payload, view["revision"])
+    return service.save_view(
+        project_id,
+        "home",
+        payload,
+        view["revision"],
+        text_content=view["text_content"],
+        text_revision=view["text_revision"],
+    )
 
 
 def test_scaffold_creates_one_file_binding_attachment_status_and_usages(

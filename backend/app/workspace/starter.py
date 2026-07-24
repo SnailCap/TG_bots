@@ -100,7 +100,7 @@ class StarterScaffolder:
         self._json(resources / "views" / "home.json", {
             "schema_version": 3,
             "id": "home",
-            "text": {"template": "home.txt"},
+            "text": {"template": "views/home.txt"},
             "keyboard": [],
         })
         self._json(resources / "flows" / "home.json", {
@@ -110,7 +110,7 @@ class StarterScaffolder:
             "lifecycle": {},
             "states": {"home": {"view": "home", "events": {}}},
         })
-        self._text(resources / "templates" / "home.txt", "Welcome to your bot!\n")
+        self._text(resources / "templates" / "views" / "home.txt", "Welcome to your bot!\n")
         self._text(package_root / "__init__.py", "")
         self._text(package_root / "handlers" / "__init__.py", "")
         self._text(package_root / "services" / "__init__.py", "")

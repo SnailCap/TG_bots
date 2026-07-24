@@ -148,14 +148,10 @@ export interface ResourceSummary {
   revision: string;
 }
 
-export interface TemplateSummary {
-  path: string;
-  name?: string;
-  revision?: string;
-}
-
 export interface ViewSummary extends ResourceSummary {}
-export interface FlowSummary extends ResourceSummary {}
+export interface FlowSummary extends ResourceSummary {
+  states: string[];
+}
 export interface ScheduleSummary extends ResourceSummary {}
 
 export interface AggregateSummary {
@@ -212,7 +208,6 @@ export interface Workspace {
   schema_version: typeof SCHEMA_VERSION;
   manifest: ManifestSummary;
   views: ViewSummary[];
-  templates: TemplateSummary[];
   flows: FlowSummary[];
   handlers: HandlerSummary[];
   handlers_revision: string;
@@ -225,7 +220,10 @@ export interface ResourceDetail<T> extends ResourceSummary {
   payload: T;
 }
 
-export type ViewDetail = ResourceDetail<ViewSpec>;
+export interface ViewDetail extends ResourceDetail<ViewSpec> {
+  text_content: string;
+  text_revision: string | null;
+}
 export type FlowDetail = ResourceDetail<FlowSpec>;
 export type ScheduleDetail = ResourceDetail<ScheduleSpec>;
 
@@ -233,12 +231,6 @@ export interface CommandsDetail {
   source_path: string;
   revision: string;
   payload: CommandsSpec;
-}
-
-export interface TemplateDetail extends TemplateSummary {
-  name_is_default?: boolean;
-  content: string;
-  revision: string;
 }
 
 export interface HandlerDetail extends HandlerSummary {
@@ -308,7 +300,6 @@ export interface OpenCodeTarget {
 
 export type Selection =
     | { kind: "view"; id: string }
-    | { kind: "template"; path: string }
     | { kind: "flow"; id: string }
     | { kind: "handler"; id: string }
     | { kind: "command"; name: string }
@@ -320,7 +311,6 @@ export interface ActionOptions {
   flows: string[];
   states: string[];
   handlers: HandlerSummary[];
-  templates?: string[];
 }
 
 export function actionFor(type: ActionSpec["type"]): ActionSpec {

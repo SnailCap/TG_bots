@@ -53,5 +53,5 @@ function UsersIcon() {
 }
 
 function GitIcon() {
-  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="6" cy="4.5" r="2" /><circle cx="14" cy="7.5" r="2" /><circle cx="6" cy="15.5" r="2" /><path d="M6 6.5v7M8 7.5h2.7A3.3 3.3 0 0 0 14 4.2v1.3" /></svg>;
+  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="10" cy="10" r="3.05" /><path d="M1.7 10h5.35M12.95 10h5.35" /></svg>;
 }

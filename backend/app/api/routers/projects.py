@@ -27,8 +27,12 @@ class ResourceCreateRequest(BaseModel):
     payload: dict[str, Any] = Field(default_factory=dict)
 
 
+class ViewCreateRequest(ResourceCreateRequest):
+    text_content: str | None = None
+
+
 class DisplayNameRequest(BaseModel):
-    kind: Literal["views", "flows", "schedules", "handlers", "commands", "templates"]
+    kind: Literal["views", "flows", "schedules", "handlers", "commands"]
     key: str = Field(min_length=1, max_length=512)
     name: str = Field(min_length=1, max_length=160)
     revision: str
@@ -39,18 +43,13 @@ class ResourceSaveRequest(BaseModel):
     revision: str
 
 
+class ViewSaveRequest(ResourceSaveRequest):
+    text_content: str
+    text_revision: str | None
+
+
 class ResourceRenameRequest(BaseModel):
     id: str = Field(min_length=1, max_length=128)
-    revision: str
-
-
-class TemplateSaveRequest(BaseModel):
-    content: str
-    revision: str | None = None
-
-
-class TemplateRenameRequest(BaseModel):
-    path: str = Field(min_length=1, max_length=512)
     revision: str
 
 
@@ -240,10 +239,16 @@ async def list_views(project_id: str, request: Request) -> list[dict[str, Any]]:
 
 @router.post("/{project_id}/views")
 async def create_view(
-    project_id: str, body: ResourceCreateRequest, request: Request
+    project_id: str, body: ViewCreateRequest, request: Request
 ) -> dict[str, Any]:
     try:
-        return service(request).create_view(project_id, body.id, body.payload, name=body.name)
+        return service(request).create_view(
+            project_id,
+            body.id,
+            body.payload,
+            name=body.name,
+            text_content=body.text_content,
+        )
     except WorkspaceError as error:
         fail(error)
 
@@ -260,12 +265,17 @@ async def get_view(project_id: str, view_id: str, request: Request) -> dict[str,
 async def save_view(
     project_id: str,
     view_id: str,
-    body: ResourceSaveRequest,
+    body: ViewSaveRequest,
     request: Request,
 ) -> dict[str, Any]:
     try:
         return service(request).save_view(
-            project_id, view_id, body.payload, body.revision
+            project_id,
+            view_id,
+            body.payload,
+            body.revision,
+            text_content=body.text_content,
+            text_revision=body.text_revision,
         )
     except WorkspaceError as error:
         fail(error)
@@ -583,53 +593,7 @@ async def delete_handler(
         fail(error)
 
 
-# Templates, preview and validation ----------------------------------------------------
-
-
-@router.post("/{project_id}/templates/{path:path}/rename")
-async def rename_template(
-    project_id: str, path: str, body: TemplateRenameRequest, request: Request
-) -> dict[str, Any]:
-    try:
-        return service(request).rename_template(
-            project_id, path, body.path, body.revision
-        )
-    except WorkspaceError as error:
-        fail(error)
-
-
-@router.get("/{project_id}/templates/{path:path}")
-async def get_template(project_id: str, path: str, request: Request) -> dict[str, Any]:
-    try:
-        return service(request).get_template(project_id, path)
-    except WorkspaceError as error:
-        fail(error)
-
-
-@router.put("/{project_id}/templates/{path:path}")
-async def save_template(
-    project_id: str,
-    path: str,
-    body: TemplateSaveRequest,
-    request: Request,
-) -> dict[str, Any]:
-    try:
-        return service(request).save_template(
-            project_id, path, body.content, body.revision
-        )
-    except WorkspaceError as error:
-        fail(error)
-
-
-@router.delete("/{project_id}/templates/{path:path}")
-async def delete_template(
-    project_id: str, path: str, revision: str, request: Request
-) -> Response:
-    try:
-        service(request).delete_template(project_id, path, revision)
-        return Response(status_code=204)
-    except WorkspaceError as error:
-        fail(error)
+# Preview and validation ---------------------------------------------------------------
 
 
 @router.post("/{project_id}/preview")

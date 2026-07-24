@@ -5,6 +5,41 @@ import { StudioApi, StudioApiError } from "./api";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("StudioApi", () => {
+  it("saves hydrated view text through the view contract", async () => {
+    const payload = {
+      schema_version: 3 as const,
+      id: "home",
+      text: { template: "views/home.txt" },
+      keyboard: [],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        id: "home",
+        source_path: "views/home.json",
+        revision: "view-two",
+        text_content: "Hello team",
+        text_revision: "text-two",
+        payload,
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new StudioApi("http://studio.test");
+
+    await api.saveView("project-1", "home", payload, "view-one", "Hello team", "text-one");
+
+    expect(fetchMock).toHaveBeenCalledWith("http://studio.test/api/v1/projects/project-1/views/home", expect.objectContaining({
+      method: "PUT",
+      body: JSON.stringify({
+        payload,
+        revision: "view-one",
+        text_content: "Hello team",
+        text_revision: "text-one",
+      }),
+    }));
+  });
+
   it("uses typed flow payloads with optimistic revisions", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,

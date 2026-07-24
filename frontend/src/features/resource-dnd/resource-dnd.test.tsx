@@ -8,11 +8,11 @@ import { ResourceDragProvider } from "./ResourceDragProvider";
 import { ResourceDropTarget } from "./ResourceDropTarget";
 import { useResourceDraggable } from "./useResourceDraggable";
 
-const templateResource: DraggableResource = {
-  kind: "template",
-  value: "welcome.txt",
-  label: "welcome.txt",
-  selection: { kind: "template", path: "welcome.txt" },
+const viewResource: DraggableResource = {
+  kind: "view",
+  value: "welcome",
+  label: "welcome",
+  selection: { kind: "view", id: "welcome" },
 };
 
 const taskHandler: DraggableResource = {
@@ -25,8 +25,8 @@ const taskHandler: DraggableResource = {
 
 describe("resource drag compatibility", () => {
   it("accepts only the configured resource kind", () => {
-    expect(canDropResource(templateResource, { type: "template-reference" })).toBe(true);
-    expect(canDropResource(templateResource, { type: "view-reference" })).toBe(false);
+    expect(canDropResource(viewResource, { type: "view-reference" })).toBe(true);
+    expect(canDropResource(taskHandler, { type: "view-reference" })).toBe(false);
   });
 
   it("checks the handler kind as well as the resource kind", () => {
@@ -37,23 +37,23 @@ describe("resource drag compatibility", () => {
 
 describe("resource drag interaction", () => {
   it("highlights a compatible target and commits the dropped value", () => {
-    render(<DragHarness resource={templateResource} target={{ type: "template-reference" }} />);
-    const source = screen.getByRole("button", { name: "welcome.txt" });
+    render(<DragHarness resource={viewResource} target={{ type: "view-reference" }} />);
+    const source = screen.getByRole("button", { name: "welcome" });
     const target = screen.getByTestId("drop-target").closest<HTMLElement>("[data-resource-drop-target]")!;
     const restoreElementFromPoint = mockElementFromPoint(target);
 
     fireEvent(source, pointerEvent("pointerdown", { button: 0, clientX: 10, clientY: 10 }));
     fireEvent(window, pointerEvent("pointermove", { button: 0, clientX: 30, clientY: 30 }));
 
-    expect(screen.getByText("Release to use welcome.txt")).toBeInTheDocument();
+    expect(screen.getByText("Release to use welcome")).toBeInTheDocument();
     fireEvent(window, pointerEvent("pointerup", { button: 0, clientX: 30, clientY: 30 }));
-    expect(screen.getByRole("textbox", { name: "Reference" })).toHaveValue("welcome.txt");
+    expect(screen.getByRole("textbox", { name: "Reference" })).toHaveValue("welcome");
     restoreElementFromPoint();
   });
 
   it("does not activate or accept an incompatible target", () => {
-    render(<DragHarness resource={templateResource} target={{ type: "view-reference" }} />);
-    const source = screen.getByRole("button", { name: "welcome.txt" });
+    render(<DragHarness resource={taskHandler} target={{ type: "view-reference" }} />);
+    const source = screen.getByRole("button", { name: "jobs.cleanup" });
     const target = screen.getByTestId("drop-target").closest<HTMLElement>("[data-resource-drop-target]")!;
     const restoreElementFromPoint = mockElementFromPoint(target);
 
@@ -66,16 +66,16 @@ describe("resource drag interaction", () => {
   });
 });
 
-function DragHarness({ resource, target }: { resource: DraggableResource; target: { type: "template-reference" } | { type: "view-reference" } }) {
+function DragHarness({ resource, target }: { resource: DraggableResource; target: { type: "view-reference" } }) {
   return <ResourceDragProvider><HarnessContent resource={resource} target={target} /></ResourceDragProvider>;
 }
 
-function HarnessContent({ resource, target }: { resource: DraggableResource; target: { type: "template-reference" } | { type: "view-reference" } }) {
+function HarnessContent({ resource, target }: { resource: DraggableResource; target: { type: "view-reference" } }) {
   const [value, setValue] = useState("");
   const dragProps = useResourceDraggable(resource);
   return <>
     <button type="button" onPointerDown={dragProps.onPointerDown} onClickCapture={dragProps.onClickCapture}>{resource.label}</button>
-    <ResourceDropTarget target={target} label={target.type === "template-reference" ? "Drop template here" : "Drop view here"} onDrop={(item) => setValue(item.value)}>
+    <ResourceDropTarget target={target} label="Drop view here" onDrop={(item) => setValue(item.value)}>
       <input data-testid="drop-target" aria-label="Reference" value={value} readOnly />
     </ResourceDropTarget>
   </>;

@@ -14,7 +14,6 @@ import type {
   Preview,
   ScheduleDetail,
   ScheduleSpec,
-  TemplateDetail,
   ViewDetail,
   ViewSpec,
   Workspace,
@@ -191,15 +190,11 @@ export interface StudioApiClient {
   listUsers(projectId: string): Promise<ManagedUser[]>;
   updateUser(projectId: string, telegramId: string, payload: ManagedUserUpdate): Promise<ManagedUser>;
   getView(projectId: string, id: string): Promise<ViewDetail>;
-  createView(projectId: string, id: string, payload: ViewSpec): Promise<ViewDetail>;
-  createNamedView?(projectId: string, name?: string): Promise<ViewDetail>;
-  saveView(projectId: string, id: string, payload: ViewSpec, revision: string): Promise<ViewDetail>;
+  createView(projectId: string, id: string, payload: ViewSpec, textContent?: string): Promise<ViewDetail>;
+  createNamedView?(projectId: string, name?: string, textContent?: string): Promise<ViewDetail>;
+  saveView(projectId: string, id: string, payload: ViewSpec, revision: string, textContent: string, textRevision: string | null): Promise<ViewDetail>;
   renameView(projectId: string, id: string, name: string, revision: string): Promise<ViewDetail>;
   deleteView(projectId: string, id: string, revision: string): Promise<void>;
-  getTemplate(projectId: string, path: string): Promise<TemplateDetail>;
-  saveTemplate(projectId: string, path: string, content: string, revision?: string): Promise<TemplateDetail>;
-  renameTemplate(projectId: string, path: string, name: string, revision: string): Promise<TemplateDetail>;
-  deleteTemplate(projectId: string, path: string, revision: string): Promise<void>;
   getFlow(projectId: string, id: string): Promise<FlowDetail>;
   createFlow(projectId: string, id: string, payload: FlowSpec): Promise<FlowDetail>;
   createNamedFlow?(projectId: string, name?: string): Promise<FlowDetail>;
@@ -223,7 +218,7 @@ export interface StudioApiClient {
   handlerUsages(projectId: string, id: string): Promise<HandlerUsage[]>;
   preview(projectId: string, payload: ViewSpec): Promise<Preview>;
   validate(projectId: string): Promise<Diagnostic[]>;
-  setDisplayName?(projectId: string, kind: "views" | "flows" | "schedules" | "handlers" | "commands" | "templates", key: string, name: string, manifestRevision: string): Promise<{ name: string; name_is_default: boolean }>;
+  setDisplayName?(projectId: string, kind: "views" | "flows" | "schedules" | "handlers" | "commands", key: string, name: string, manifestRevision: string): Promise<{ name: string; name_is_default: boolean }>;
   gitStatus(projectId: string): Promise<GitStatus>;
   gitChanges(projectId: string): Promise<GitChanges>;
   gitHistory(projectId: string): Promise<GitCommit[]>;
@@ -279,18 +274,18 @@ export class StudioApi implements StudioApiClient {
     return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}`);
   }
 
-  createView(projectId: string, id: string, payload: ViewSpec): Promise<ViewDetail> {
-    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { id, payload } });
+  createView(projectId: string, id: string, payload: ViewSpec, textContent?: string): Promise<ViewDetail> {
+    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { id, payload, text_content: textContent } });
   }
 
-  createNamedView(projectId: string, name?: string): Promise<ViewDetail> {
-    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { name } });
+  createNamedView(projectId: string, name?: string, textContent?: string): Promise<ViewDetail> {
+    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { name, text_content: textContent } });
   }
 
-  saveView(projectId: string, id: string, payload: ViewSpec, revision: string): Promise<ViewDetail> {
+  saveView(projectId: string, id: string, payload: ViewSpec, revision: string, textContent: string, textRevision: string | null): Promise<ViewDetail> {
     return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}`, {
       method: "PUT",
-      body: { payload, revision },
+      body: { payload, revision, text_content: textContent, text_revision: textRevision },
     });
   }
 
@@ -300,25 +295,6 @@ export class StudioApi implements StudioApiClient {
 
   deleteView(projectId: string, id: string, revision: string): Promise<void> {
     return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
-  }
-
-  getTemplate(projectId: string, path: string): Promise<TemplateDetail> {
-    return this.request(`/projects/${projectId}/templates/${this.resourcePath(path)}`);
-  }
-
-  saveTemplate(projectId: string, path: string, content: string, revision?: string): Promise<TemplateDetail> {
-    return this.request(`/projects/${projectId}/templates/${this.resourcePath(path)}`, {
-      method: "PUT",
-      body: { content, revision },
-    });
-  }
-
-  renameTemplate(projectId: string, path: string, name: string, revision: string): Promise<TemplateDetail> {
-    return this.request(`/projects/${projectId}/templates/${this.resourcePath(path)}/rename`, { method: "POST", body: { path: name, revision } });
-  }
-
-  deleteTemplate(projectId: string, path: string, revision: string): Promise<void> {
-    return this.request(`/projects/${projectId}/templates/${this.resourcePath(path)}?revision=${encodeURIComponent(revision)}`, { method: "DELETE" });
   }
 
   getFlow(projectId: string, id: string): Promise<FlowDetail> {
@@ -434,7 +410,7 @@ export class StudioApi implements StudioApiClient {
     return value.diagnostics ?? value.issues ?? [];
   }
 
-  setDisplayName(projectId: string, kind: "views" | "flows" | "schedules" | "handlers" | "commands" | "templates", key: string, name: string, manifestRevision: string): Promise<{ name: string; name_is_default: boolean }> {
+  setDisplayName(projectId: string, kind: "views" | "flows" | "schedules" | "handlers" | "commands", key: string, name: string, manifestRevision: string): Promise<{ name: string; name_is_default: boolean }> {
     return this.request(`/projects/${projectId}/display-names`, { method: "POST", body: { kind, key, name, revision: manifestRevision } });
   }
 
@@ -485,15 +461,10 @@ export class StudioApi implements StudioApiClient {
       ...value,
       schema_version: 3,
       views: value.views ?? [],
-      templates: value.templates ?? [],
       flows: value.flows ?? [],
       handlers: (value.handlers ?? []).map(normalizeHandler),
       schedules: value.schedules ?? [],
     };
-  }
-
-  private resourcePath(value: string): string {
-    return value.split("/").map(encodeURIComponent).join("/");
   }
 
   private async request<T>(path: string, options: RequestOptions = {}): Promise<T> {

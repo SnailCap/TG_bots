@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ViewSpec, Workspace } from "../../domain/project";
+import type { ViewDetail, Workspace } from "../../domain/project";
 import { createTelegramPreviewModel } from "./preview-model";
 import { TelegramPreview } from "./TelegramPreview";
 
@@ -9,16 +9,23 @@ const workspace = {
   name: "my-bot",
 } as Workspace;
 
-const view: ViewSpec = {
-  schema_version: 3,
+const view: ViewDetail = {
   id: "home",
-  text: { inline: "Welcome to the bot" },
-  keyboard: [[{ id: "home.help", text: "Help", action: { type: "noop" } }]],
+  source_path: "views/home.json",
+  revision: "view-one",
+  text_content: "Welcome to the bot",
+  text_revision: "text-one",
+  payload: {
+    schema_version: 3,
+    id: "home",
+    text: { template: "views/home.txt" },
+    keyboard: [[{ id: "home.help", text: "Help", action: { type: "noop" } }]],
+  },
 };
 
 describe("TelegramPreview", () => {
   it("derives a Telegram conversation from the current view", () => {
-    const model = createTelegramPreviewModel(workspace, { kind: "view", payload: view });
+    const model = createTelegramPreviewModel(workspace, { kind: "view", detail: view });
 
     expect(model.botName).toBe("my-bot");
     expect(model.messages.at(-1)).toMatchObject({ author: "bot", text: "Welcome to the bot", buttons: [["Help"]] });
@@ -26,7 +33,7 @@ describe("TelegramPreview", () => {
 
   it("lets the local simulator send a message and closes from its header", () => {
     const onClose = vi.fn();
-    const model = createTelegramPreviewModel(workspace, { kind: "view", payload: view });
+    const model = createTelegramPreviewModel(workspace, { kind: "view", detail: view });
     render(<TelegramPreview open model={model} onClose={onClose} />);
 
     fireEvent.change(screen.getByLabelText("Preview message"), { target: { value: "Hello" } });

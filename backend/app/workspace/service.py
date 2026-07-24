@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import shutil
+import unicodedata
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -14,7 +15,55 @@ from tg_bot_core.project import (
     validate_project,
 )
 from tg_bot_core.store import BotUser, SqliteStore, StoredUserAvatar
-from unidecode import unidecode
+try:
+    from unidecode import unidecode as _unidecode
+except ModuleNotFoundError:
+    _CYRILLIC_FALLBACK = str.maketrans(
+        {
+            "а": "a",
+            "б": "b",
+            "в": "v",
+            "г": "g",
+            "д": "d",
+            "е": "e",
+            "ё": "e",
+            "ж": "zh",
+            "з": "z",
+            "и": "i",
+            "й": "i",
+            "к": "k",
+            "л": "l",
+            "м": "m",
+            "н": "n",
+            "о": "o",
+            "п": "p",
+            "р": "r",
+            "с": "s",
+            "т": "t",
+            "у": "u",
+            "ф": "f",
+            "х": "h",
+            "ц": "ts",
+            "ч": "ch",
+            "ш": "sh",
+            "щ": "sch",
+            "ъ": "",
+            "ы": "y",
+            "ь": "",
+            "э": "e",
+            "ю": "yu",
+            "я": "ya",
+            "і": "i",
+            "ї": "yi",
+            "є": "e",
+            "ґ": "g",
+        }
+    )
+
+    def _unidecode(value: str) -> str:
+        translated = value.casefold().translate(_CYRILLIC_FALLBACK)
+        normalized = unicodedata.normalize("NFKD", translated)
+        return normalized.encode("ascii", "ignore").decode("ascii")
 
 from .handlers import (
     HandlerInspector,
@@ -39,14 +88,13 @@ from .starter import StarterScaffolder
 
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 _RESOURCE_KINDS = {"views", "flows", "schedules"}
-_DISPLAY_NAME_KINDS = frozenset({"views", "flows", "schedules", "handlers", "commands", "templates"})
+_DISPLAY_NAME_KINDS = frozenset({"views", "flows", "schedules", "handlers", "commands"})
 _DISPLAY_KIND_LABELS = {
     "views": "View",
     "flows": "Flow",
     "schedules": "Schedule",
     "handlers": "Handler",
     "commands": "Command",
-    "templates": "Template",
 }
 _JINJA = Environment()
 _ENV_ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
@@ -137,13 +185,6 @@ class ProjectService:
             "flows": self._catalog_summaries(workspace, project.flows.values(), project, "flows"),
             "schedules": self._catalog_summaries(workspace, project.schedules.values(), project, "schedules"),
             "handlers": self._handler_summaries(workspace, project),
-            "templates": [
-                {
-                    "path": path.relative_to(workspace.resources / "templates").as_posix(),
-                    "name": self._display_name(project, "templates", path.relative_to(workspace.resources / "templates").as_posix()),
-                }
-                for path in sorted((workspace.resources / "templates").rglob("*.txt"))
-            ],
         }
 
     async def list_users(self, project_id: str) -> list[dict[str, Any]]:
@@ -291,7 +332,14 @@ class ProjectService:
         return self._list_resources(project_id, "schedules")
 
     def get_view(self, project_id: str, view_id: str) -> dict[str, Any]:
-        return self._get_resource(project_id, "views", view_id)
+        detail = self._get_resource(project_id, "views", view_id)
+        workspace = self.repository.workspace(project_id)
+        text_content, text_revision = self._resolve_view_text(
+            workspace, detail["payload"]
+        )
+        detail["text_content"] = text_content
+        detail["text_revision"] = text_revision
+        return detail
 
     def get_flow(self, project_id: str, flow_id: str) -> dict[str, Any]:
         return self._get_resource(project_id, "flows", flow_id)
@@ -299,8 +347,25 @@ class ProjectService:
     def get_schedule(self, project_id: str, schedule_id: str) -> dict[str, Any]:
         return self._get_resource(project_id, "schedules", schedule_id)
 
-    def create_view(self, project_id: str, view_id: str | None, payload: dict[str, Any], *, name: str | None = None) -> dict[str, Any]:
-        return self._create_resource_with_display_name(project_id, "views", view_id, payload, name)
+    def create_view(
+        self,
+        project_id: str,
+        view_id: str | None,
+        payload: dict[str, Any],
+        *,
+        name: str | None = None,
+        text_content: str | None = None,
+    ) -> dict[str, Any]:
+        if view_id is not None and name is None:
+            return self._create_view_resource(
+                project_id, view_id, payload, text_content=text_content
+            )
+        return self._create_named_view_resource(
+            project_id,
+            payload,
+            name=name,
+            text_content=text_content,
+        )
 
     def create_flow(self, project_id: str, flow_id: str | None, payload: dict[str, Any], *, name: str | None = None) -> dict[str, Any]:
         return self._create_resource_with_display_name(project_id, "flows", flow_id, payload, name)
@@ -311,9 +376,50 @@ class ProjectService:
         return self._create_resource_with_display_name(project_id, "schedules", schedule_id, payload, name)
 
     def save_view(
-        self, project_id: str, view_id: str, payload: dict[str, Any], revision: str
+        self,
+        project_id: str,
+        view_id: str,
+        payload: dict[str, Any],
+        revision: str,
+        *,
+        text_content: str,
+        text_revision: str | None,
     ) -> dict[str, Any]:
-        return self._save_resource(project_id, "views", view_id, payload, revision)
+        workspace = self.repository.workspace(project_id)
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            path = self._entity_path(workspace, project, "views", view_id)
+            self.repository.assert_revision(path, revision)
+            current_payload = self.repository.read_json(path)
+            current_template = self._view_template_reference(current_payload)
+            canonical_name = self._owned_view_template_name(view_id)
+            target = self._view_template_path(workspace, view_id)
+
+            if current_template is not None:
+                source = self.repository.safe_path(
+                    workspace.resources / "templates",
+                    current_template,
+                    suffix=".txt",
+                )
+                self.repository.assert_revision(source, text_revision)
+            if current_template != canonical_name and target.exists():
+                raise ResourceConflict(
+                    f"Internal text file for view '{view_id}' already exists."
+                )
+
+            normalized = self._normalize_entity(payload, view_id)
+            normalized["text"] = {"template": canonical_name}
+            before_view = path.read_bytes()
+            before_template = target.read_bytes() if target.exists() else None
+            try:
+                self.repository.atomic_write(target, text_content.encode("utf-8"))
+                self.repository.atomic_write_json(path, normalized)
+                self._load(workspace)
+            except BaseException:
+                self.repository.restore(target, before_template)
+                self.repository.restore(path, before_view)
+                raise
+        return self.get_view(project_id, view_id)
 
     def rename_view(
         self, project_id: str, view_id: str, new_id: str, revision: str
@@ -339,19 +445,44 @@ class ProjectService:
             ]
             payloads = {path: self.repository.read_json(path) for path in documents}
             payloads[source]["id"] = new_id
+            old_template_name = self._owned_view_template_name(view_id)
+            new_template_name = self._owned_view_template_name(new_id)
+            owns_template = (
+                self._view_template_reference(payloads[source]) == old_template_name
+            )
+            source_template = self._view_template_path(workspace, view_id)
+            target_template = self._view_template_path(workspace, new_id)
+            if owns_template:
+                if not source_template.is_file():
+                    raise ResourceNotFound(
+                        f"Internal text file for view '{view_id}' does not exist."
+                    )
+                if target_template.exists():
+                    raise ResourceConflict(
+                        f"Internal text file for view '{new_id}' already exists."
+                    )
+                payloads[source]["text"] = {"template": new_template_name}
             manifest = payloads[workspace.resources / "bot.json"]
             if manifest.get("entry_view") == view_id:
                 manifest["entry_view"] = new_id
             for payload in payloads.values():
                 self._replace_view_reference(payload, view_id, new_id)
             before = {path: path.read_bytes() for path in payloads}
+            before_template = source_template.read_bytes() if owns_template else None
             try:
+                if owns_template and before_template is not None:
+                    self.repository.atomic_write(target_template, before_template)
                 for path, payload in payloads.items():
                     self.repository.atomic_write_json(target if path == source else path, payload)
                 source.unlink()
+                if owns_template:
+                    source_template.unlink()
                 self._load(workspace)
             except BaseException:
                 target.unlink(missing_ok=True)
+                if owns_template:
+                    target_template.unlink(missing_ok=True)
+                    self.repository.restore(source_template, before_template)
                 for path, content in before.items():
                     self.repository.restore(path, content)
                 raise
@@ -439,7 +570,37 @@ class ProjectService:
         return self.get_schedule(project_id, new_id)
 
     def delete_view(self, project_id: str, view_id: str, revision: str) -> None:
-        self._delete_resource(project_id, "views", view_id, revision)
+        workspace = self.repository.workspace(project_id)
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            path = self._entity_path(workspace, project, "views", view_id)
+            self.repository.assert_revision(path, revision)
+            usages = self._resource_usages(project, "views", view_id, path)
+            if usages:
+                raise ResourceInUse(
+                    f"Cannot delete '{view_id}'; it is referenced {len(usages)} time(s)."
+                )
+            payload = self.repository.read_json(path)
+            owns_template = self._view_template_reference(
+                payload
+            ) == self._owned_view_template_name(view_id)
+            template_path = self._view_template_path(workspace, view_id)
+            before_view = path.read_bytes()
+            before_template = (
+                template_path.read_bytes()
+                if owns_template and template_path.is_file()
+                else None
+            )
+            try:
+                path.unlink()
+                if before_template is not None:
+                    template_path.unlink()
+                self._load(workspace)
+            except BaseException:
+                self.repository.restore(path, before_view)
+                if owns_template:
+                    self.repository.restore(template_path, before_template)
+                raise
 
     def delete_flow(self, project_id: str, flow_id: str, revision: str) -> None:
         self._delete_resource(project_id, "flows", flow_id, revision)
@@ -447,107 +608,7 @@ class ProjectService:
     def delete_schedule(self, project_id: str, schedule_id: str, revision: str) -> None:
         self._delete_resource(project_id, "schedules", schedule_id, revision)
 
-    # Templates and preview ------------------------------------------------------------
-
-    def get_template(self, project_id: str, path: str) -> dict[str, Any]:
-        workspace = self.repository.workspace(project_id)
-        target = self.repository.safe_path(
-            workspace.resources / "templates", path, suffix=".txt"
-        )
-        if not target.is_file():
-            raise ResourceNotFound(f"Template '{path}' does not exist.")
-        raw = target.read_bytes()
-        project = self._load(workspace)
-        return {
-            "path": path,
-            "name": self._display_name(project, "templates", path),
-            "name_is_default": self._has_default_display_name(project, "templates", path),
-            "content": raw.decode("utf-8"),
-            "revision": content_revision(raw),
-        }
-
-    def save_template(
-        self,
-        project_id: str,
-        path: str,
-        content: str,
-        revision: str | None,
-    ) -> dict[str, Any]:
-        workspace = self.repository.workspace(project_id)
-        target = self.repository.safe_path(
-            workspace.resources / "templates", path, suffix=".txt"
-        )
-        with self.repository.lock(workspace):
-            creating = not target.exists()
-            self.repository.assert_revision(target, revision, creating=creating)
-            self.repository.atomic_write(target, content.encode("utf-8"))
-        return self.get_template(project_id, path)
-
-    def rename_template(
-        self, project_id: str, path: str, new_path: str, revision: str
-    ) -> dict[str, Any]:
-        workspace = self.repository.workspace(project_id)
-        source = self.repository.safe_path(
-            workspace.resources / "templates", path, suffix=".txt"
-        )
-        target = self.repository.safe_path(
-            workspace.resources / "templates", new_path, suffix=".txt"
-        )
-        if path == new_path:
-            return self.get_template(project_id, path)
-        with self.repository.lock(workspace):
-            self.repository.assert_revision(source, revision)
-            if not source.is_file():
-                raise ResourceNotFound(f"Template '{path}' does not exist.")
-            if target.exists():
-                raise ResourceConflict(f"Template '{new_path}' already exists.")
-            project = self._load(workspace)
-            documents = [
-                self._entity_path(workspace, project, "views", view.id)
-                for view in project.views.values()
-                if view.text.template == path
-            ]
-            payloads = {item: self.repository.read_json(item) for item in documents}
-            for payload in payloads.values():
-                payload["text"]["template"] = new_path
-            before = {source: source.read_bytes(), **{item: item.read_bytes() for item in payloads}}
-            try:
-                self.repository.atomic_write(target, before[source])
-                for item, payload in payloads.items():
-                    self.repository.atomic_write_json(item, payload)
-                source.unlink()
-                self._load(workspace)
-            except BaseException:
-                target.unlink(missing_ok=True)
-                for item, content in before.items():
-                    self.repository.restore(item, content)
-                raise
-        return self.get_template(project_id, new_path)
-
-    def delete_template(self, project_id: str, path: str, revision: str) -> None:
-        workspace = self.repository.workspace(project_id)
-        target = self.repository.safe_path(
-            workspace.resources / "templates", path, suffix=".txt"
-        )
-        with self.repository.lock(workspace):
-            self.repository.assert_revision(target, revision)
-            project = self._load(workspace)
-            usages = [
-                view.source_path or view.id
-                for view in project.views.values()
-                if view.text.template == path
-            ]
-            if usages:
-                raise ResourceInUse(
-                    f"Template '{path}' is still referenced {len(usages)} time(s)."
-                )
-            before = target.read_bytes()
-            try:
-                target.unlink()
-                self._load(workspace)
-            except BaseException:
-                self.repository.restore(target, before)
-                raise
+    # Preview -------------------------------------------------------------------------
 
     def preview(self, project_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         workspace = self.repository.workspace(project_id)
@@ -1066,7 +1127,7 @@ class ProjectService:
 
     @staticmethod
     def slugify_display_name(value: str, prefix: str) -> str:
-        ascii_value = unidecode(value).lower()
+        ascii_value = _unidecode(value).lower()
         slug = re.sub(r"[^a-z0-9]+", "_", ascii_value).strip("_")
         if not slug:
             slug = prefix
@@ -1094,11 +1155,6 @@ class ProjectService:
             return key in project.handlers
         if kind == "commands":
             return any(command.name == key for command in project.commands.commands)
-        if kind == "templates":
-            try:
-                return self.repository.safe_path(workspace.resources / "templates", key, suffix=".txt").is_file()
-            except WorkspaceError:
-                return False
         return False
 
     def _list_resources(self, project_id: str, kind: str) -> list[dict[str, Any]]:
@@ -1117,6 +1173,164 @@ class ProjectService:
         detail["name"] = self._display_name(project, kind, entity_id)
         detail["name_is_default"] = self._has_default_display_name(project, kind, entity_id)
         return detail
+
+    def _create_view_resource(
+        self,
+        project_id: str,
+        view_id: str,
+        payload: dict[str, Any],
+        *,
+        text_content: str | None,
+    ) -> dict[str, Any]:
+        self._validate_resource_id(view_id)
+        workspace = self.repository.workspace(project_id)
+        path = self.repository.safe_path(
+            workspace.resources, Path("views") / f"{view_id}.json", suffix=".json"
+        )
+        template_path = self._view_template_path(workspace, view_id)
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            if view_id in project.views or path.exists():
+                raise ResourceConflict(f"View '{view_id}' already exists.")
+            if template_path.exists():
+                raise ResourceConflict(
+                    f"Internal text file for view '{view_id}' already exists."
+                )
+            source_payload = payload or self._default_resource_payload("views", view_id)
+            content = (
+                text_content
+                if text_content is not None
+                else self._resolve_view_text(workspace, source_payload)[0]
+            )
+            normalized = self._normalize_entity(source_payload, view_id)
+            normalized["text"] = {
+                "template": self._owned_view_template_name(view_id)
+            }
+            self.repository.assert_revision(path, None, creating=True)
+            self.repository.assert_revision(template_path, None, creating=True)
+            try:
+                self.repository.atomic_write(template_path, content.encode("utf-8"))
+                self.repository.atomic_write_json(path, normalized)
+                self._load(workspace)
+            except BaseException:
+                path.unlink(missing_ok=True)
+                template_path.unlink(missing_ok=True)
+                raise
+        return self.get_view(project_id, view_id)
+
+    def _create_named_view_resource(
+        self,
+        project_id: str,
+        payload: dict[str, Any],
+        *,
+        name: str | None,
+        text_content: str | None,
+    ) -> dict[str, Any]:
+        workspace = self.repository.workspace(project_id)
+        manifest_path = workspace.resources / "bot.json"
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            display_name = (
+                name.strip()
+                if isinstance(name, str) and name.strip()
+                else self._next_display_name(project, "views")
+            )
+            view_id = self.slugify_display_name(display_name, "view")
+            path = self.repository.safe_path(
+                workspace.resources,
+                Path("views") / f"{view_id}.json",
+                suffix=".json",
+            )
+            template_path = self._view_template_path(workspace, view_id)
+            if view_id in project.views or path.exists():
+                raise ResourceConflict(
+                    f"View name '{display_name}' conflicts with technical id '{view_id}'."
+                )
+            if template_path.exists():
+                raise ResourceConflict(
+                    f"Internal text file for view '{view_id}' already exists."
+                )
+            source_payload = payload or self._default_resource_payload(
+                "views", display_name
+            )
+            content = (
+                text_content
+                if text_content is not None
+                else self._resolve_view_text(workspace, source_payload)[0]
+            )
+            normalized = self._normalize_entity(source_payload, view_id)
+            normalized["text"] = {
+                "template": self._owned_view_template_name(view_id)
+            }
+            manifest = self.repository.read_json(manifest_path)
+            before_manifest = manifest_path.read_bytes()
+            names = manifest.setdefault("display_names", {})
+            if not isinstance(names, dict):
+                raise WorkspaceError("bot.json: display_names must be an object.")
+            values = names.setdefault("views", {})
+            if not isinstance(values, dict):
+                raise WorkspaceError("bot.json: display_names.views must be an object.")
+            if display_name == self._default_display_name("views", view_id):
+                values.pop(view_id, None)
+            else:
+                values[view_id] = display_name
+            if not values:
+                names.pop("views", None)
+            if not names:
+                manifest.pop("display_names", None)
+            self.repository.assert_revision(path, None, creating=True)
+            self.repository.assert_revision(template_path, None, creating=True)
+            try:
+                self.repository.atomic_write(template_path, content.encode("utf-8"))
+                self.repository.atomic_write_json(path, normalized)
+                self.repository.atomic_write_json(manifest_path, manifest)
+                self._load(workspace)
+            except BaseException:
+                path.unlink(missing_ok=True)
+                template_path.unlink(missing_ok=True)
+                self.repository.restore(manifest_path, before_manifest)
+                raise
+        return self.get_view(project_id, view_id)
+
+    @staticmethod
+    def _owned_view_template_name(view_id: str) -> str:
+        return f"views/{view_id}.txt"
+
+    def _view_template_path(self, workspace: Workspace, view_id: str) -> Path:
+        return self.repository.safe_path(
+            workspace.resources / "templates",
+            self._owned_view_template_name(view_id),
+            suffix=".txt",
+        )
+
+    @staticmethod
+    def _view_template_reference(payload: Mapping[str, Any]) -> str | None:
+        text = payload.get("text")
+        template = text.get("template") if isinstance(text, Mapping) else None
+        return template if isinstance(template, str) else None
+
+    def _resolve_view_text(
+        self, workspace: Workspace, payload: Mapping[str, Any]
+    ) -> tuple[str, str | None]:
+        text = payload.get("text")
+        if not isinstance(text, Mapping):
+            raise WorkspaceError("View text must be an object.")
+        inline = text.get("inline")
+        if isinstance(inline, str):
+            return inline, None
+        template = text.get("template")
+        if not isinstance(template, str):
+            raise WorkspaceError("View text needs exactly one of inline or template.")
+        path = self.repository.safe_path(
+            workspace.resources / "templates", template, suffix=".txt"
+        )
+        try:
+            raw = path.read_bytes()
+            return raw.decode("utf-8"), content_revision(raw)
+        except (OSError, UnicodeError) as error:
+            raise WorkspaceError(
+                f"Cannot read text for view template '{template}' as UTF-8."
+            ) from error
 
     def _create_resource_with_display_name(
         self,
@@ -1351,6 +1565,11 @@ class ProjectService:
                     "name": self._display_name(project, kind, entity.id),
                     "source_path": entity.source_path,
                     "revision": content_revision(path.read_bytes()),
+                    **(
+                        {"states": sorted(entity.states.keys())}
+                        if kind == "flows"
+                        else {}
+                    ),
                 }
             )
         return values

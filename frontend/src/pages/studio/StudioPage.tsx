@@ -207,13 +207,12 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     flows: workspace.flows.map((item) => item.id),
     states: editor?.kind === "flow" ? Object.keys(editor.detail.payload.states) : [],
     handlers: workspace.handlers,
-    templates: workspace.templates.map((item) => item.path),
   }), [editor, workspace]);
 
   const explorerDraft = useMemo(() => draftForEditor(editor), [editor]);
   const previewModel = useMemo(() => createTelegramPreviewModel(workspace, previewEditor(editor)), [editor, workspace]);
 
-  const addResource = async (kind: CreatableResource, templatePath = "") => {
+  const addResource = async (kind: CreatableResource) => {
     if (editor && activeTabKey) setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
     if (kind === "handler") {
       const nextEditor: Exclude<EditorState, null> = { kind: "new-handler" };
@@ -229,7 +228,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     setBusy(true);
     setNotice("");
     try {
-      const { editor: nextEditor, selection: nextSelection } = await createResource(api, workspace, kind, templatePath);
+      const { editor: nextEditor, selection: nextSelection } = await createResource(api, workspace, kind);
       const tabKey = selectionTabKey(nextSelection);
       setSelection(nextSelection);
       setActiveTabKey(tabKey);
@@ -448,7 +447,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
       const { selection: nextSelection, editor: nextEditor } = await renameResource(next, name);
       applyRenameToTabs(next, nextSelection, nextEditor);
       await refreshWorkspace();
-      const previousName = next.kind === "template" ? next.path : next.kind === "command" ? next.name : next.id;
+      const previousName = next.kind === "command" ? next.name : next.id;
       pushUndo({
         undo: async () => {
           const restored = await renameResource(nextSelection, previousName);

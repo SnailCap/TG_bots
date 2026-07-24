@@ -395,7 +395,7 @@ class GitService:
         groups: dict[str, int] = {}
         for change in changes:
             path = change["path"]
-            group = "templates" if path.startswith("resources/templates/") else "views" if path.startswith("resources/views/") else "flows" if path.startswith("resources/flows/") else "files"
+            group = "view texts" if path.startswith("resources/templates/views/") else "templates" if path.startswith("resources/templates/") else "views" if path.startswith("resources/views/") else "flows" if path.startswith("resources/flows/") else "files"
             groups[group] = groups.get(group, 0) + 1
         summary = ", ".join(f"{count} {name}" for name, count in groups.items())
         return f"Update {summary}"

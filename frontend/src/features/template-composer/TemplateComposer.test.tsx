@@ -7,17 +7,17 @@ import { useFieldHistory } from "../../shared/lib/useFieldHistory";
 
 function Harness({ initial = "" }: { initial?: string }) {
   const [content, setContent] = useState(initial);
-  return <><TemplateComposer path="welcome.txt" content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
+  return <><TemplateComposer content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
 }
 
 function HistoryHarness({ initial = "" }: { initial?: string }) {
   const [content, setContent] = useState(initial);
   useFieldHistory();
-  return <><TemplateComposer path="welcome.txt" content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
+  return <><TemplateComposer content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
 }
 
 function typeVisual(value: string) {
-  const editor = screen.getByRole("textbox", { name: "Visual template content" });
+  const editor = screen.getByRole("textbox", { name: "Visual message content" });
   const textElement = editor.querySelector<HTMLElement>("[data-template-node='text']") ?? editor;
   textElement.textContent = value;
   const text = textElement.firstChild;
@@ -70,7 +70,7 @@ describe("visual template composer", () => {
 
   it("undoes deletion of an inserted variable", async () => {
     render(<HistoryHarness initial="{{ user.first_name }}" />);
-    const editor = screen.getByRole("textbox", { name: "Visual template content" });
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
     const token = screen.getByLabelText("Пользователь: Имя");
     token.focus();
     fireEvent.keyDown(token, { key: "Backspace" });
@@ -104,12 +104,12 @@ describe("visual template composer", () => {
     token.focus();
     fireEvent.keyDown(token, { key: "Backspace" });
     expect(screen.getByTestId("source-value")).toBeEmptyDOMElement();
-    expect(screen.getByRole("textbox", { name: "Visual template content" }).querySelector("[data-template-node='text']")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Visual message content" }).querySelector("[data-template-node='text']")).toBeInTheDocument();
   });
 
   it("keeps a live caret after deleting text typed immediately after a token", async () => {
     render(<Harness initial="{{ user.first_name }}x" />);
-    const editor = screen.getByRole("textbox", { name: "Visual template content" });
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
     const renderedSuffix = editor.querySelector<HTMLElement>("[data-template-node='text']")!.firstChild!;
     renderedSuffix.textContent = "";
     setCaret(renderedSuffix, 0);
@@ -125,7 +125,7 @@ describe("visual template composer", () => {
   it("switches modes and reparses source changes into visual tokens", () => {
     render(<Harness initial="Hello" />);
     fireEvent.click(screen.getByRole("tab", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Template source" }), { target: { value: "Hi {{ user.username }}" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Hi {{ user.username }}" } });
     fireEvent.click(screen.getByRole("tab", { name: "Visual" }));
     expect(screen.getByLabelText("Пользователь: Username")).toBeInTheDocument();
   });
@@ -143,6 +143,23 @@ describe("visual template composer", () => {
     expect(screen.getByLabelText("Unknown context field: order.total")).toBeInTheDocument();
     expect(screen.getByText("Unknown context field: order.total")).toBeInTheDocument();
     expect(screen.getByTestId("source-value")).toHaveTextContent("Total: {{ order.total }}");
+  });
+
+  it("commits composed text only after composition ends", () => {
+    render(<Harness />);
+    const editor = screen.getByRole("textbox", { name: "Visual message content" });
+    const textElement = editor.querySelector<HTMLElement>("[data-template-node='text']")!;
+
+    fireEvent.compositionStart(editor);
+    textElement.textContent = "п";
+    setCaret(textElement.firstChild as Node, 1);
+    fireEvent.input(editor);
+    expect(screen.getByTestId("source-value")).toBeEmptyDOMElement();
+
+    textElement.textContent = "пр";
+    setCaret(textElement.firstChild as Node, 2);
+    fireEvent.compositionEnd(editor);
+    expect(screen.getByTestId("source-value")).toHaveTextContent("пр");
   });
 });
 
