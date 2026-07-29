@@ -5,6 +5,8 @@ import math
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..content import ContentDocumentError, parse_content_document
+
 from .models import (
     SCHEMA_VERSION,
     ActionSpec,
@@ -59,6 +61,19 @@ class ProjectLoader:
             path.relative_to(templates_dir).as_posix(): path.read_text(encoding="utf-8")
             for path in sorted(templates_dir.rglob("*.txt"))
         }
+        content_documents = {}
+        content_dir = resources / "content"
+        if content_dir.is_dir():
+            for path in sorted(content_dir.rglob("*.json")):
+                name = path.relative_to(content_dir).as_posix()
+                try:
+                    content_documents[name] = parse_content_document(
+                        path.read_text(encoding="utf-8")
+                    )
+                except (OSError, UnicodeError, ContentDocumentError) as error:
+                    raise ProjectLoadError(
+                        f"content/{name}: invalid content document: {error}"
+                    ) from error
         return ProjectDefinition(
             root=project_root,
             resources=resources,
@@ -69,6 +84,7 @@ class ProjectLoader:
             commands=commands,
             schedules=schedules,
             templates=templates,
+            content_documents=content_documents,
         )
 
     def _load_directory(self, resources: Path, name: str, parser):
@@ -116,6 +132,9 @@ class ProjectLoader:
         inline, template = text.get("inline"), text.get("template")
         if (isinstance(inline, str)) == (isinstance(template, str)):
             raise ProjectLoadError(f"{source}: text must contain exactly one of inline or template.")
+        document = text.get("document")
+        if document is not None and not isinstance(document, str):
+            raise ProjectLoadError(f"{source}: text.document must be a string when present.")
         rows = data.get("keyboard", [])
         if not isinstance(rows, list):
             raise ProjectLoadError(f"{source}: keyboard must be an array.")
@@ -136,7 +155,11 @@ class ProjectLoader:
             keyboard.append(tuple(buttons))
         return ViewSpec(
             id=self._string(data, "id", source),
-            text=TextSpec(inline=inline if isinstance(inline, str) else None, template=template if isinstance(template, str) else None),
+            text=TextSpec(
+                inline=inline if isinstance(inline, str) else None,
+                template=template if isinstance(template, str) else None,
+                document=document if isinstance(document, str) else None,
+            ),
             keyboard=tuple(keyboard),
             source_path=source,
         )

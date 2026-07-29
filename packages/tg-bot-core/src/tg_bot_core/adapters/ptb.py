@@ -4,11 +4,12 @@ import logging
 from io import BytesIO
 from pathlib import PurePosixPath
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MessageEntity, Update
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
 from ..catalog import CallbackCodec, CatalogError
+from ..content import TelegramMessageEntity
 from ..events import Actor, CallbackEvent, CommandEvent, MessageEvent
 from ..transport import BotTransport, EventHandler, OutboundMessage, UserProfileAvatar
 
@@ -58,6 +59,7 @@ class PtbTransport(BotTransport):
             if message.keyboard
             else None
         )
+        entities = [self._message_entity(entity) for entity in message.entities] or None
         if message.edit_message_id is not None:
             try:
                 await self._app.bot.edit_message_text(
@@ -65,13 +67,30 @@ class PtbTransport(BotTransport):
                     message_id=message.edit_message_id,
                     text=message.text,
                     reply_markup=keyboard,
+                    entities=entities,
                 )
                 return
             except BadRequest as error:
                 if "message is not modified" in str(error).lower():
                     return
                 log.warning("Could not edit message %s; sending a new one: %s", message.edit_message_id, error)
-        await self._app.bot.send_message(chat_id=message.chat_id, text=message.text, reply_markup=keyboard)
+        await self._app.bot.send_message(
+            chat_id=message.chat_id,
+            text=message.text,
+            reply_markup=keyboard,
+            entities=entities,
+        )
+
+    @staticmethod
+    def _message_entity(entity: TelegramMessageEntity) -> MessageEntity:
+        return MessageEntity(
+            type=entity.type,
+            offset=entity.offset,
+            length=entity.length,
+            url=entity.url,
+            language=entity.language,
+            custom_emoji_id=entity.custom_emoji_id,
+        )
 
     async def fetch_user_avatar(
         self, user_id: int, current_file_id: str | None

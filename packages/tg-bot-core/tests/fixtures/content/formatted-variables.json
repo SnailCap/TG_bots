@@ -1,0 +1,42 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "formatted-variables",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {"type": "text", "text": "Hi "},
+          {
+            "type": "variable",
+            "variableReference": {
+              "fieldId": "core.user.first_name",
+              "path": "user.first_name"
+            },
+            "marks": [{"type": "bold"}, {"type": "underline"}]
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "variables": {"user": {"first_name": "Ada"}},
+  "expected": {
+    "messages": [
+      {
+        "text": "Hi Ada",
+        "entities": [
+          {"type": "bold", "offset": 3, "length": 3},
+          {"type": "underline", "offset": 3, "length": 3}
+        ]
+      }
+    ],
+    "warnings": [],
+    "errors": []
+  }
+}

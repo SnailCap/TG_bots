@@ -1,0 +1,30 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "expandable-blockquote",
+    "content": [
+      {
+        "type": "expandableBlockquote",
+        "content": [{"type": "text", "text": "More"}]
+      }
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "expected": {
+    "messages": [
+      {
+        "text": "More",
+        "entities": [
+          {"type": "expandable_blockquote", "offset": 0, "length": 4}
+        ]
+      }
+    ],
+    "warnings": [],
+    "errors": []
+  }
+}

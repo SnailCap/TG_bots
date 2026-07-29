@@ -1,0 +1,25 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "code-block",
+    "content": [{"type": "codeBlock", "language": "python", "text": "x = 1"}],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "expected": {
+    "messages": [
+      {
+        "text": "x = 1",
+        "entities": [
+          {"type": "pre", "offset": 0, "length": 5, "language": "python"}
+        ]
+      }
+    ],
+    "warnings": [],
+    "errors": []
+  }
+}

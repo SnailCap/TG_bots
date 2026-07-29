@@ -55,7 +55,7 @@ Starter pin-ит core на опубликованный immutable commit `b183a1
 
 | Путь | Назначение |
 | --- | --- |
-| `packages/tg-bot-core/` | schema v3 loader/validator, runtime, SDK, PTB transport и SQLite jobs/sessions |
+| `packages/tg-bot-core/` | schema v3 loader/validator, rich content compiler, runtime, SDK, PTB transport и SQLite jobs/sessions |
 | `backend/` | локальный FastAPI control plane для файлов проекта и handler scaffolding |
 | `frontend/` | Electron + React Studio, typed editors и безопасное открытие Python-файлов |
 | `docs/` | архитектура, schema, custom-code workflow, deployment и migration notes |
@@ -66,6 +66,7 @@ Starter pin-ит core на опубликованный immutable commit `b183a1
 - [Обзор архитектуры](docs/architecture/overview.md)
 - [Project schema v3](docs/architecture/project-schema-v3.md)
 - [Runtime dispatch](docs/architecture/runtime-dispatch.md)
+- [Rich Text Content Editor](docs/studio/content-editor.md)
 - [Работа с custom code в Studio](docs/studio/custom-code-workflow.md)
 - [Совместная работа и публикация через Git](docs/studio/git-workflow.md)
 - [Расширение schema/runtime](docs/development/extending-schema.md)

@@ -1,0 +1,21 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "legacy-message",
+    "content": [
+      {"type": "legacyTemplate", "source": "Hello, {{ user.first_name }}!"}
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "legacy-adapter",
+      "source": "legacy-content"
+    }
+  },
+  "variables": {"user": {"first_name": "Ada"}},
+  "expected": {
+    "messages": [{"text": "Hello, Ada!", "entities": []}],
+    "warnings": [],
+    "errors": []
+  }
+}

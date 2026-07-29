@@ -6,8 +6,8 @@
 
 `BotApp.start()` выполняет действия в таком порядке:
 
-1. `ProjectLoader` читает декларативную схему проекта.
-2. `validate_project(..., inspect_code=True)` проверяет graph и handler source signatures. Любая error diagnostic останавливает startup до polling.
+1. `ProjectLoader` читает декларативную схему проекта, templates и optional `resources/content/**/*.json`.
+2. `validate_project(..., inspect_code=True)` проверяет graph, все indexed content documents, их references и handler source signatures. Любая error diagnostic останавливает startup до polling.
 3. `SqliteStore` инициализирует runtime tables (`CREATE TABLE IF NOT EXISTS`) и включает WAL.
 4. `ServiceContainer` создаёт providers последовательно.
 5. `HandlerResolver.validate_all()` импортирует каждый explicit binding и кеширует async callable.
@@ -162,7 +162,16 @@ Context type выбирается trigger kind. Interactive context не сод�
 
 ## Rendering и callbacks
 
-Catalog рендерит inline/template Jinja с `StrictUndefined`. Variables включают session state и `user` mapping. Keyboard buttons получают callback data через `CallbackCodec`; protocol содержит только stable global button ID. Старое сообщение может всё ещё прислать callback: button с другого view считается inactive; удалённый ID — stale. Если тот же ID переиспользован на том же view с другим смыслом, будет выполнена его текущая action, поэтому IDs следует сохранять стабильными.
+Catalog выбирает source по `view.text`:
+
+- без `document` рендерит прежний inline/template Jinja с `StrictUndefined`;
+- с `document` вызывает Content Engine и получает один или несколько `CompiledTelegramMessage(text, entities)`.
+
+В обоих случаях variables включают session state и `user` mapping. Structured compiler разрешает typed variable только по validated dotted path, считает entity offsets/lengths в UTF-16 units и по умолчанию безопасно разбивает результат длиннее 4096 units. PTB получает готовые entities без HTML/Markdown parse mode. Compile errors становятся `CatalogError` и проходят через существующую flow error boundary; warnings логируются с view ID и code.
+
+При нескольких chunks runtime отправляет их последовательно. Keyboard прикрепляется только к последнему message, чтобы callbacks соответствовали полностью показанному view; callback-driven edit применяется к первому chunk, а последующие всегда отправляются как новые messages. Подробный document/compiler contract описан в [Rich Text Content Editor](../studio/content-editor.md).
+
+Keyboard buttons получают callback data через `CallbackCodec`; protocol содержит только stable global button ID. Старое сообщение может всё ещё прислать callback: button с другого view считается inactive; удалённый ID — stale. Если тот же ID переиспользован на том же view с другим смыслом, будет выполнена его текущая action, поэтому IDs следует сохранять стабильными.
 
 Callback-переходы `view.render` и `flow.start` по умолчанию редактируют сообщение бота, из которого пришёл callback. Их optional `delivery: "send"` принудительно создаёт новое сообщение; `delivery: "edit"` является default. Для событий без редактируемого bot message runtime безопасно использует обычную отправку.
 

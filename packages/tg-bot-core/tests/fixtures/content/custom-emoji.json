@@ -1,0 +1,42 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "custom-emoji",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {"type": "text", "text": "Ok "},
+          {
+            "type": "customEmoji",
+            "customEmojiId": "5368324170671202286",
+            "fallbackEmoji": "😀"
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "expected": {
+    "messages": [
+      {
+        "text": "Ok 😀",
+        "entities": [
+          {
+            "type": "custom_emoji",
+            "offset": 3,
+            "length": 2,
+            "custom_emoji_id": "5368324170671202286"
+          }
+        ]
+      }
+    ],
+    "warnings": [],
+    "errors": []
+  }
+}

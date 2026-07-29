@@ -3,8 +3,18 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from fastapi.responses import FileResponse
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
+from app.workspace.custom_emoji import (
+    DEFAULT_FALLBACK_EMOJI,
+    CustomEmojiRequestError,
+    CustomEmojiSource,
+)
+from app.workspace.preview_message import (
+    PreviewMessageCompileError,
+    PreviewMessageDeliveryError,
+)
 from app.workspace.service import ProjectService, WorkspaceError
 
 
@@ -29,6 +39,7 @@ class ResourceCreateRequest(BaseModel):
 
 class ViewCreateRequest(ResourceCreateRequest):
     text_content: str | None = None
+    content_document: dict[str, Any] | None = None
 
 
 class DisplayNameRequest(BaseModel):
@@ -48,6 +59,67 @@ class ViewSaveRequest(ResourceSaveRequest):
     text_revision: str | None
 
 
+class ViewContentSaveRequest(ResourceSaveRequest):
+    document: dict[str, Any]
+    document_revision: str | None = None
+    text_revision: str | None = None
+
+
+class ContentCompileRequest(BaseModel):
+    document: dict[str, Any]
+    variables: dict[str, Any] = Field(default_factory=dict)
+    split_long_messages: bool = True
+
+
+class PreviewMessageSendRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    document: dict[str, Any]
+    variables: dict[str, Any] = Field(default_factory=dict)
+    chat_id: int | str = Field(
+        validation_alias=AliasChoices("chatId", "chat_id"),
+        serialization_alias="chatId",
+    )
+    split_long_messages: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("splitLongMessages", "split_long_messages"),
+        serialization_alias="splitLongMessages",
+    )
+
+    @field_validator("chat_id", mode="before")
+    @classmethod
+    def reject_boolean_chat_id(cls, value: object) -> object:
+        if isinstance(value, bool) or not isinstance(value, (int, str)):
+            raise ValueError("chatId must be an integer or non-empty string.")
+        return value
+
+
+class ContentDiagnosticResponse(BaseModel):
+    severity: Literal["info", "warning", "error"]
+    code: str
+    message: str
+    path: str | None = None
+
+
+class PreviewMessageSendResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    sent: Literal[True]
+    sent_count: int = Field(
+        validation_alias=AliasChoices("sentCount", "sent_count"),
+        serialization_alias="sentCount",
+    )
+    total_count: int = Field(
+        validation_alias=AliasChoices("totalCount", "total_count"),
+        serialization_alias="totalCount",
+    )
+    message_ids: list[int | None] = Field(
+        validation_alias=AliasChoices("messageIds", "message_ids"),
+        serialization_alias="messageIds",
+    )
+    warnings: list[ContentDiagnosticResponse] = Field(default_factory=list)
+
+
 class ResourceRenameRequest(BaseModel):
     id: str = Field(min_length=1, max_length=128)
     revision: str
@@ -61,6 +133,43 @@ class ProjectSettingsSaveRequest(BaseModel):
     telegram_bot_token: str | None = Field(default=None, max_length=4096)
     clear_telegram_bot_token: bool = False
     revision: str | None = None
+
+
+class CustomEmojiResolveRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    custom_emoji_ids: list[str] = Field(
+        min_length=1,
+        max_length=200,
+        validation_alias=AliasChoices("customEmojiIds", "custom_emoji_ids", "ids"),
+        serialization_alias="customEmojiIds",
+    )
+    fallback_by_id: dict[str, str] = Field(
+        default_factory=dict,
+        max_length=200,
+        validation_alias=AliasChoices("fallbackById", "fallback_by_id"),
+        serialization_alias="fallbackById",
+    )
+    source: CustomEmojiSource = "manual-id"
+
+
+class CustomEmojiCapabilityTestRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    custom_emoji_id: str = Field(
+        validation_alias=AliasChoices("customEmojiId", "custom_emoji_id", "id"),
+        serialization_alias="customEmojiId",
+    )
+    chat_id: int | str = Field(
+        validation_alias=AliasChoices("chatId", "chat_id"),
+        serialization_alias="chatId",
+    )
+    fallback_emoji: str = Field(
+        default=DEFAULT_FALLBACK_EMOJI,
+        max_length=32,
+        validation_alias=AliasChoices("fallbackEmoji", "fallback_emoji", "fallback"),
+        serialization_alias="fallbackEmoji",
+    )
 
 
 class UserUpdateRequest(BaseModel):
@@ -98,6 +207,31 @@ def fail(error: WorkspaceError) -> None:
         error.status_code,
         {"code": error.code, "message": str(error)},
     ) from error
+
+
+def fail_custom_emoji(error: CustomEmojiRequestError) -> None:
+    raise HTTPException(
+        422,
+        {"code": error.code, "message": str(error)},
+    ) from error
+
+
+def fail_preview_message(error: WorkspaceError) -> None:
+    detail: dict[str, Any] = {"code": error.code, "message": str(error)}
+    if isinstance(error, PreviewMessageCompileError):
+        detail["errors"] = [
+            {
+                "severity": item.severity,
+                "code": item.code,
+                "message": item.message,
+                **({"path": item.path} if item.path is not None else {}),
+            }
+            for item in error.diagnostics
+        ]
+    elif isinstance(error, PreviewMessageDeliveryError):
+        detail["sentCount"] = error.sent_count
+        detail["totalCount"] = error.total_count
+    raise HTTPException(error.status_code, detail) from error
 
 
 @router.post("/open")
@@ -206,6 +340,65 @@ async def save_project_settings(
         fail(error)
 
 
+# Telegram custom emoji ---------------------------------------------------------------
+
+
+@router.post("/{project_id}/telegram/custom-emojis/resolve")
+async def resolve_custom_emojis(
+    project_id: str, body: CustomEmojiResolveRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return await service(request).resolve_custom_emojis(
+            project_id,
+            body.custom_emoji_ids,
+            fallback_by_id=body.fallback_by_id,
+            source=body.source,
+        )
+    except CustomEmojiRequestError as error:
+        fail_custom_emoji(error)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.get("/{project_id}/telegram/custom-emojis/{custom_emoji_id}/preview")
+async def get_custom_emoji_preview(
+    project_id: str, custom_emoji_id: str, request: Request
+) -> Response:
+    try:
+        preview = service(request).get_custom_emoji_preview(
+            project_id, custom_emoji_id
+        )
+        return FileResponse(
+            path=preview.path,
+            media_type=preview.mime_type,
+            headers={
+                "Cache-Control": "public, max-age=31536000, immutable",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
+    except CustomEmojiRequestError as error:
+        fail_custom_emoji(error)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.post("/{project_id}/telegram/custom-emojis/capability-test")
+async def test_custom_emoji_capability(
+    project_id: str, body: CustomEmojiCapabilityTestRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return await service(request).test_custom_emoji_capability(
+            project_id,
+            body.custom_emoji_id,
+            chat_id=body.chat_id,
+            fallback_emoji=body.fallback_emoji,
+        )
+    except CustomEmojiRequestError as error:
+        fail_custom_emoji(error)
+    except WorkspaceError as error:
+        fail(error)
+
+
 @router.get("/{project_id}/manifest")
 async def get_manifest(project_id: str, request: Request) -> dict[str, Any]:
     try:
@@ -248,6 +441,7 @@ async def create_view(
             body.payload,
             name=body.name,
             text_content=body.text_content,
+            content_document=body.content_document,
         )
     except WorkspaceError as error:
         fail(error)
@@ -275,6 +469,27 @@ async def save_view(
             body.payload,
             body.revision,
             text_content=body.text_content,
+            text_revision=body.text_revision,
+        )
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.put("/{project_id}/views/{view_id}/content")
+async def save_view_content(
+    project_id: str,
+    view_id: str,
+    body: ViewContentSaveRequest,
+    request: Request,
+) -> dict[str, Any]:
+    try:
+        return service(request).save_view_content(
+            project_id,
+            view_id,
+            body.payload,
+            body.revision,
+            document=body.document,
+            document_revision=body.document_revision,
             text_revision=body.text_revision,
         )
     except WorkspaceError as error:
@@ -594,6 +809,42 @@ async def delete_handler(
 
 
 # Preview and validation ---------------------------------------------------------------
+
+
+@router.post("/{project_id}/content/compile")
+async def compile_content(
+    project_id: str, body: ContentCompileRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).compile_content(
+            project_id,
+            body.document,
+            variables=body.variables,
+            split_long_messages=body.split_long_messages,
+        )
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.post(
+    "/{project_id}/content/send-preview",
+    response_model=PreviewMessageSendResponse,
+)
+async def send_preview_message(
+    project_id: str,
+    body: PreviewMessageSendRequest,
+    request: Request,
+) -> dict[str, Any]:
+    try:
+        return await service(request).send_preview_message(
+            project_id,
+            body.document,
+            variables=body.variables,
+            chat_id=body.chat_id,
+            split_long_messages=body.split_long_messages,
+        )
+    except WorkspaceError as error:
+        fail_preview_message(error)
 
 
 @router.post("/{project_id}/preview")

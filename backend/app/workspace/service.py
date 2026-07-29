@@ -3,10 +3,23 @@ from __future__ import annotations
 import re
 import shutil
 import unicodedata
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
 
 from jinja2 import Environment, TemplateSyntaxError
+from tg_bot_core.content import (
+    ContentDocumentError,
+    TelegramCompileOptions,
+    TelegramCompileResult,
+    compile_content_document,
+    compile_result_to_dict,
+    content_document_to_dict,
+    normalize_content_document,
+    parse_content_document,
+    serialize_legacy_template,
+    validate_content_document,
+)
 from tg_bot_core.events import UserRole
 from tg_bot_core.project import (
     ProjectLoadError,
@@ -65,12 +78,22 @@ except ModuleNotFoundError:
         normalized = unicodedata.normalize("NFKD", translated)
         return normalized.encode("ascii", "ignore").decode("ascii")
 
+from .custom_emoji import (
+    CachedCustomEmojiPreview,
+    CustomEmojiService,
+    CustomEmojiSource,
+)
 from .handlers import (
     HandlerInspector,
     handler_template,
     handler_usages,
     scaffold_target,
     validate_handler_id,
+)
+from .preview_message import (
+    PreviewMessageCompileError,
+    PreviewMessageConfigurationError,
+    PreviewMessageSender,
 )
 from .repository import (
     ResourceConflict,
@@ -99,6 +122,7 @@ _DISPLAY_KIND_LABELS = {
 _JINJA = Environment()
 _ENV_ASSIGNMENT = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$")
 _TELEGRAM_TOKEN_MAX_LENGTH = 4096
+_CONTENT_DOCUMENT_MAX_BYTES = 2 * 1024 * 1024
 
 
 class ProjectService:
@@ -109,11 +133,15 @@ class ProjectService:
         *,
         loader: ProjectLoader | None = None,
         repository: WorkspaceRepository | None = None,
+        custom_emoji_service: CustomEmojiService | None = None,
+        preview_message_sender: PreviewMessageSender | None = None,
     ) -> None:
         self.loader = loader or ProjectLoader()
         self.repository = repository or WorkspaceRepository(self.loader)
         self.starter = StarterScaffolder(self.loader)
         self.inspector = HandlerInspector()
+        self.custom_emoji_service = custom_emoji_service or CustomEmojiService()
+        self.preview_message_sender = preview_message_sender or PreviewMessageSender()
 
     def open_project(self, root_path: str) -> dict[str, Any]:
         return self.describe(self.repository.open(root_path).id)
@@ -277,6 +305,58 @@ class ProjectService:
                 raise
         return self.get_project_settings(project_id)
 
+    # Telegram custom emoji ----------------------------------------------------------
+
+    async def resolve_custom_emojis(
+        self,
+        project_id: str,
+        custom_emoji_ids: list[str],
+        *,
+        fallback_by_id: Mapping[str, str] | None = None,
+        source: CustomEmojiSource = "manual-id",
+    ) -> dict[str, Any]:
+        result = await self.custom_emoji_service.resolve(
+            custom_emoji_ids,
+            bot_token=self._project_bot_token(project_id),
+            fallback_by_id=fallback_by_id,
+            source=source,
+        )
+        return result.to_api_dict()
+
+    def get_custom_emoji_preview(
+        self, project_id: str, custom_emoji_id: str
+    ) -> CachedCustomEmojiPreview:
+        # Cache files are shared by Studio, but access is still scoped to an open
+        # project so this cannot become an unauthenticated local-file endpoint.
+        self.repository.workspace(project_id)
+        preview = self.custom_emoji_service.resolve_cached_preview(custom_emoji_id)
+        if preview is None:
+            raise ResourceNotFound("Custom emoji preview is not cached.")
+        return preview
+
+    async def test_custom_emoji_capability(
+        self,
+        project_id: str,
+        custom_emoji_id: str,
+        *,
+        chat_id: int | str,
+        fallback_emoji: str,
+    ) -> dict[str, Any]:
+        result = await self.custom_emoji_service.test_capability(
+            custom_emoji_id,
+            chat_id=chat_id,
+            bot_token=self._project_bot_token(project_id),
+            fallback_emoji=fallback_emoji,
+        )
+        return result.to_api_dict()
+
+    def _project_bot_token(self, project_id: str) -> str | None:
+        workspace = self.repository.workspace(project_id)
+        path = self.repository.safe_path(workspace.root, ".env")
+        if not path.exists():
+            return None
+        return self._environment_value(self._read_environment(path), "BOT_TOKEN")
+
     # Manifest and aggregate resources -------------------------------------------------
 
     def get_manifest(self, project_id: str) -> dict[str, Any]:
@@ -337,8 +417,13 @@ class ProjectService:
         text_content, text_revision = self._resolve_view_text(
             workspace, detail["payload"]
         )
+        content_document, content_revision = self._resolve_view_document(
+            workspace, detail["payload"]
+        )
         detail["text_content"] = text_content
         detail["text_revision"] = text_revision
+        detail["content_document"] = content_document
+        detail["content_revision"] = content_revision
         return detail
 
     def get_flow(self, project_id: str, flow_id: str) -> dict[str, Any]:
@@ -355,16 +440,22 @@ class ProjectService:
         *,
         name: str | None = None,
         text_content: str | None = None,
+        content_document: Mapping[str, Any] | None = None,
     ) -> dict[str, Any]:
         if view_id is not None and name is None:
             return self._create_view_resource(
-                project_id, view_id, payload, text_content=text_content
+                project_id,
+                view_id,
+                payload,
+                text_content=text_content,
+                content_document=content_document,
             )
         return self._create_named_view_resource(
             project_id,
             payload,
             name=name,
             text_content=text_content,
+            content_document=content_document,
         )
 
     def create_flow(self, project_id: str, flow_id: str | None, payload: dict[str, Any], *, name: str | None = None) -> dict[str, Any]:
@@ -392,8 +483,12 @@ class ProjectService:
             self.repository.assert_revision(path, revision)
             current_payload = self.repository.read_json(path)
             current_template = self._view_template_reference(current_payload)
+            current_document = self._view_document_reference(current_payload)
             canonical_name = self._owned_view_template_name(view_id)
             target = self._view_template_path(workspace, view_id)
+            owned_document_name = self._owned_view_document_name(view_id)
+            owned_document_path = self._view_document_path(workspace, view_id)
+            preserve_document = False
 
             if current_template is not None:
                 source = self.repository.safe_path(
@@ -402,24 +497,275 @@ class ProjectService:
                     suffix=".txt",
                 )
                 self.repository.assert_revision(source, text_revision)
+                try:
+                    preserve_document = (
+                        current_document is not None
+                        and source.read_text(encoding="utf-8") == text_content
+                    )
+                except (OSError, UnicodeError) as error:
+                    raise WorkspaceError(
+                        f"Cannot read text for view template '{current_template}' as UTF-8."
+                    ) from error
             if current_template != canonical_name and target.exists():
                 raise ResourceConflict(
                     f"Internal text file for view '{view_id}' already exists."
                 )
 
             normalized = self._normalize_entity(payload, view_id)
-            normalized["text"] = {"template": canonical_name}
+            normalized["text"] = {
+                "template": canonical_name,
+                **({"document": current_document} if preserve_document else {}),
+            }
+            remove_owned_document = (
+                not preserve_document
+                and current_document == owned_document_name
+                and owned_document_path.is_file()
+                and not self._document_is_referenced_by_another_view(
+                    workspace,
+                    project,
+                    view_id,
+                    owned_document_name,
+                )
+            )
             before_view = path.read_bytes()
             before_template = target.read_bytes() if target.exists() else None
+            before_document = (
+                owned_document_path.read_bytes() if remove_owned_document else None
+            )
+            if before_document is not None:
+                self._backup_stale_view_document(
+                    workspace,
+                    view_id,
+                    before_document,
+                )
             try:
                 self.repository.atomic_write(target, text_content.encode("utf-8"))
                 self.repository.atomic_write_json(path, normalized)
+                if remove_owned_document:
+                    owned_document_path.unlink()
                 self._load(workspace)
             except BaseException:
+                if remove_owned_document:
+                    self.repository.restore(owned_document_path, before_document)
                 self.repository.restore(target, before_template)
                 self.repository.restore(path, before_view)
                 raise
         return self.get_view(project_id, view_id)
+
+    def save_view_content(
+        self,
+        project_id: str,
+        view_id: str,
+        payload: dict[str, Any],
+        revision: str,
+        *,
+        document: Mapping[str, Any],
+        document_revision: str | None,
+        text_revision: str | None,
+    ) -> dict[str, Any]:
+        """Persist the canonical content document and its legacy text projection together."""
+
+        parsed = self._parse_view_content_document(view_id, document)
+        document_payload = content_document_to_dict(parsed)
+        document_bytes = self.repository.json_bytes(document_payload)
+        if len(document_bytes) > _CONTENT_DOCUMENT_MAX_BYTES:
+            raise WorkspaceError("Content document exceeds the 2 MiB Studio limit.")
+        text_content = serialize_legacy_template(parsed)
+
+        workspace = self.repository.workspace(project_id)
+        with self.repository.lock(workspace):
+            project = self._load(workspace)
+            view_path = self._entity_path(workspace, project, "views", view_id)
+            self.repository.assert_revision(view_path, revision)
+            current_payload = self.repository.read_json(view_path)
+
+            template_reference = self._view_template_reference(current_payload)
+            template_path = self._view_template_path(workspace, view_id)
+            if template_reference is not None:
+                current_template_path = self.repository.safe_path(
+                    workspace.resources / "templates",
+                    template_reference,
+                    suffix=".txt",
+                )
+                self.repository.assert_revision(current_template_path, text_revision)
+                if current_template_path != template_path and template_path.exists():
+                    raise ResourceConflict(
+                        f"Internal text file for view '{view_id}' already exists."
+                    )
+            else:
+                current_template_path = None
+                self.repository.assert_revision(template_path, None, creating=True)
+
+            document_reference = self._view_document_reference(current_payload)
+            document_path = self._view_document_path(workspace, view_id)
+            replace_orphan_document = False
+            if document_reference is not None:
+                current_document_path = self.repository.safe_path(
+                    workspace.resources / "content",
+                    document_reference,
+                    suffix=".json",
+                )
+                self.repository.assert_revision(
+                    current_document_path, document_revision
+                )
+                if current_document_path != document_path and document_path.exists():
+                    if self._document_is_referenced_by_another_view(
+                        workspace,
+                        project,
+                        view_id,
+                        self._owned_view_document_name(view_id),
+                    ):
+                        raise ResourceConflict(
+                            f"Internal content document for view '{view_id}' is used by another view."
+                        )
+                    replace_orphan_document = True
+            else:
+                current_document_path = None
+                if document_path.exists():
+                    if self._document_is_referenced_by_another_view(
+                        workspace,
+                        project,
+                        view_id,
+                        self._owned_view_document_name(view_id),
+                    ):
+                        raise ResourceConflict(
+                            f"Internal content document for view '{view_id}' is used by another view."
+                        )
+                    if not document_path.is_file():
+                        raise ResourceConflict(
+                            f"Internal content document for view '{view_id}' already exists."
+                        )
+                    if document_revision is not None:
+                        self.repository.assert_revision(
+                            document_path,
+                            document_revision,
+                        )
+                    replace_orphan_document = True
+                else:
+                    self.repository.assert_revision(
+                        document_path,
+                        document_revision,
+                        creating=True,
+                    )
+
+            legacy_text_backup: bytes | None = None
+            if document_reference is None:
+                if current_template_path is not None:
+                    legacy_text_backup = current_template_path.read_bytes()
+                else:
+                    text_mapping = current_payload.get("text")
+                    inline = (
+                        text_mapping.get("inline")
+                        if isinstance(text_mapping, Mapping)
+                        else None
+                    )
+                    if not isinstance(inline, str):
+                        raise WorkspaceError(
+                            f"View '{view_id}' has no legacy text source to back up."
+                        )
+                    legacy_text_backup = inline.encode("utf-8")
+
+            normalized = self._normalize_entity(payload, view_id)
+            normalized["text"] = {
+                "template": self._owned_view_template_name(view_id),
+                "document": self._owned_view_document_name(view_id),
+            }
+
+            before_view = view_path.read_bytes()
+            before_template = template_path.read_bytes() if template_path.exists() else None
+            before_document = document_path.read_bytes() if document_path.exists() else None
+            if replace_orphan_document and before_document is not None:
+                self._backup_stale_view_document(
+                    workspace,
+                    view_id,
+                    before_document,
+                )
+            if legacy_text_backup is not None:
+                self._backup_legacy_view_text(
+                    workspace,
+                    view_id,
+                    legacy_text_backup,
+                )
+            try:
+                self.repository.atomic_write(document_path, document_bytes)
+                self.repository.atomic_write(template_path, text_content.encode("utf-8"))
+                self.repository.atomic_write_json(view_path, normalized)
+                self._load(workspace)
+            except BaseException:
+                self.repository.restore(document_path, before_document)
+                self.repository.restore(template_path, before_template)
+                self.repository.restore(view_path, before_view)
+                raise
+        return self.get_view(project_id, view_id)
+
+    def compile_content(
+        self,
+        project_id: str,
+        document: Mapping[str, Any],
+        *,
+        variables: Mapping[str, Any],
+        split_long_messages: bool = True,
+    ) -> dict[str, Any]:
+        return compile_result_to_dict(
+            self._compile_content_result(
+                project_id,
+                document,
+                variables=variables,
+                split_long_messages=split_long_messages,
+            )
+        )
+
+    async def send_preview_message(
+        self,
+        project_id: str,
+        document: Mapping[str, Any],
+        *,
+        variables: Mapping[str, Any],
+        chat_id: int | str,
+        split_long_messages: bool = True,
+    ) -> dict[str, Any]:
+        """Compile and explicitly send a preview without exposing BOT_TOKEN."""
+
+        result = self._compile_content_result(
+            project_id,
+            document,
+            variables=variables,
+            split_long_messages=split_long_messages,
+        )
+        if result.errors:
+            raise PreviewMessageCompileError(result.errors)
+        token = self._project_bot_token(project_id)
+        if not token:
+            raise PreviewMessageConfigurationError(
+                "Configure BOT_TOKEN in this project's settings before sending a preview."
+            )
+        sent = await self.preview_message_sender.send(
+            result.messages,
+            chat_id=chat_id,
+            bot_token=token,
+            warnings=result.warnings,
+        )
+        return sent.to_api_dict()
+
+    def _compile_content_result(
+        self,
+        project_id: str,
+        document: Mapping[str, Any],
+        *,
+        variables: Mapping[str, Any],
+        split_long_messages: bool,
+    ) -> TelegramCompileResult:
+        # Resolve the workspace first so neither compile nor send can be used as
+        # an unscoped general-purpose Jinja evaluator.
+        self.repository.workspace(project_id)
+        parsed = self._parse_content_document_bytes(
+            self.repository.json_bytes(document)
+        )
+        return compile_content_document(
+            parsed,
+            variables,
+            TelegramCompileOptions(split_long_messages=split_long_messages),
+        )
 
     def rename_view(
         self, project_id: str, view_id: str, new_id: str, revision: str
@@ -450,8 +796,33 @@ class ProjectService:
             owns_template = (
                 self._view_template_reference(payloads[source]) == old_template_name
             )
+            document_reference = self._view_document_reference(payloads[source])
+            old_document_name = self._owned_view_document_name(view_id)
+            new_document_name = self._owned_view_document_name(new_id)
+            owns_document = document_reference == old_document_name
+            remove_source_document = (
+                owns_document
+                and document_reference is not None
+                and not self._document_is_referenced_by_another_view(
+                    workspace,
+                    project,
+                    view_id,
+                    document_reference,
+                )
+            )
             source_template = self._view_template_path(workspace, view_id)
             target_template = self._view_template_path(workspace, new_id)
+            source_document = (
+                self.repository.safe_path(
+                    workspace.resources / "content",
+                    document_reference,
+                    suffix=".json",
+                )
+                if document_reference is not None
+                else None
+            )
+            target_document = self._view_document_path(workspace, new_id)
+            renamed_document: dict[str, Any] | None = None
             if owns_template:
                 if not source_template.is_file():
                     raise ResourceNotFound(
@@ -461,7 +832,31 @@ class ProjectService:
                     raise ResourceConflict(
                         f"Internal text file for view '{new_id}' already exists."
                     )
-                payloads[source]["text"] = {"template": new_template_name}
+                payloads[source]["text"] = {
+                    "template": new_template_name,
+                    **(
+                        {"document": new_document_name}
+                        if document_reference is not None
+                        else {}
+                    ),
+                }
+            if source_document is not None:
+                if not source_document.is_file():
+                    raise ResourceNotFound(
+                        f"Content document for view '{view_id}' does not exist."
+                    )
+                if target_document.exists():
+                    raise ResourceConflict(
+                        f"Internal content document for view '{new_id}' already exists."
+                    )
+                renamed_document = self.repository.read_json(source_document)
+                renamed_document["id"] = new_id
+                metadata = renamed_document.get("metadata")
+                if isinstance(metadata, dict):
+                    metadata["updatedAt"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                text_mapping = payloads[source].get("text")
+                if isinstance(text_mapping, dict):
+                    text_mapping["document"] = new_document_name
             manifest = payloads[workspace.resources / "bot.json"]
             if manifest.get("entry_view") == view_id:
                 manifest["entry_view"] = new_id
@@ -469,20 +864,29 @@ class ProjectService:
                 self._replace_view_reference(payload, view_id, new_id)
             before = {path: path.read_bytes() for path in payloads}
             before_template = source_template.read_bytes() if owns_template else None
+            before_document = source_document.read_bytes() if source_document is not None else None
             try:
                 if owns_template and before_template is not None:
                     self.repository.atomic_write(target_template, before_template)
+                if renamed_document is not None:
+                    self.repository.atomic_write_json(target_document, renamed_document)
                 for path, payload in payloads.items():
                     self.repository.atomic_write_json(target if path == source else path, payload)
                 source.unlink()
                 if owns_template:
                     source_template.unlink()
+                if remove_source_document and source_document is not None:
+                    source_document.unlink()
                 self._load(workspace)
             except BaseException:
                 target.unlink(missing_ok=True)
                 if owns_template:
                     target_template.unlink(missing_ok=True)
                     self.repository.restore(source_template, before_template)
+                if renamed_document is not None:
+                    target_document.unlink(missing_ok=True)
+                    if remove_source_document and source_document is not None:
+                        self.repository.restore(source_document, before_document)
                 for path, content in before.items():
                     self.repository.restore(path, content)
                 raise
@@ -584,22 +988,45 @@ class ProjectService:
             owns_template = self._view_template_reference(
                 payload
             ) == self._owned_view_template_name(view_id)
+            owns_document = self._view_document_reference(
+                payload
+            ) == self._owned_view_document_name(view_id)
             template_path = self._view_template_path(workspace, view_id)
+            document_path = self._view_document_path(workspace, view_id)
+            remove_owned_document = (
+                owns_document
+                and document_path.is_file()
+                and not self._document_is_referenced_by_another_view(
+                    workspace,
+                    project,
+                    view_id,
+                    self._owned_view_document_name(view_id),
+                )
+            )
             before_view = path.read_bytes()
             before_template = (
                 template_path.read_bytes()
                 if owns_template and template_path.is_file()
                 else None
             )
+            before_document = (
+                document_path.read_bytes()
+                if remove_owned_document
+                else None
+            )
             try:
                 path.unlink()
                 if before_template is not None:
                     template_path.unlink()
+                if before_document is not None:
+                    document_path.unlink()
                 self._load(workspace)
             except BaseException:
                 self.repository.restore(path, before_view)
                 if owns_template:
                     self.repository.restore(template_path, before_template)
+                if remove_owned_document:
+                    self.repository.restore(document_path, before_document)
                 raise
 
     def delete_flow(self, project_id: str, flow_id: str, revision: str) -> None:
@@ -1181,6 +1608,7 @@ class ProjectService:
         payload: dict[str, Any],
         *,
         text_content: str | None,
+        content_document: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         self._validate_resource_id(view_id)
         workspace = self.repository.workspace(project_id)
@@ -1188,6 +1616,7 @@ class ProjectService:
             workspace.resources, Path("views") / f"{view_id}.json", suffix=".json"
         )
         template_path = self._view_template_path(workspace, view_id)
+        document_path = self._view_document_path(workspace, view_id)
         with self.repository.lock(workspace):
             project = self._load(workspace)
             if view_id in project.views or path.exists():
@@ -1197,24 +1626,42 @@ class ProjectService:
                     f"Internal text file for view '{view_id}' already exists."
                 )
             source_payload = payload or self._default_resource_payload("views", view_id)
-            content = (
+            parsed_document = (
+                self._parse_view_content_document(view_id, content_document)
+                if content_document is not None
+                else None
+            )
+            content = serialize_legacy_template(parsed_document) if parsed_document is not None else (
                 text_content
                 if text_content is not None
                 else self._resolve_view_text(workspace, source_payload)[0]
             )
             normalized = self._normalize_entity(source_payload, view_id)
             normalized["text"] = {
-                "template": self._owned_view_template_name(view_id)
+                "template": self._owned_view_template_name(view_id),
+                **(
+                    {"document": self._owned_view_document_name(view_id)}
+                    if parsed_document is not None
+                    else {}
+                ),
             }
             self.repository.assert_revision(path, None, creating=True)
             self.repository.assert_revision(template_path, None, creating=True)
+            if parsed_document is not None:
+                self.repository.assert_revision(document_path, None, creating=True)
             try:
                 self.repository.atomic_write(template_path, content.encode("utf-8"))
+                if parsed_document is not None:
+                    self.repository.atomic_write_json(
+                        document_path, content_document_to_dict(parsed_document)
+                    )
                 self.repository.atomic_write_json(path, normalized)
                 self._load(workspace)
             except BaseException:
                 path.unlink(missing_ok=True)
                 template_path.unlink(missing_ok=True)
+                if parsed_document is not None:
+                    document_path.unlink(missing_ok=True)
                 raise
         return self.get_view(project_id, view_id)
 
@@ -1225,6 +1672,7 @@ class ProjectService:
         *,
         name: str | None,
         text_content: str | None,
+        content_document: Mapping[str, Any] | None,
     ) -> dict[str, Any]:
         workspace = self.repository.workspace(project_id)
         manifest_path = workspace.resources / "bot.json"
@@ -1242,6 +1690,7 @@ class ProjectService:
                 suffix=".json",
             )
             template_path = self._view_template_path(workspace, view_id)
+            document_path = self._view_document_path(workspace, view_id)
             if view_id in project.views or path.exists():
                 raise ResourceConflict(
                     f"View name '{display_name}' conflicts with technical id '{view_id}'."
@@ -1253,14 +1702,28 @@ class ProjectService:
             source_payload = payload or self._default_resource_payload(
                 "views", display_name
             )
+            parsed_document = (
+                self._parse_view_content_document(view_id, content_document)
+                if content_document is not None
+                else None
+            )
             content = (
-                text_content
-                if text_content is not None
-                else self._resolve_view_text(workspace, source_payload)[0]
+                serialize_legacy_template(parsed_document)
+                if parsed_document is not None
+                else (
+                    text_content
+                    if text_content is not None
+                    else self._resolve_view_text(workspace, source_payload)[0]
+                )
             )
             normalized = self._normalize_entity(source_payload, view_id)
             normalized["text"] = {
-                "template": self._owned_view_template_name(view_id)
+                "template": self._owned_view_template_name(view_id),
+                **(
+                    {"document": self._owned_view_document_name(view_id)}
+                    if parsed_document is not None
+                    else {}
+                ),
             }
             manifest = self.repository.read_json(manifest_path)
             before_manifest = manifest_path.read_bytes()
@@ -1280,14 +1743,22 @@ class ProjectService:
                 manifest.pop("display_names", None)
             self.repository.assert_revision(path, None, creating=True)
             self.repository.assert_revision(template_path, None, creating=True)
+            if parsed_document is not None:
+                self.repository.assert_revision(document_path, None, creating=True)
             try:
                 self.repository.atomic_write(template_path, content.encode("utf-8"))
+                if parsed_document is not None:
+                    self.repository.atomic_write_json(
+                        document_path, content_document_to_dict(parsed_document)
+                    )
                 self.repository.atomic_write_json(path, normalized)
                 self.repository.atomic_write_json(manifest_path, manifest)
                 self._load(workspace)
             except BaseException:
                 path.unlink(missing_ok=True)
                 template_path.unlink(missing_ok=True)
+                if parsed_document is not None:
+                    document_path.unlink(missing_ok=True)
                 self.repository.restore(manifest_path, before_manifest)
                 raise
         return self.get_view(project_id, view_id)
@@ -1296,6 +1767,10 @@ class ProjectService:
     def _owned_view_template_name(view_id: str) -> str:
         return f"views/{view_id}.txt"
 
+    @staticmethod
+    def _owned_view_document_name(view_id: str) -> str:
+        return f"views/{view_id}.json"
+
     def _view_template_path(self, workspace: Workspace, view_id: str) -> Path:
         return self.repository.safe_path(
             workspace.resources / "templates",
@@ -1303,11 +1778,24 @@ class ProjectService:
             suffix=".txt",
         )
 
+    def _view_document_path(self, workspace: Workspace, view_id: str) -> Path:
+        return self.repository.safe_path(
+            workspace.resources / "content",
+            self._owned_view_document_name(view_id),
+            suffix=".json",
+        )
+
     @staticmethod
     def _view_template_reference(payload: Mapping[str, Any]) -> str | None:
         text = payload.get("text")
         template = text.get("template") if isinstance(text, Mapping) else None
         return template if isinstance(template, str) else None
+
+    @staticmethod
+    def _view_document_reference(payload: Mapping[str, Any]) -> str | None:
+        text = payload.get("text")
+        document = text.get("document") if isinstance(text, Mapping) else None
+        return document if isinstance(document, str) else None
 
     def _resolve_view_text(
         self, workspace: Workspace, payload: Mapping[str, Any]
@@ -1331,6 +1819,106 @@ class ProjectService:
             raise WorkspaceError(
                 f"Cannot read text for view template '{template}' as UTF-8."
             ) from error
+
+    def _resolve_view_document(
+        self, workspace: Workspace, payload: Mapping[str, Any]
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        reference = self._view_document_reference(payload)
+        if reference is None:
+            return None, None
+        path = self.repository.safe_path(
+            workspace.resources / "content", reference, suffix=".json"
+        )
+        try:
+            raw = path.read_bytes()
+        except OSError as error:
+            raise WorkspaceError(
+                f"Cannot read content document '{reference}'."
+            ) from error
+        document = self._parse_content_document_bytes(raw)
+        return content_document_to_dict(document), content_revision(raw)
+
+    @staticmethod
+    def _parse_content_document(document: Mapping[str, Any]):
+        try:
+            return normalize_content_document(parse_content_document(document))
+        except ContentDocumentError as error:
+            raise WorkspaceError(str(error)) from error
+
+    @classmethod
+    def _parse_content_document_bytes(cls, raw: bytes):
+        if len(raw) > _CONTENT_DOCUMENT_MAX_BYTES:
+            raise WorkspaceError("Content document exceeds the 2 MiB Studio limit.")
+        try:
+            return normalize_content_document(parse_content_document(raw))
+        except ContentDocumentError as error:
+            raise WorkspaceError(str(error)) from error
+
+    @classmethod
+    def _parse_view_content_document(
+        cls, view_id: str, document: Mapping[str, Any]
+    ):
+        raw = WorkspaceRepository.json_bytes(document)
+        parsed = cls._parse_content_document_bytes(raw)
+        if parsed.id != view_id:
+            raise WorkspaceError(
+                f"Content document id '{parsed.id}' must match view '{view_id}'."
+            )
+        diagnostics = validate_content_document(parsed)
+        errors = [item for item in diagnostics if item.severity == "error"]
+        if errors:
+            raise WorkspaceError(
+                "Invalid content document: "
+                + "; ".join(f"{item.code}: {item.message}" for item in errors)
+            )
+        return parsed
+
+    def _backup_legacy_view_text(
+        self, workspace: Workspace, view_id: str, content: bytes
+    ) -> None:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        backup = self.repository.safe_path(
+            workspace.root / ".botstudio" / "backups" / "content",
+            Path(view_id) / f"{stamp}.txt",
+            suffix=".txt",
+        )
+        self.repository.atomic_write(backup, content)
+
+    def _backup_stale_view_document(
+        self, workspace: Workspace, view_id: str, content: bytes
+    ) -> None:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S.%fZ")
+        backup = self.repository.safe_path(
+            workspace.root / ".botstudio" / "backups" / "content",
+            Path(view_id) / f"{stamp}.json",
+            suffix=".json",
+        )
+        self.repository.atomic_write(backup, content)
+
+    def _document_is_referenced_by_another_view(
+        self,
+        workspace: Workspace,
+        project,
+        view_id: str,
+        document_reference: str,
+    ) -> bool:
+        target = self.repository.safe_path(
+            workspace.resources / "content",
+            document_reference,
+            suffix=".json",
+        )
+        for candidate_id, candidate in project.views.items():
+            candidate_reference = candidate.text.document
+            if candidate_id == view_id or candidate_reference is None:
+                continue
+            candidate_path = self.repository.safe_path(
+                workspace.resources / "content",
+                candidate_reference,
+                suffix=".json",
+            )
+            if candidate_path == target:
+                return True
+        return False
 
     def _create_resource_with_display_name(
         self,

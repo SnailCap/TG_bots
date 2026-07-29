@@ -9,7 +9,6 @@ from .models import (
     ContentInlineNode,
     ContentMark,
     ExpandableBlockquoteBlock,
-    MARK_TYPES,
     ParagraphBlock,
     TextNode,
     VariableNode,
@@ -61,13 +60,10 @@ def _normalize_inline(node: ContentInlineNode) -> ContentInlineNode:
 
 
 def _normalize_marks(marks: tuple[ContentMark, ...]) -> tuple[ContentMark, ...]:
-    unique: dict[tuple[str, str | None], ContentMark] = {}
-    for mark in marks:
-        if mark.type in MARK_TYPES:
-            unique[(mark.type, mark.href)] = mark
-    normalized = list(unique.values())
-    if any(mark.type == "code" for mark in normalized):
-        normalized = [mark for mark in normalized if mark.type == "code"]
+    # Preserve malformed or future marks so the validator can report them.
+    # Normalization must never silently turn an invalid persisted document into
+    # a different valid one.
+    normalized = list(marks)
     return tuple(
         sorted(normalized, key=lambda mark: (_MARK_ORDER.get(mark.type, 99), mark.href or ""))
     )

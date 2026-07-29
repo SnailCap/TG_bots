@@ -11,6 +11,7 @@
 │  ├─ handlers.json            # обязателен
 │  ├─ commands.json            # обязателен
 │  ├─ views/                   # обязателен, JSON рекурсивно
+│  ├─ content/                 # optional, structured content JSON рекурсивно
 │  ├─ flows/                   # обязателен, JSON рекурсивно
 │  ├─ schedules/               # обязателен, может быть пустым
 │  └─ templates/               # обязателен, *.txt рекурсивно
@@ -65,7 +66,8 @@ Studio creates IDs from a supplied display name using lowercase ASCII `snake_cas
   "schema_version": 3,
   "id": "home",
   "text": {
-    "template": "views/home.txt"
+    "template": "views/home.txt",
+    "document": "views/home.json"
   },
   "keyboard": [
     [
@@ -90,14 +92,25 @@ Studio creates IDs from a supplied display name using lowercase ASCII `snake_cas
 }
 ```
 
-`text` должен содержать ровно одно поле:
+`text` должен содержать ровно одно из двух source-полей:
 
 - `{"inline": "Hello {{ user.first_name }}"}`;
 - `{"template": "views/home.txt"}` — POSIX-style relative path внутри `resources/templates/`.
 
-Templates читаются только из `*.txt`. Validation проверяет каждый template один раз, включая неиспользуемые, и выдаёт diagnostics с его собственным `templates/<path>`. Runtime использует `StrictUndefined`, передаёт session values и объект `user`, а PTB отправляет результат как обычный текст без неявного HTML/Markdown parse mode. Пустой результат и текст длиннее 4096 символов отклоняются до вызова Telegram API.
+Дополнительно `text` может содержать `"document": "views/home.json"` — POSIX-style relative `.json` path внутри `resources/content/`. Это additive extension schema v3: `schema_version` view остаётся равным `3`, а сам content document имеет независимое camelCase поле `schemaVersion`. Loader не требует каталог `resources/content/` у legacy projects, но validator требует существующий document для каждой указанной ссылки и отклоняет absolute paths, `..` и обратные слеши.
 
-Studio не показывает templates как отдельный ресурс. Редактор всегда работает с текстом выбранного view, а backend при сохранении пишет его в owned path `resources/templates/views/<view-id>.txt` и обновляет `text.template`. Открытые legacy `inline` или non-canonical template references читаются как обычно и канонизируются только при следующем сохранении через Studio. Это UI/storage policy Studio, а не изменение schema v3 или runtime contract.
+Templates читаются только из `*.txt`. Validation проверяет каждый template один раз, включая неиспользуемые, и выдаёт diagnostics с его собственным `templates/<path>`. Без `document` runtime использует прежний `StrictUndefined`, передаёт session values и объект `user`, а PTB отправляет результат как обычный текст без неявного HTML/Markdown parse mode. Пустой результат и текст длиннее 4096 символов отклоняются до вызова Telegram API.
+
+При наличии `document` новый runtime предпочитает structured content и компилирует его в один или несколько Telegram messages с entities. `template` остаётся derived plain-Jinja projection для совместимости и старых core versions; rich marks не кодируются в нём как HTML. Canonical Studio paths:
+
+```text
+resources/content/views/<view-id>.json
+resources/templates/views/<view-id>.txt
+```
+
+Content document schema v1 поддерживает paragraphs, quotes, expandable quotes, code blocks, lossless legacy blocks, typed variables, custom emoji, hard breaks и Telegram marks. Loader индексирует все `resources/content/**/*.json`; validation проверяет в том числе неиспользуемые documents, duplicate document IDs и Jinja syntax внутри `legacyTemplate`, привязывая diagnostics к `content/<path>`. Точный JSON contract, compiler, migrations и правила расширения описаны в [Rich Text Content Editor](../studio/content-editor.md).
+
+Studio не показывает templates как отдельный ресурс. Обычный редактор работает с текстом выбранного view, а backend при сохранении пишет его в owned path `resources/templates/views/<view-id>.txt` и обновляет `text.template`. Открытые legacy `inline` или non-canonical template references читаются как обычно и канонизируются только при следующем сохранении через Studio. Rich editor revision-aware сохраняет document, derived template и view reference одной операцией. Это additive UI/storage policy Studio, а не новый project format.
 
 `keyboard` — массив rows, каждая row — массив buttons. Button `id` является глобальным action ID всего проекта. Core кодирует callback как `v3:a:<button-id>`; UTF-8 payload обязан помещаться в 64 bytes. Текст, handler ID или target в callback не включаются. При dispatch ID дополнительно должен принадлежать текущему сохранённому view session, поэтому кнопка из старого экрана не выполняет action другого экрана.
 
@@ -335,6 +348,7 @@ Generic entity ID соответствует `^[A-Za-z][A-Za-z0-9_.-]{0,127}$`. 
 - state target у `flow.goto` локален текущему flow;
 - непустой target `flow.event` должен совпадать хотя бы с одним key в `state.events` проекта, иначе validator возвращает `unknown_event_reference`;
 - template path должен существовать в индексированных `*.txt`;
+- optional content document path должен быть безопасным relative `.json` path и существовать среди индексированных `resources/content/**/*.json`;
 - command names имеют отдельное более узкое правило;
 - declared handler outcome соответствует generic ID, но не равен `success`.
 
@@ -355,7 +369,7 @@ Cross-resource references проверяются общим validator, кото�
 }
 ```
 
-Поля `source_path`, `entity_id` и `field_path` присутствуют, когда location известна. Коды стабильны для UI/CLI; среди них `missing_entry_view`, `missing_start_flow`, `unknown_view_reference`, `unknown_flow_reference`, `unknown_state_reference`, `unknown_event_reference`, `duplicate_action_id`, `outcome_route_missing`, `handler_*`, `command_collision`, `callback_encoding_invalid`, `template_missing`, `jinja_syntax`, `unreachable_state`, `unsupported_schedule_trigger`.
+Поля `source_path`, `entity_id` и `field_path` присутствуют, когда location известна. Коды стабильны для UI/CLI; среди них `missing_entry_view`, `missing_start_flow`, `unknown_view_reference`, `unknown_flow_reference`, `unknown_state_reference`, `unknown_event_reference`, `duplicate_action_id`, `outcome_route_missing`, `handler_*`, `command_collision`, `callback_encoding_invalid`, `template_missing`, `content_document_missing`, `content_document_path_invalid`, `duplicate_content_document_id`, content validation codes, `jinja_syntax`, `unreachable_state`, `unsupported_schedule_trigger`.
 
 Синтаксические/структурные ошибки до построения `ProjectDefinition` являются `ProjectLoadError`; core CLI печатает их с code `project_load`.
 

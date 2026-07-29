@@ -1,0 +1,35 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "existing-variables",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {"type": "text", "text": "Hello, "},
+          {
+            "type": "variable",
+            "variableReference": {
+              "fieldId": "core.user.first_name",
+              "path": "user.first_name",
+              "source": "{{ user.first_name }}"
+            }
+          },
+          {"type": "text", "text": "!"}
+        ]
+      }
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "variables": {"user": {"first_name": "Ada"}},
+  "expected": {
+    "messages": [{"text": "Hello, Ada!", "entities": []}],
+    "warnings": [],
+    "errors": []
+  }
+}

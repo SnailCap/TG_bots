@@ -1,4 +1,5 @@
-import { emptyFlow, emptySchedule, emptyView, type Selection, type Workspace } from "../../domain/project";
+import { emptyFlow, emptySchedule, emptyView, type Selection, type ViewDetail, type Workspace } from "../../domain/project";
+import { documentFromLegacyTemplate } from "../../features/view-text-editor/legacy-adapter";
 import type { StudioApiClient } from "../../studio/api";
 import type { CreatableResource } from "../../widgets/project-explorer/ProjectExplorer";
 import {
@@ -10,6 +11,21 @@ import {
 
 type PersistedEditor = Exclude<EditorState, null>;
 type RenameableSelection = Exclude<Selection, { kind: "commands" }>;
+
+export function viewTextEditorFromDetail(
+  detail: ViewDetail,
+): Extract<PersistedEditor, { kind: "view-text" }> {
+  const document = detail.content_document
+    ?? documentFromLegacyTemplate(detail.id, detail.text_content);
+  const migrated = detail.content_document == null;
+  return {
+    kind: "view-text",
+    detail: { ...detail, content_document: document },
+    document,
+    version: migrated ? 1 : 0,
+    savedVersion: 0,
+  };
+}
 
 export async function loadEditor(api: StudioApiClient, projectId: string, selection: Selection): Promise<PersistedEditor> {
   switch (selection.kind) {
@@ -77,6 +93,27 @@ export async function saveEditor(
         ? await api.renameView(projectId, editor.detail.id, id, editor.detail.revision)
         : await api.saveView(projectId, id, editor.detail.payload, editor.detail.revision, editor.detail.text_content, editor.detail.text_revision);
     return { editor: { kind: "view", detail, isNew: false }, selection: { kind: "view", id: detail.id } };
+  }
+  if (editor.kind === "view-text") {
+    const detail = await api.saveViewContent(
+      projectId,
+      editor.detail.id,
+      editor.detail.payload,
+      editor.detail.revision,
+      editor.document,
+      editor.detail.content_revision ?? null,
+      editor.detail.text_revision,
+    );
+    const document = detail.content_document ?? editor.document;
+    return {
+      editor: {
+        ...editor,
+        detail: { ...detail, content_document: document },
+        document,
+        savedVersion: editor.version,
+      },
+      selection: { kind: "view", id: detail.id },
+    };
   }
   if (editor.kind === "flow") {
     const id = editor.detail.payload.id;
@@ -159,7 +196,13 @@ export async function deletePersistedResource(api: StudioApiClient, projectId: s
 }
 
 export async function restoreDeletedResource(api: StudioApiClient, projectId: string, snapshot: DeletedResource): Promise<void> {
-  if (snapshot.kind === "view") await api.createView(projectId, snapshot.detail.id, snapshot.detail.payload, snapshot.detail.text_content);
+  if (snapshot.kind === "view") await api.createView(
+    projectId,
+    snapshot.detail.id,
+    snapshot.detail.payload,
+    snapshot.detail.text_content,
+    snapshot.detail.content_document ?? undefined,
+  );
   else if (snapshot.kind === "flow") await api.createFlow(projectId, snapshot.detail.id, snapshot.detail.payload);
   else if (snapshot.kind === "schedule") await api.createSchedule(projectId, snapshot.detail.id, snapshot.detail.payload);
   else if (snapshot.kind === "command") {

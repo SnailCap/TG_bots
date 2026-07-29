@@ -1,3 +1,5 @@
+import { isValidCustomEmojiFallback as isValidContentCustomEmojiFallback } from "../../domain/content";
+
 export type TelegramFormatKind =
   | "bold"
   | "italic"
@@ -244,10 +246,7 @@ export function isValidTelegramUserId(value: string): boolean {
 }
 
 export function isValidCustomEmojiFallback(value: string): boolean {
-  const text = value.trim();
-  if (!text) return false;
-  if (typeof Intl.Segmenter !== "function") return Array.from(text).length <= 2;
-  return Array.from(new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(text)).length === 1;
+  return isValidContentCustomEmojiFallback(value);
 }
 
 export function renderTelegramDateTime(unix: number, format: string, fallback: string, now = Date.now()): string {

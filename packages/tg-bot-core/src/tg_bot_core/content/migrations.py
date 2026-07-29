@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from .models import CONTENT_SCHEMA_VERSION
 
@@ -33,7 +33,7 @@ def migrate_content_document(
             f"Content document schemaVersion {version} has no supported migration path."
         )
 
-    migrations: dict[int, callable] = {}
+    migrations: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
     while version < target_version:
         migration = migrations.get(version)
         if migration is None:

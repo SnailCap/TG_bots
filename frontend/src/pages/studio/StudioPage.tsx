@@ -12,13 +12,14 @@ import {
   canSave,
   deletedResourceSnapshot,
   draftForEditor,
+  editorTabKey,
   previewEditor,
   selectionForDeletedResource,
   selectionForEditor,
   selectionKeyEquals,
   selectionTabKey,
   isEditorInvalid,
-  openViewTextTab,
+  reconcileSavedEditor,
   studioStatus,
   viewTextTabKey,
   type DeletedResource,
@@ -35,11 +36,16 @@ import {
   renameResource as renameResourceViaApi,
   restoreDeletedResource as restoreDeletedResourceViaApi,
   saveEditor,
+  viewTextEditorFromDetail,
 } from "./studio-resource-api";
 import { useLocalProjectRun } from "./useLocalProjectRun";
 import { useProjectSettings } from "./useProjectSettings";
+import { useOpenViewTextEditor } from "./useOpenViewTextEditor";
+import { dirtyViewModeConflicts, isDirtyViewModeSwitch, resourceHasDirtyTab } from "./studio-tab-guards";
 import { useStudioHandlers } from "./useStudioHandlers";
+import { useStudioKeyboardShortcuts } from "./useStudioKeyboardShortcuts";
 import { useStudioLayout } from "./useStudioLayout";
+import { useStudioTabLifecycle } from "./useStudioTabLifecycle";
 import { useStudioUndo } from "./useStudioUndo";
 import { StudioRouter } from "./StudioRouter";
 
@@ -57,14 +63,29 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const tabsRef = useRef(tabs);
-  const activeTabKeyRef = useRef(activeTabKey);
-  const saveShortcutRef = useRef<() => void>(() => undefined);
-  tabsRef.current = tabs;
-  activeTabKeyRef.current = activeTabKey;
+  const editorRef = useRef(editor);
+  editorRef.current = editor;
   const nextNewTabId = useRef(1);
   const firstContentKey = useRef<string | null>(null);
   if (!firstContentKey.current && activeTabKey) firstContentKey.current = activeTabKey;
+
+  const {
+    tabsRef,
+    activeTabKeyRef,
+    discardRichDraftsFor,
+    closeTabsFor,
+    closeTab,
+  } = useStudioTabLifecycle({
+    tabs,
+    activeTabKey,
+    dirty,
+    projectRoot: workspace.project_root,
+    setTabs,
+    setActiveTabKey,
+    setEditor,
+    setSelection,
+    setDirty,
+  });
 
   const report = useCallback((caught: unknown) => {
     const message = caught instanceof Error ? caught.message : "Unexpected error";
@@ -140,6 +161,10 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     const tabKey = selectionTabKey(next);
     const existing = tabs.find((tab) => tab.key === tabKey);
     if (existing) {
+      if (isDirtyViewModeSwitch(editor, dirty, existing.editor)) {
+        setNotice("Save this view text (or wait for autosave) before switching editor modes.");
+        return;
+      }
       setActiveTabKey(tabKey);
       setEditor(existing.editor);
       setSelection(selectionForEditor(existing.editor));
@@ -156,17 +181,11 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     void loadSelection(next, tabKey).catch(report).finally(() => setBusy(false));
   }, [activeTabKey, dirty, editor, loadSelection, report, tabs]);
 
-  const openViewTextEditor = useCallback((viewId: string, displayName: string) => {
-    const next = openViewTextTab(tabs, activeTabKey, editor, dirty, viewId, displayName);
-    setActiveTabKey(next.tabKey);
-    setSelection({ kind: "view", id: viewId });
-    setTabs(next.tabs);
-    setEditor(next.editor);
-    setDirty(next.dirty);
-    setNotice("");
-    setError("");
-    setConflict(false);
-  }, [activeTabKey, dirty, editor, tabs]);
+  const openViewTextEditor = useOpenViewTextEditor({
+    api, projectId: workspace.project_id, tabs, activeTabKey, editor, dirty,
+    setTabs, setActiveTabKey, setEditor, setSelection, setDirty, setBusy, setSaving,
+    clearMessages: () => { setNotice(""); clearError(); }, report,
+  });
 
   const restoreDeletedResource = useCallback(async (snapshot: DeletedResource) => {
     await restoreDeletedResourceViaApi(api, workspace.project_id, snapshot);
@@ -181,19 +200,6 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
       },
     });
   }, [pushUndo, refreshWorkspace, restoreDeletedResource, select]);
-
-  const closeTabsFor = useCallback((target: Selection) => {
-    const remaining = tabsRef.current.filter((tab) => !selectionKeyEquals(selectionForEditor(tab.editor), target));
-    setTabs(remaining);
-    const activeTab = tabsRef.current.find((tab) => tab.key === activeTabKeyRef.current);
-    if (activeTab && selectionKeyEquals(selectionForEditor(activeTab.editor), target)) {
-      const fallback = remaining[remaining.length - 1] ?? null;
-      setActiveTabKey(fallback?.key ?? null);
-      setEditor(fallback?.editor ?? null);
-      setSelection(null);
-      setDirty(fallback?.dirty ?? false);
-    }
-  }, []);
 
   const deletePersistedResource = useCallback(async (target: Selection) => {
     await deletePersistedResourceViaApi(api, workspace.project_id, target);
@@ -268,31 +274,14 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     }
   };
 
-  const closeTab = useCallback((tabKey: string, force = false) => {
-    const tab = tabs.find((item) => item.key === tabKey);
-    if (!tab) return;
-    const needsConfirmation = tabKey === activeTabKey ? dirty : tab.dirty;
-    if (!force && needsConfirmation && !window.confirm("Discard unsaved changes?")) return;
-    const tabIndex = tabs.findIndex((item) => item.key === tabKey);
-    const nextTabs = tabs.filter((item) => item.key !== tabKey);
-    setTabs(nextTabs);
-    if (tabKey !== activeTabKey) return;
-    const nextTab = nextTabs[Math.max(0, tabIndex - 1)] ?? null;
-    if (!nextTab) {
-      setActiveTabKey(null);
-      setEditor(null);
-      setDirty(false);
-      return;
-    }
-    setActiveTabKey(nextTab.key);
-    setEditor(nextTab.editor);
-    setDirty(nextTab.dirty);
-  }, [activeTabKey, dirty, tabs]);
-
   const activateTab = useCallback((tabKey: string) => {
     const tab = tabs.find((item) => item.key === tabKey);
     if (!tab) return;
     if (tabKey === activeTabKey) return;
+    if (isDirtyViewModeSwitch(editor, dirty, tab.editor)) {
+      setNotice("Save this view text (or wait for autosave) before switching editor modes.");
+      return;
+    }
     if (editor && activeTabKey) setTabs((current) => current.map((item) => item.key === activeTabKey ? { ...item, editor, dirty } : item));
     setActiveTabKey(tabKey);
     setEditor(tab.editor);
@@ -302,52 +291,37 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     setConflict(false);
   }, [activeTabKey, dirty, editor, tabs]);
 
-  useEffect(() => {
-    const closeWithShortcut = (event: KeyboardEvent) => {
-      if ((event.ctrlKey || event.metaKey) && !event.altKey && matchesPhysicalKey(event, "KeyS", "s")) {
-        event.preventDefault();
-        saveShortcutRef.current();
-        return;
-      }
-      if (event.ctrlKey && (event.key === "`" || event.code === "Backquote")) {
-        event.preventDefault();
-        setTerminalOpen((open) => !open);
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && matchesPhysicalKey(event, "KeyW", "w") && activeTabKey) {
-        event.preventDefault();
-        closeTab(activeTabKey);
-        return;
-      }
-      if ((event.ctrlKey || event.metaKey) && !event.shiftKey && matchesPhysicalKey(event, "KeyZ", "z")) {
-        const target = event.target as HTMLElement | null;
-        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target?.isContentEditable) return;
-        event.preventDefault();
-        void performUndo();
-      }
-    };
-    window.addEventListener("keydown", closeWithShortcut);
-    return () => window.removeEventListener("keydown", closeWithShortcut);
-  }, [activeTabKey, closeTab, performUndo]);
-
   const save = async () => {
     if (!editor) return;
+    const editorToSave = editor;
+    const tabKeyToSave = activeTabKey;
     setBusy(true);
     setSaving(true);
     try {
-      const { editor: nextEditor, selection: nextSelection } = await saveEditor(api, workspace.project_id, editor, selection);
+      const { editor: savedEditor, selection: nextSelection } = await saveEditor(api, workspace.project_id, editorToSave, selection);
       const nextWorkspace = await api.describe(workspace.project_id);
       setWorkspace(nextWorkspace);
-      setEditor(nextEditor);
-      setSelection(nextSelection);
-      if (activeTabKey) {
-        const nextTabKey = nextSelection ? selectionTabKey(nextSelection) : activeTabKey;
+      const nextTabKey = editorTabKey(savedEditor);
+      setTabs((current) => current.map((tab) => {
+        if (tab.key === tabKeyToSave) {
+          const reconciled = reconcileSavedEditor(tab.editor, savedEditor);
+          return { ...tab, key: nextTabKey, ...reconciled };
+        }
+        if (savedEditor.kind === "view-text"
+          && tab.editor.kind === "view"
+          && tab.editor.detail.id === savedEditor.detail.id
+          && !tab.dirty) {
+          return { ...tab, editor: { ...tab.editor, detail: savedEditor.detail } };
+        }
+        return tab;
+      }));
+      if (tabKeyToSave && activeTabKeyRef.current === tabKeyToSave) {
+        const reconciled = reconcileSavedEditor(editorRef.current, savedEditor);
         setActiveTabKey(nextTabKey);
-        setTabs((current) => current.map((tab) => tab.key === activeTabKey
-          ? { ...tab, key: nextTabKey, editor: nextEditor, dirty: false }
-          : tab));
+        setEditor(reconciled.editor);
+        setSelection(nextSelection);
+        setDirty(reconciled.dirty);
       }
-      setDirty(false);
       setNotice("");
       setError("");
       setConflict(false);
@@ -360,8 +334,15 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   };
 
   const saveAll = async () => {
-    const pending = tabsRef.current.filter((tab) => tab.dirty);
+    const currentTabs = tabsRef.current.map((tab) => tab.key === activeTabKeyRef.current && editorRef.current
+      ? { ...tab, editor: editorRef.current, dirty }
+      : tab);
+    const pending = currentTabs.filter((tab) => tab.dirty);
     if (!pending.length) return;
+    const viewModeConflicts = dirtyViewModeConflicts(pending);
+    if (viewModeConflicts.length) {
+      throw new Error(`Save either the compact or rich editor first for: ${viewModeConflicts.join(", ")}.`);
+    }
     const invalid = pending.filter((tab) => isEditorInvalid(tab.editor));
     if (invalid.length) {
       throw new Error(`Fix invalid editor data before using Git: ${invalid.map((tab) => tab.key).join(", ")}`);
@@ -379,14 +360,17 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
       }
       setTabs((current) => current.map((tab) => {
         const result = saved.get(tab.key);
-        return result ? { ...tab, editor: result.editor, dirty: false } : tab;
+        if (!result) return tab;
+        const reconciled = reconcileSavedEditor(tab.editor, result.editor);
+        return { ...tab, ...reconciled };
       }));
       if (activeTabKey) {
         const result = saved.get(activeTabKey);
         if (result) {
-          setEditor(result.editor);
+          const reconciled = reconcileSavedEditor(editorRef.current, result.editor);
+          setEditor(reconciled.editor);
           setSelection(result.selection);
-          setDirty(false);
+          setDirty(reconciled.dirty);
         }
       }
       setWorkspace(await api.describe(workspace.project_id));
@@ -402,9 +386,13 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     }
   };
 
-  saveShortcutRef.current = () => {
-    if (editor && !busy && canSave(editor)) void save();
-  };
+  useStudioKeyboardShortcuts({
+    activeTabKey,
+    closeTab,
+    performUndo,
+    save: () => { if (editor && !busy && canSave(editor)) void save(); },
+    setTerminalOpen,
+  });
 
   const remove = async () => {
     if (!editor) return;
@@ -413,8 +401,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     setBusy(true);
     try {
       await deleteEditor(api, workspace.project_id, editor);
-      if (snapshot.kind === "command") setSelection({ kind: "command", name: snapshot.command.name });
-      if (activeTabKey) closeTab(activeTabKey, true);
+      closeTabsFor(selectionForDeletedResource(snapshot));
       pushDeleteUndo(snapshot);
       setNotice("");
       await refreshWorkspace();
@@ -426,13 +413,13 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   };
 
   const removeFromExplorer = (next: Selection) => {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (resourceHasDirtyTab(tabsRef.current, activeTabKeyRef.current, dirty, next)
+      && !window.confirm("Delete this resource and discard unsaved changes in its open tabs?")) return;
     setBusy(true);
     void (async () => {
       const snapshot = await deleteSelection(api, workspace.project_id, next);
       if (!snapshot) return;
-      if (activeTabKey && selectionKeyEquals(selection, next)) closeTab(activeTabKey, true);
-      setTabs((current) => current.filter((tab) => !selectionKeyEquals(selectionForEditor(tab.editor), next)));
+      closeTabsFor(next);
       pushDeleteUndo(snapshot);
       await refreshWorkspace();
     })().catch(report).finally(() => setBusy(false));
@@ -446,14 +433,14 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     const previousTabKey = selectionTabKey(from);
     const nextTabKey = selectionTabKey(to);
     const renamedViewTextEditor = toEditor.kind === "view"
-      ? { kind: "view-text" as const, viewId: toEditor.detail.id, displayName: toEditor.detail.name ?? toEditor.detail.id }
+      ? viewTextEditorFromDetail(toEditor.detail)
       : null;
     setTabs((current) => current.map((tab) => {
       if (!selectionKeyEquals(selectionForEditor(tab.editor), from)) return tab;
       if (tab.editor.kind === "view-text" && renamedViewTextEditor) {
         return {
           ...tab,
-          key: viewTextTabKey(renamedViewTextEditor.viewId),
+          key: viewTextTabKey(renamedViewTextEditor.detail.id),
           editor: renamedViewTextEditor,
           dirty: false,
         };
@@ -462,7 +449,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     }));
     const activeTab = tabsRef.current.find((tab) => tab.key === activeTabKeyRef.current);
     if (activeTab?.editor.kind === "view-text" && selectionKeyEquals(selectionForEditor(activeTab.editor), from) && renamedViewTextEditor) {
-      setActiveTabKey(viewTextTabKey(renamedViewTextEditor.viewId));
+      setActiveTabKey(viewTextTabKey(renamedViewTextEditor.detail.id));
       setEditor(renamedViewTextEditor);
       setDirty(false);
     }
@@ -475,10 +462,12 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   }, []);
 
   const renameFromExplorer = useCallback(async (next: Exclude<Selection, { kind: "commands" }>, name: string) => {
-    if (dirty && !window.confirm("Discard unsaved changes?")) return;
+    if (resourceHasDirtyTab(tabsRef.current, activeTabKeyRef.current, dirty, next)
+      && !window.confirm("Rename this resource and discard unsaved changes in its open tabs?")) return;
     setBusy(true);
     try {
       const { selection: nextSelection, editor: nextEditor } = await renameResource(next, name);
+      discardRichDraftsFor(next);
       applyRenameToTabs(next, nextSelection, nextEditor);
       await refreshWorkspace();
       const previousName = next.kind === "command" ? next.name : next.id;
@@ -494,13 +483,19 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     } finally {
       setBusy(false);
     }
-  }, [api, applyRenameToTabs, dirty, pushUndo, refreshWorkspace, renameResource, report, workspace.project_id]);
+  }, [api, applyRenameToTabs, dirty, discardRichDraftsFor, pushUndo, refreshWorkspace, renameResource, report, workspace.project_id]);
 
   const reloadCurrent = () => {
     if (!selection) return;
     setNotice("");
     setBusy(true);
-    void loadSelection(selection).catch(report).finally(() => setBusy(false));
+    void (editor?.kind === "view-text"
+      ? api.getView(workspace.project_id, editor.detail.id).then((detail) => {
+        const next = viewTextEditorFromDetail(detail);
+        setEditor(next);
+        setDirty(false);
+      })
+      : loadSelection(selection)).catch(report).finally(() => setBusy(false));
   };
 
   const switchProject = (path: string) => {
@@ -588,10 +583,6 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     findUsages={findUsages}
     createAndOpenHandler={createAndOpenHandler}
   /></StudioRouter>;
-}
-
-function matchesPhysicalKey(event: KeyboardEvent, code: string, fallbackKey: string): boolean {
-  return event.code === code || (!event.code && event.key.toLowerCase() === fallbackKey);
 }
 
 export { emptyCommandsDetail } from "./editor-model";

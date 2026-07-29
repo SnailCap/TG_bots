@@ -4,7 +4,10 @@ from __future__ import annotations
 def utf16_length(value: str) -> int:
     """Return Telegram's offset unit count (UTF-16 code units)."""
 
-    return len(value.encode("utf-16-le")) // 2
+    # ``surrogatepass`` keeps this utility equivalent to JavaScript's
+    # ``String.length`` even for malformed input. Validation/compiler layers
+    # reject lone surrogates before producing an outbound Telegram message.
+    return len(value.encode("utf-16-le", errors="surrogatepass")) // 2
 
 
 def utf16_offsets(value: str) -> tuple[int, ...]:

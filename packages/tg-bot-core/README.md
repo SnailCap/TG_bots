@@ -18,7 +18,8 @@ python -m pip install -e "packages/tg-bot-core[dev]"
 
 ## Что делает core
 
-- Загружает и валидирует manifest, views/templates, flows, commands, handlers и schedules через общий `tg_bot_core.project`.
+- Загружает и валидирует manifest, views/templates, optional structured content, flows, commands, handlers и schedules через общий `tg_bot_core.project`.
+- Компилирует rich content в Telegram `text + entities` с UTF-16 offsets и безопасным splitting.
 - До начала polling проверяет весь graph и импортирует explicit handler bindings.
 - Преобразует Telegram text/command/callback updates в typed events через PTB polling adapter.
 - Выполняет built-in actions, flow lifecycle и declarative outcome routing.
@@ -37,6 +38,7 @@ my-bot/
 │  ├─ handlers.json
 │  ├─ commands.json
 │  ├─ views/
+│  ├─ content/                  # optional rich content JSON
 │  ├─ flows/
 │  ├─ schedules/
 │  └─ templates/
@@ -51,7 +53,13 @@ my-bot/
 └─ Dockerfile
 ```
 
-Полный JSON contract описан в [project-schema-v3.md](../../docs/architecture/project-schema-v3.md).
+Полный JSON contract описан в [project-schema-v3.md](../../docs/architecture/project-schema-v3.md), а independent content schema — в [Content Editor guide](../../docs/studio/content-editor.md).
+
+## Public Content Engine
+
+`tg_bot_core.content` предоставляет immutable document models и функции `parse_content_document`, `content_document_to_dict`, `normalize_content_document`, `validate_content_document`, `import_legacy_template`, `serialize_legacy_template`, `compile_content_document`, `compile_result_to_dict`, `import_telegram_message` и UTF-16 helpers. Content document имеет собственный `schemaVersion: 1`; optional `view.text.document` остаётся additive частью project schema v3.
+
+Runtime использует structured document при наличии ссылки, иначе сохраняет прежний inline/template Jinja path. Compiler возвращает один или несколько messages с entities, warnings и errors. Telegram import принимает entity offsets в UTF-16 units. Подробности формата, compatibility projection и extension checklist находятся в [Content Editor guide](../../docs/studio/content-editor.md).
 
 ## Entrypoint
 
@@ -165,6 +173,7 @@ BOT_TOKEN="<telegram-token>" python -m my_bot
 - `finished`, `cancelled` и `failed` — разные session statuses с разными lifecycle hooks.
 - Session update использует optimistic revision; при conflict есть одна повторная попытка после reload session.
 - Callback data содержит только `v3:a:<button-id>` и ограничивается 64 bytes.
+- Structured view может дать несколько Telegram messages; keyboard прикрепляется только к последнему.
 - Durable jobs используют claim, lease renewal, bounded exponential retries и run history.
 
 Подробности: [runtime-dispatch.md](../../docs/architecture/runtime-dispatch.md).
@@ -173,7 +182,7 @@ BOT_TOKEN="<telegram-token>" python -m my_bot
 
 - PTB adapter работает через polling и принимает только text messages, commands и callbacks.
 - Из schedule triggers реализован только `interval`; `cron` и `once` пока отклоняются validator.
-- Jinja рендерится с `StrictUndefined`, без autoescape; PTB отправляет результат как обычный текст без неявного parse mode.
+- Legacy inline/template Jinja рендерится с `StrictUndefined`, без autoescape; structured content передаёт PTB готовые entities без неявного parse mode.
 - Custom code исполняется в процессе бота без sandbox и hot reload.
 - Update помечается processed до dispatch, а session save и `task.enqueue` не объединены одной транзакцией; детали рисков перечислены в runtime documentation.
 - Для production рекомендуется один process на project SQLite database; несколько worker coroutines внутри process поддерживаются.

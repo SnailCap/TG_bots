@@ -13,6 +13,7 @@ import { ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, RotateCcw, Search, Use
 import { ResizeHandle } from "../../shared/ui/ResizeHandle";
 import { ConfirmationDialog } from "../../shared/ui/ConfirmationDialog";
 import { Select, type SelectOption } from "../../shared/ui/Select";
+import { Toast } from "../../shared/ui/Toast";
 import type { ManagedUser, StudioApiClient, UserRole, UserStatus } from "../../studio/api";
 
 export type BotUser = ManagedUser;
@@ -264,7 +265,7 @@ export function UsersPage({ api, apiBaseUrl = "", projectId, initialUsers, hidde
         />
       </div>}
     </div>
-    {notice && <div className="users-page__notice" role="status">{notice}<button type="button" aria-label="Dismiss notification" onClick={() => setNotice("")}><CloseIcon /></button></div>}
+    {notice && <Toast message={notice} tone="notice" onDismiss={() => setNotice("")} />}
   </section>;
 }
 

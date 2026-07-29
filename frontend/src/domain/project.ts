@@ -1,3 +1,5 @@
+import type { BotContentDocument } from "./content";
+
 export const SCHEMA_VERSION = 3 as const;
 
 export type HandlerKind = "button" | "message" | "command" | "lifecycle" | "task";
@@ -75,7 +77,10 @@ export interface OutcomeRoutes {
   [name: string]: ActionSpec;
 }
 
-export type TextSpec = { inline: string; template?: never } | { template: string; inline?: never };
+export type TextSpec = (
+  | { inline: string; template?: never }
+  | { template: string; inline?: never }
+) & { document?: string };
 
 export interface ButtonSpec {
   id: string;
@@ -223,6 +228,8 @@ export interface ResourceDetail<T> extends ResourceSummary {
 export interface ViewDetail extends ResourceDetail<ViewSpec> {
   text_content: string;
   text_revision: string | null;
+  content_document?: BotContentDocument | null;
+  content_revision?: string | null;
 }
 export type FlowDetail = ResourceDetail<FlowSpec>;
 export type ScheduleDetail = ResourceDetail<ScheduleSpec>;

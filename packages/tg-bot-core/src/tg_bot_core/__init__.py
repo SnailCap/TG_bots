@@ -2,6 +2,7 @@
 
 from .app import BotApp
 from .config import BotConfig
+from .content import TelegramMessageEntity
 from .events import Actor, CallbackEvent, CommandEvent, MessageEvent
 from .sdk import (
     BaseHandlerContext,
@@ -40,5 +41,6 @@ __all__ = [
     "ServiceProvider",
     "StateValues",
     "TaskContext",
+    "TelegramMessageEntity",
     "UserInfo",
 ]

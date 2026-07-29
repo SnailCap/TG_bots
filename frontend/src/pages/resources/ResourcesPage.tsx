@@ -21,6 +21,7 @@ import { StudioEditor } from "../studio/StudioEditor";
 
 export function ResourcesPage() {
   const {
+    api,
     workspace,
     selection,
     editor,
@@ -30,6 +31,8 @@ export function ResourcesPage() {
     activeTabKey,
     busy,
     saving,
+    dirty,
+    error,
     previewOpen,
     setPreviewOpen,
     explorerWidth,
@@ -69,7 +72,7 @@ export function ResourcesPage() {
       </nav>}
       <div key={firstContentKey ?? "empty"} className={firstContentKey ? "workspace__content workspace__content--enter" : "workspace__content"}>
         {editor && <ResourceEditorHeader category={editorCategory(editor)} title={editorHeaderTitle(editor)} saveAction={isSaveableEditor(editor) ? { disabled: busy || !canSave(editor), saving, onSave: () => void save() } : undefined} />}
-        <StudioEditor editor={editor} options={options} handlerActions={handlerActions} setEditor={setEditor} setDirty={setDirty} repairHandler={repairHandler} openHandler={openHandler} findUsages={findUsages} createHandler={createAndOpenHandler} select={select} openViewTextEditor={openViewTextEditor} renameDisplayName={renameFromExplorer} />
+        <StudioEditor api={api} projectId={workspace.project_id} projectRoot={workspace.project_root} busy={busy} saving={saving} dirty={dirty} saveError={Boolean(error)} save={save} editor={editor} options={options} handlerActions={handlerActions} setEditor={setEditor} setDirty={setDirty} repairHandler={repairHandler} openHandler={openHandler} findUsages={findUsages} createHandler={createAndOpenHandler} select={select} openViewTextEditor={openViewTextEditor} renameDisplayName={renameFromExplorer} />
         {editor?.kind === "handler" && <footer className="editor__actions editor__actions--danger"><span>Deleting a binding can break the resources that use it.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
         {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
       </div>

@@ -1,15 +1,29 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Mapping
 
 from jinja2 import Environment, StrictUndefined, TemplateError
 
+from .content import (
+    CompiledTelegramMessage,
+    ContentDiagnostic,
+    TelegramCompileResult,
+    compile_content_document,
+)
 from .project import ActionSpec, ProjectDefinition
 from .project.models import ButtonSpec
 
 
 class CatalogError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class CompiledView:
+    messages: tuple[CompiledTelegramMessage, ...]
+    keyboard: tuple[tuple[ButtonSpec, ...], ...]
+    warnings: tuple[ContentDiagnostic, ...] = ()
 
 
 class CallbackCodec:
@@ -50,10 +64,42 @@ class ProjectCatalog:
         return self._actions.get(action_id)
 
     def render(self, view_id: str, variables: Mapping[str, Any]) -> tuple[str, tuple[tuple[ButtonSpec, ...], ...]]:
+        view = self._view(view_id)
+        if view.text.document is not None:
+            compiled = self.compile_view(view_id, variables)
+            if len(compiled.messages) != 1:
+                raise CatalogError(
+                    f"View '{view_id}' compiled to multiple messages; use compile_view()."
+                )
+            return compiled.messages[0].text, compiled.keyboard
+        return self._render_legacy(view_id, variables)
+
+    def compile_view(self, view_id: str, variables: Mapping[str, Any]) -> CompiledView:
+        view = self._view(view_id)
+        if view.text.document is None:
+            text, keyboard = self._render_legacy(view_id, variables)
+            return CompiledView((CompiledTelegramMessage(text),), keyboard)
+        document = self.project.content_documents.get(view.text.document)
+        if document is None:
+            raise CatalogError(
+                f"View '{view_id}' references unavailable content document '{view.text.document}'."
+            )
+        result: TelegramCompileResult = compile_content_document(document, variables)
+        if result.errors:
+            summary = "; ".join(error.message for error in result.errors)
+            raise CatalogError(f"Failed to compile view '{view_id}': {summary}")
+        if not result.messages:
+            raise CatalogError(f"View '{view_id}' compiled no Telegram messages.")
+        return CompiledView(result.messages, view.keyboard, result.warnings)
+
+    def _view(self, view_id: str):
         try:
-            view = self.project.views[view_id]
+            return self.project.views[view_id]
         except KeyError as error:
             raise CatalogError(f"Unknown view '{view_id}'.") from error
+
+    def _render_legacy(self, view_id: str, variables: Mapping[str, Any]) -> tuple[str, tuple[tuple[ButtonSpec, ...], ...]]:
+        view = self._view(view_id)
         source = view.text.inline
         if source is None and view.text.template:
             source = self.project.templates.get(view.text.template)

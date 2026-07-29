@@ -1,0 +1,70 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "welcome",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {"type": "text", "text": "Привет, "},
+          {
+            "type": "variable",
+            "variableReference": {
+              "fieldId": "core.user.first_name",
+              "path": "user.first_name",
+              "source": "{{ user.first_name }}"
+            },
+            "marks": [{"type": "bold"}]
+          },
+          {"type": "text", "text": "! "},
+          {
+            "type": "customEmoji",
+            "customEmojiId": "5368324170671202286",
+            "fallbackEmoji": "👍"
+          }
+        ]
+      },
+      {
+        "type": "blockquote",
+        "content": [
+          {
+            "type": "text",
+            "text": "Секрет",
+            "marks": [{"type": "spoiler"}]
+          }
+        ]
+      },
+      {"type": "codeBlock", "language": "python", "text": "print('ok')"}
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "variables": {
+    "user": {"first_name": "Ада 👩‍💻"}
+  },
+  "expected": {
+    "messages": [
+      {
+        "text": "Привет, Ада 👩‍💻! 👍\nСекрет\nprint('ok')",
+        "entities": [
+          {"type": "bold", "offset": 8, "length": 9},
+          {
+            "type": "custom_emoji",
+            "offset": 19,
+            "length": 2,
+            "custom_emoji_id": "5368324170671202286"
+          },
+          {"type": "blockquote", "offset": 22, "length": 6},
+          {"type": "spoiler", "offset": 22, "length": 6},
+          {"type": "pre", "offset": 29, "length": 11, "language": "python"}
+        ]
+      }
+    ],
+    "warnings": [],
+    "errors": []
+  }
+}

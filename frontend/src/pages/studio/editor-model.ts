@@ -8,12 +8,19 @@ import {
   type Selection,
   type ViewDetail,
 } from "../../domain/project";
+import type { BotContentDocument } from "../../domain/content";
 import type { PreviewEditor } from "../../features/telegram-preview/preview-model";
 import type { ExplorerDraft } from "../../widgets/project-explorer/ProjectExplorer";
 
 export type EditorState =
   | { kind: "view"; detail: ViewDetail; isNew: boolean }
-  | { kind: "view-text"; viewId: string; displayName: string }
+  | {
+      kind: "view-text";
+      detail: ViewDetail;
+      document: BotContentDocument;
+      version: number;
+      savedVersion: number;
+    }
   | { kind: "flow"; detail: FlowDetail; isNew: boolean }
   | { kind: "command"; detail: CommandsDetail; commandIndex: number }
   | { kind: "commands"; detail: CommandsDetail }
@@ -23,13 +30,6 @@ export type EditorState =
   | null;
 
 export type EditorTab = { key: string; editor: Exclude<EditorState, null>; dirty: boolean };
-
-export type OpenViewTextTabResult = {
-  tabKey: string;
-  editor: Extract<Exclude<EditorState, null>, { kind: "view-text" }>;
-  tabs: EditorTab[];
-  dirty: boolean;
-};
 
 export type StudioStatus = { label: string; tone: string };
 
@@ -60,29 +60,32 @@ export function viewTextTabKey(viewId: string): string {
   return `view-text:${viewId}`;
 }
 
-export function openViewTextTab(
-  tabs: readonly EditorTab[],
-  activeTabKey: string | null,
-  activeEditor: EditorState,
-  activeDirty: boolean,
-  viewId: string,
-  displayName: string,
-): OpenViewTextTabResult {
-  const tabKey = viewTextTabKey(viewId);
-  const existing = tabs.find((tab) => tab.key === tabKey);
-  if (existing?.editor.kind === "view-text") {
-    return { tabKey, editor: existing.editor, tabs: [...tabs], dirty: existing.dirty };
-  }
+export function editorTabKey(editor: Exclude<EditorState, null>): string {
+  return editor.kind === "view-text"
+    ? viewTextTabKey(editor.detail.id)
+    : selectionTabKey(editorTabSelection(editor));
+}
 
-  const nextTabs = activeEditor && activeTabKey
-    ? tabs.map((tab) => tab.key === activeTabKey ? { ...tab, editor: activeEditor, dirty: activeDirty } : tab)
-    : [...tabs];
-  const editor = { kind: "view-text" as const, viewId, displayName };
+export function reconcileSavedEditor(
+  latest: EditorState,
+  saved: Exclude<EditorState, null>,
+): { editor: Exclude<EditorState, null>; dirty: boolean } {
+  if (latest?.kind !== "view-text"
+    || saved.kind !== "view-text"
+    || latest.detail.id !== saved.detail.id
+    || latest.version <= saved.version) {
+    return {
+      editor: saved,
+      dirty: saved.kind === "view-text" && saved.version !== saved.savedVersion,
+    };
+  }
   return {
-    tabKey,
-    editor,
-    tabs: [...nextTabs, { key: tabKey, editor, dirty: false }],
-    dirty: false,
+    editor: {
+      ...latest,
+      detail: { ...saved.detail, content_document: latest.document },
+      savedVersion: Math.max(latest.savedVersion, saved.savedVersion),
+    },
+    dirty: true,
   };
 }
 
@@ -122,7 +125,7 @@ export function selectionForDeletedResource(snapshot: DeletedResource): Selectio
 }
 
 export function selectionForEditor(editor: Exclude<EditorState, null>): Selection | null {
-  if (editor.kind === "view-text") return { kind: "view", id: editor.viewId };
+  if (editor.kind === "view-text") return { kind: "view", id: editor.detail.id };
   if (editor.kind === "new-handler" || ("isNew" in editor && editor.isNew)) return null;
   if (editor.kind === "command") return { kind: "command", name: commandAt(editor).name };
   if (editor.kind === "commands") return { kind: "commands" };
@@ -134,7 +137,7 @@ export function selectionKeyEquals(left: Selection | null, right: Selection): bo
 }
 
 export function editorTabLabel(editor: Exclude<EditorState, null>): string {
-  if (editor.kind === "view-text") return `${editor.displayName} text`;
+  if (editor.kind === "view-text") return `${editor.detail.name ?? editor.detail.id} text`;
   if (editor.kind === "new-handler") return "New handler";
   if (editor.kind === "command") return `/${commandAt(editor).name}`;
   if (editor.kind === "commands") return "fallbacks";
@@ -142,7 +145,7 @@ export function editorTabLabel(editor: Exclude<EditorState, null>): string {
 }
 
 export function editorTabSelection(editor: Exclude<EditorState, null>): Selection {
-  if (editor.kind === "view-text") return { kind: "view", id: editor.viewId };
+  if (editor.kind === "view-text") return { kind: "view", id: editor.detail.id };
   const selection = selectionForEditor(editor);
   if (selection) return selection;
   if (editor.kind === "command") return { kind: "command", name: commandAt(editor).name };
@@ -160,7 +163,7 @@ export function editorCategory(editor: Exclude<EditorState, null>): string {
 }
 
 export function editorHeaderTitle(editor: Exclude<EditorState, null>): string {
-  if (editor.kind === "view-text") return editor.displayName;
+  if (editor.kind === "view-text") return editor.detail.name ?? editor.detail.id;
   if (editor.kind === "new-handler") return "New handler";
   if (editor.kind === "command") return `/${commandAt(editor).name}`;
   if (editor.kind === "commands") return "Fallbacks";
@@ -168,6 +171,7 @@ export function editorHeaderTitle(editor: Exclude<EditorState, null>): string {
 }
 
 export function canSave(editor: Exclude<EditorState, null>): boolean {
+  if (editor.kind === "view-text") return Boolean(editor.detail.id && editor.document.id === editor.detail.id);
   if (editor.kind === "view") return Boolean(editor.detail.payload.id.trim());
   if (editor.kind === "flow" || editor.kind === "schedule") return Boolean(editor.detail.payload.id.trim());
   if (editor.kind === "command") return Boolean(commandAt(editor).name.trim());
@@ -207,7 +211,7 @@ export function commandAt(editor: Extract<Exclude<EditorState, null>, { kind: "c
 }
 
 export function isSaveableEditor(editor: Exclude<EditorState, null>): boolean {
-  return editor.kind !== "handler" && editor.kind !== "new-handler" && editor.kind !== "view-text";
+  return editor.kind !== "handler" && editor.kind !== "new-handler";
 }
 
 export function draftForEditor(editor: EditorState): ExplorerDraft | null {

@@ -14,7 +14,7 @@ flowchart LR
         Electron -->|"encrypted credential"| SecureStore["OS secure storage"]
         Backend -->|"read / revisioned write"| Folder["Папка bot project"]
         Backend -->|"safe Git + GitHub API"| GitHub["GitHub repository"]
-        Backend --> Shared["tg_bot_core.project<br/>loader + validation + references"]
+        Backend --> Shared["tg_bot_core<br/>project schema + content engine"]
     end
 
     subgraph Project["Автономный bot project"]
@@ -37,7 +37,7 @@ flowchart LR
 `resources/` полностью описывает визуальный application graph:
 
 - manifest и `/start` policy;
-- views, принадлежащие им text templates и keyboard actions;
+- views, принадлежащие им text templates, optional structured content documents и keyboard actions;
 - flows, states, state views, hooks и named events;
 - commands и global fallbacks;
 - explicit handler bindings и outcome routes;
@@ -75,9 +75,10 @@ flowchart TD
 
 | Компонент | Ответственность |
 | --- | --- |
-| `ProjectLoader` | Детерминированно читает схему проекта, не импортируя custom code |
-| `validate_project` | Проверяет IDs, references, outcomes, callbacks, schedules, Jinja и при запросе AST handler files |
-| `ProjectCatalog` | Индексирует button IDs/actions и рендерит views через Jinja |
+| `ProjectLoader` | Детерминированно читает schema v3, templates и independent content documents, не импортируя custom code |
+| `validate_project` | Проверяет IDs, references, content, outcomes, callbacks, schedules, Jinja и при запросе AST handler files |
+| `ProjectCatalog` | Индексирует button IDs/actions и выбирает legacy Jinja либо structured content compilation для view |
+| `Content Engine` | Парсит versioned rich documents и компилирует Telegram `text + entities` с UTF-16 offsets и безопасным splitting |
 | `EventDispatcher` | Выбирает ветку command/callback/message и global fallback |
 | `FlowEngine` | Владеет lifecycle, actions, outcome routing, checkpoints и rendering |
 | `HandlerResolver` | Разрешает только explicit module/symbol bindings и кеширует callables |
@@ -118,8 +119,8 @@ sequenceDiagram
         E->>E: declarative outcome route
     end
     E->>S: optimistic session save
-    E->>T: OutboundMessage
-    T->>TG: Plain text + inline keyboard
+    E->>T: один или несколько OutboundMessage
+    T->>TG: text + entities + inline keyboard
 ```
 
 Если optimistic save конфликтует, `BotApp` один раз повторно загружает session и повторяет dispatch. Поэтому custom handlers должны учитывать возможность повторного вызова и самостоятельно обеспечивать idempotency внешних side effects.
@@ -139,7 +140,9 @@ sequenceDiagram
 
 ## Граница Studio
 
-Backend читает и сохраняет manifest, views, flows, commands, schedules и handlers; для file-per-entity resources есть create/delete операции. Текст view гидратируется из inline/template schema и при сохранении Studio канонизируется во внутренний `templates/views/<view-id>.txt`. Отдельного публичного template CRUD в Studio нет. Backend поддерживает revision conflicts, reference-safe deletion, validation, usages и handler inspection. Scaffolding может атомарно создать binding, безопасный Python path и привязку к выбранной сущности. Существующий source file не перезаписывается.
+Backend читает и сохраняет manifest, views, flows, commands, schedules и handlers; для file-per-entity resources есть create/delete операции. Обычный текст view гидратируется из inline/template schema и при сохранении Studio канонизируется во внутренний `templates/views/<view-id>.txt`. Rich Text Editor дополнительно хранит canonical `content/views/<view-id>.json`, а template обновляет как derived plain-Jinja compatibility projection; optional `view.text.document` не меняет номер project schema v3. Все три файла сохраняются с revision checks и rollback. Отдельного публичного template CRUD в Studio нет. Полный content contract, migration и preview API описаны в [руководстве Rich Text Content Editor](../studio/content-editor.md).
+
+Backend также поддерживает revision conflicts, reference-safe deletion, validation, usages и handler inspection. Scaffolding может атомарно создать binding, безопасный Python path и привязку к выбранной сущности. Существующий source file не перезаписывается.
 
 ### Граница frontend Studio page
 
@@ -150,6 +153,7 @@ Backend читает и сохраняет manifest, views, flows, commands, sch
 - `pages/resources/ResourcesPage.tsx` владеет explorer, вкладками редакторов и preview;
 - `pages/users/UsersPage.tsx` является route page для управления пользователями;
 - `StudioEditor.tsx` выбирает typed editor для текущего ресурса;
+- `features/view-text-editor/` содержит lazy-loaded rich editor, document conversions, compiled Telegram preview, local drafts и custom emoji UI;
 - `editor-model.ts` содержит editor state и чистые преобразования selection/tab/draft;
 - `studio-resource-api.ts` содержит typed CRUD branching для ресурсов;
 - `useStudioLayout.ts`, `useLocalProjectRun.ts`, `useProjectSettings.ts`, `useStudioHandlers.ts` и `useStudioUndo.ts` изолируют независимые lifecycle.

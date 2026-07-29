@@ -3,6 +3,7 @@ import {
   FORMAT_KIND_BY_ALIAS,
   TELEGRAM_DATE_TIME_FORMAT,
   isSafeWebUrl,
+  isValidCustomEmojiFallback,
   parseTelegramMentionHref,
 } from "./telegram-formatting";
 
@@ -51,9 +52,10 @@ function sanitizeNode(node: Node): string {
   }
   if (tag === "tg-emoji") {
     const emojiId = node.getAttribute("emoji-id") ?? "";
-    return /^\d+$/.test(emojiId) && node.textContent
-      ? `<tg-emoji emoji-id="${emojiId}">${escapeTelegramText(node.textContent)}</tg-emoji>`
-      : content;
+    const fallback = node.textContent ?? "";
+    return /^\d+$/.test(emojiId) && isValidCustomEmojiFallback(fallback)
+      ? `<tg-emoji emoji-id="${emojiId}">${escapeTelegramText(fallback)}</tg-emoji>`
+      : escapeTelegramText(fallback);
   }
   if (tag === "tg-time") {
     const unix = node.getAttribute("unix") ?? "";

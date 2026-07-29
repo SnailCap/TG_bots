@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { CalendarDays, ChevronDown, FileText, LayoutGrid, Terminal, Workflow, Zap } from "lucide-react";
+import { CalendarDays, ChevronDown, CircleDot, FileText, LayoutGrid, Terminal, Workflow, Zap } from "lucide-react";
 
 import type { FlowSummary, HandlerKind, Selection, Workspace } from "../../domain/project";
 import { useResourceDraggable, type DraggableResource } from "../../features/resource-dnd";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ResourceIcon } from "../../shared/ui/ResourceIcon";
+import { ExplorerTreeGroup, ExplorerTreeLeaf, ExplorerTreeRow } from "./ExplorerTree";
 
 export type CreatableResource = "view" | "flow" | "handler" | "command" | "schedule";
 export type ExplorerDraft = { kind: CreatableResource; label: string };
@@ -198,7 +199,6 @@ function FlowResource({
   const selection: Selection = { kind: "flow", id: flow.id };
   const resource = dragResource(selection, flow.name ?? flow.id, undefined);
   const dragProps = useResourceDraggable(editing ? null : resource);
-  const className = open ? "explorer__flow-resource explorer__flow-resource--open" : "explorer__flow-resource";
   const mainClassName = [
     "explorer__item",
     "explorer__flow-main",
@@ -207,21 +207,8 @@ function FlowResource({
   ].filter(Boolean).join(" ");
   const contentId = `explorer-flow-${flow.id}`;
 
-  return <div className={className} onContextMenu={onContextMenu}>
-    <div className="explorer__flow-row">
-      <button
-        type="button"
-        className="explorer__flow-toggle"
-        aria-label={open ? `Collapse ${flow.name ?? flow.id}` : `Expand ${flow.name ?? flow.id}`}
-        aria-expanded={open}
-        aria-controls={contentId}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggle();
-        }}
-      >
-        <span className={open ? "explorer__flow-arrow explorer__flow-arrow--open" : "explorer__flow-arrow"} aria-hidden="true"><ChevronIcon /></span>
-      </button>
+  return <div className="explorer__flow-resource" onContextMenu={onContextMenu}>
+    <ExplorerTreeRow disclosure={{ label: open ? `Collapse ${flow.name ?? flow.id}` : `Expand ${flow.name ?? flow.id}`, expanded: open, controls: contentId, onToggle }}>
       {editing
         ? <div className={mainClassName} aria-current={active ? "page" : undefined}>
             <ResourceIcon selection={selection} title={flow.name ?? flow.id} />
@@ -238,12 +225,10 @@ function FlowResource({
             <ResourceIcon selection={selection} title={flow.name ?? flow.id} />
             <strong>{flow.name ?? flow.id}</strong>
           </button>}
-    </div>
-    <div id={contentId} className="explorer__flow-content">
-      <div className="explorer__flow-items">
-        {flow.states.map((stateId) => <div key={stateId} className="explorer__flow-state"><span>{stateId}</span></div>)}
-      </div>
-    </div>
+    </ExplorerTreeRow>
+    <ExplorerTreeGroup id={contentId} open={open}>
+      {flow.states.map((stateId) => <ExplorerTreeLeaf key={stateId} depth={1} icon={<CircleDot />}>{stateId}</ExplorerTreeLeaf>)}
+    </ExplorerTreeGroup>
   </div>;
 }
 
@@ -277,7 +262,6 @@ function ViewResource({
   const selection: Selection = { kind: "view", id: view.id };
   const resource = dragResource(selection, view.name ?? view.id, undefined);
   const dragProps = useResourceDraggable(editing ? null : resource);
-  const className = open ? "explorer__view-resource explorer__view-resource--open" : "explorer__view-resource";
   const mainClassName = [
     "explorer__item",
     "explorer__view-main",
@@ -286,21 +270,8 @@ function ViewResource({
   ].filter(Boolean).join(" ");
   const contentId = `explorer-view-${view.id}`;
 
-  return <div className={className} onContextMenu={onContextMenu}>
-    <div className="explorer__view-row">
-      <button
-        type="button"
-        className="explorer__view-toggle"
-        aria-label={open ? `Collapse ${view.name ?? view.id}` : `Expand ${view.name ?? view.id}`}
-        aria-expanded={open}
-        aria-controls={contentId}
-        onClick={(event) => {
-          event.stopPropagation();
-          onToggle();
-        }}
-      >
-        <span className={open ? "explorer__view-arrow explorer__view-arrow--open" : "explorer__view-arrow"} aria-hidden="true"><ChevronIcon /></span>
-      </button>
+  return <div className="explorer__view-resource" onContextMenu={onContextMenu}>
+    <ExplorerTreeRow disclosure={{ label: open ? `Collapse ${view.name ?? view.id}` : `Expand ${view.name ?? view.id}`, expanded: open, controls: contentId, onToggle }}>
       {editing
         ? <div className={mainClassName} aria-current={active ? "page" : undefined}>
             <ResourceIcon selection={selection} title={view.name ?? view.id} />
@@ -317,27 +288,25 @@ function ViewResource({
             <ResourceIcon selection={selection} title={view.name ?? view.id} />
             <strong>{view.name ?? view.id}</strong>
           </button>}
-    </div>
-    <div id={contentId} className="explorer__view-content">
-      <div className="explorer__view-items">
-        <button type="button" className="explorer__view-text" aria-label={`Open text editor for ${view.name ?? view.id}`} onClick={onOpenTextEditor}><FileText aria-hidden="true" /><span>Text editor</span></button>
-      </div>
-    </div>
+    </ExplorerTreeRow>
+    <ExplorerTreeGroup id={contentId} open={open}>
+      <ExplorerTreeLeaf depth={1} icon={<FileText />} ariaLabel={`Open text editor for ${view.name ?? view.id}`} onClick={onOpenTextEditor}>Text editor</ExplorerTreeLeaf>
+    </ExplorerTreeGroup>
   </div>;
 }
 
 function ResourceButton({ active, selection, title, editing, renameValue, resource, onRenameChange, onRenameFinish, onRenameKeyDown, onClick, onContextMenu }: { active: boolean; selection: Selection; title: string; editing: boolean; renameValue: string; resource: DraggableResource | null; onRenameChange(value: string): void; onRenameFinish(): void; onRenameKeyDown(event: KeyboardEvent<HTMLInputElement>): void; onClick(): void; onContextMenu(event: MouseEvent): void }) {
   const dragProps = useResourceDraggable(editing ? null : resource);
   const className = ["explorer__item", active ? "explorer__item--active" : "", resource ? "explorer__item--draggable" : ""].filter(Boolean).join(" ");
-  if (editing) return <div className={className} aria-current={active ? "page" : undefined} onContextMenu={onContextMenu}><ResourceIcon selection={selection} title={title} /><input className="explorer__rename-input" aria-label={`Rename ${title}`} autoFocus value={renameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onRenameChange(event.target.value)} onBlur={onRenameFinish} onKeyDown={onRenameKeyDown} /></div>;
-  return <button type="button" aria-current={active ? "page" : undefined} className={className} onClick={onClick} onContextMenu={onContextMenu} onPointerDown={dragProps.onPointerDown} onClickCapture={dragProps.onClickCapture}><ResourceIcon selection={selection} title={title} /> <strong>{title}</strong></button>;
+  if (editing) return <ExplorerTreeRow><div className={className} aria-current={active ? "page" : undefined} onContextMenu={onContextMenu}><ResourceIcon selection={selection} title={title} /><input className="explorer__rename-input" aria-label={`Rename ${title}`} autoFocus value={renameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onRenameChange(event.target.value)} onBlur={onRenameFinish} onKeyDown={onRenameKeyDown} /></div></ExplorerTreeRow>;
+  return <ExplorerTreeRow><button type="button" aria-current={active ? "page" : undefined} className={className} onClick={onClick} onContextMenu={onContextMenu} onPointerDown={dragProps.onPointerDown} onClickCapture={dragProps.onClickCapture}><ResourceIcon selection={selection} title={title} /> <strong>{title}</strong></button></ExplorerTreeRow>;
 }
 
 function DraftResource({ kind, label }: ExplorerDraft) {
   const selection: Selection = kind === "command"
       ? { kind, name: label }
       : { kind, id: label };
-  return <div className="explorer__item explorer__item--active explorer__item--draft" aria-current="page"><ResourceIcon selection={selection} title={label} /><strong>{label}</strong><span className="explorer__draft-indicator">new</span></div>;
+  return <ExplorerTreeRow><div className="explorer__item explorer__item--active explorer__item--draft" aria-current="page"><ResourceIcon selection={selection} title={label} /><strong>{label}</strong><span className="explorer__draft-indicator">new</span></div></ExplorerTreeRow>;
 }
 
 function ChevronIcon() {

@@ -1,0 +1,25 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "blockquote",
+    "content": [
+      {"type": "blockquote", "content": [{"type": "text", "text": "Quote"}]}
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "expected": {
+    "messages": [
+      {
+        "text": "Quote",
+        "entities": [{"type": "blockquote", "offset": 0, "length": 5}]
+      }
+    ],
+    "warnings": [],
+    "errors": []
+  }
+}

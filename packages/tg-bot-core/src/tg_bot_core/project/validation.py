@@ -3,10 +3,19 @@ from __future__ import annotations
 import keyword
 import re
 from collections import Counter, deque
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Iterable
 
 from jinja2 import Environment, TemplateError
+
+from ..content import (
+    CodeBlock,
+    CustomEmojiNode,
+    LegacyTemplateBlock,
+    TextNode,
+    VariableNode,
+    validate_content_document,
+)
 
 from .inspection import inspect_handler_source
 from .models import (
@@ -191,6 +200,42 @@ def validate_project(project: ProjectDefinition, *, inspect_code: bool = False) 
         if count > 1:
             issue("error", "duplicate_action_id", f"Button action id '{action_id}' is used {count} times.", entity=action_id)
 
+    document_ids = Counter(document.id for document in project.content_documents.values())
+    for document_id, count in document_ids.items():
+        if count > 1:
+            issue(
+                "error",
+                "duplicate_content_document_id",
+                f"Content document id '{document_id}' is used {count} times.",
+                entity=document_id,
+            )
+    for document_name, document in project.content_documents.items():
+        source_path = f"content/{document_name}"
+        valid_id(document.id, source_path, document.id)
+        for diagnostic in validate_content_document(document):
+            issue(
+                diagnostic.severity,
+                diagnostic.code,
+                diagnostic.message,
+                source=source_path,
+                entity=document.id,
+                field=diagnostic.path,
+            )
+        for block_index, block in enumerate(document.content):
+            if not isinstance(block, LegacyTemplateBlock):
+                continue
+            try:
+                Environment().parse(block.source)
+            except TemplateError as error:
+                issue(
+                    "error",
+                    "jinja_syntax",
+                    f"Invalid legacy Jinja template: {error}",
+                    source=source_path,
+                    entity=document.id,
+                    field=f"content[{block_index}].source",
+                )
+
     for template_name, template_source in project.templates.items():
         template_path = f"templates/{template_name}"
         if not template_source.strip():
@@ -216,6 +261,45 @@ def validate_project(project: ProjectDefinition, *, inspect_code: bool = False) 
 
     for view in project.views.values():
         valid_id(view.id, view.source_path, view.id)
+        if view.text.document is not None:
+            document_path = PurePosixPath(view.text.document)
+            if (
+                not view.text.document
+                or view.text.document.strip() != view.text.document
+                or "\\" in view.text.document
+                or document_path.is_absolute()
+                or ".." in document_path.parts
+                or document_path.as_posix() != view.text.document
+                or document_path.suffix.lower() != ".json"
+            ):
+                issue(
+                    "error",
+                    "content_document_path_invalid",
+                    f"View '{view.id}' has an invalid content document path.",
+                    source=view.source_path,
+                    entity=view.id,
+                    field="text.document",
+                )
+            elif view.text.document not in project.content_documents:
+                issue(
+                    "error",
+                    "content_document_missing",
+                    f"View '{view.id}' references missing content document '{view.text.document}'.",
+                    source=view.source_path,
+                    entity=view.id,
+                    field="text.document",
+                )
+            elif not _content_document_has_potential_output(
+                project.content_documents[view.text.document]
+            ):
+                issue(
+                    "error",
+                    "content_document_empty",
+                    f"View '{view.id}' references a content document with no renderable text.",
+                    source=view.source_path,
+                    entity=view.id,
+                    field="text.document",
+                )
         source_text = view.text.inline
         if view.text.template:
             if view.text.template not in project.templates:
@@ -345,3 +429,17 @@ def _validate_reachability(flow, issue) -> None:
     for state_id in flow.states.keys() - seen:
         issue("warning", "unreachable_state", f"State '{flow.id}.{state_id}' is unreachable from '{flow.initial_state}'.", source=flow.source_path, entity=f"{flow.id}.{state_id}")
 
+
+def _content_document_has_potential_output(document) -> bool:
+    for block in document.content:
+        if isinstance(block, CodeBlock) and block.text.strip():
+            return True
+        if isinstance(block, LegacyTemplateBlock) and block.source.strip():
+            return True
+        content = getattr(block, "content", ())
+        for node in content:
+            if isinstance(node, TextNode) and node.text.strip():
+                return True
+            if isinstance(node, (VariableNode, CustomEmojiNode)):
+                return True
+    return False

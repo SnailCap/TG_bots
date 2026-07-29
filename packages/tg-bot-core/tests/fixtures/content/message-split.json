@@ -1,0 +1,31 @@
+{
+  "document": {
+    "schemaVersion": 1,
+    "id": "message-split",
+    "content": [
+      {"type": "paragraph", "content": [{"type": "text", "text": "First block"}]},
+      {"type": "paragraph", "content": [{"type": "text", "text": "Second block"}]}
+    ],
+    "metadata": {
+      "createdAt": "2026-07-29T00:00:00Z",
+      "updatedAt": "2026-07-29T00:00:00Z",
+      "editorVersion": "1.0.0",
+      "source": "botstudio"
+    }
+  },
+  "options": {"maxMessageLength": 12, "splitLongMessages": true},
+  "expected": {
+    "messages": [
+      {"text": "First block\n", "entities": []},
+      {"text": "Second block", "entities": []}
+    ],
+    "warnings": [
+      {
+        "severity": "warning",
+        "code": "message_split",
+        "message": "Rendered content was split into 2 Telegram messages."
+      }
+    ],
+    "errors": []
+  }
+}

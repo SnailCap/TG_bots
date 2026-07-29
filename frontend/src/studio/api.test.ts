@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { BotContentDocument } from "../domain/content";
 import { StudioApi, StudioApiError } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -96,6 +97,54 @@ describe("StudioApi", () => {
       method: "PUT",
       body: JSON.stringify({ telegram_bot_token: "123456:token", revision: "settings-one" }),
     }));
+  });
+
+  it("sends an explicit compiled preview through the project-scoped endpoint", async () => {
+    const document: BotContentDocument = {
+      schemaVersion: 1,
+      id: "home",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+      metadata: {
+        createdAt: "2026-07-29T00:00:00Z",
+        updatedAt: "2026-07-29T00:00:00Z",
+        editorVersion: "1.0.0",
+      },
+    };
+    const wireResult = {
+      sent: true as const,
+      sentCount: 1,
+      totalCount: 1,
+      messageIds: [42],
+      warnings: [],
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => wireResult,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new StudioApi("http://studio.test");
+
+    const result = await api.sendPreviewMessage("project-1", {
+      document,
+      variables: { user: { first_name: "Ada" } },
+      chatId: "@preview_chat",
+      splitLongMessages: false,
+    });
+
+    expect(result).toEqual(wireResult);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "http://studio.test/api/v1/projects/project-1/content/send-preview",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          document,
+          variables: { user: { first_name: "Ada" } },
+          chatId: "@preview_chat",
+          splitLongMessages: false,
+        }),
+      }),
+    );
   });
 
   it("preserves backend error codes", async () => {

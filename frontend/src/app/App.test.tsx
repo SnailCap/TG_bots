@@ -193,16 +193,123 @@ describe("Studio", () => {
     expect(await screen.findByLabelText("View editor")).toBeInTheDocument();
   });
 
-  it("opens the view text editor in a separate non-saveable tab", async () => {
+  it("opens the rich view text editor in a separate saveable tab", async () => {
     render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
 
     fireEvent.click(screen.getByRole("button", { name: "home" }));
     await screen.findByLabelText("View editor");
     fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
 
-    expect(await screen.findByLabelText("Rich text editor")).toBeEmptyDOMElement();
-    expect(screen.getByRole("tab", { name: "home text" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    expect(await screen.findByLabelText("Rich text editor")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Rich message content" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "Telegram message preview" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /home text$/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("mounts the rich view text editor safely in React StrictMode", async () => {
+    render(<StrictMode><StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} /></StrictMode>);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
+
+    expect(await screen.findByRole("textbox", { name: "Rich message content" })).toBeInTheDocument();
+    expect(screen.queryByRole("listbox", { name: "Slash commands" })).not.toBeInTheDocument();
+  });
+
+  it("migrates legacy view text through the revision-aware rich content save", async () => {
+    const saveViewContent = vi.fn().mockImplementation(async (
+      _projectId: string,
+      _id: string,
+      _payload: ViewDetail["payload"],
+      _revision: string,
+      document: NonNullable<ViewDetail["content_document"]>,
+    ): Promise<ViewDetail> => ({
+      ...viewDetail,
+      revision: "view-two",
+      text_revision: "text-two",
+      content_revision: "content-one",
+      content_document: document,
+      payload: { ...viewDetail.payload, text: { template: "views/home.txt", document: "views/home.json" } },
+    }));
+    const api = apiMock({ saveViewContent });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
+    await screen.findByRole("textbox", { name: "Rich message content" });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(saveViewContent).toHaveBeenCalled());
+    const [, id, payload, revision, document, documentRevision, textRevision] = saveViewContent.mock.calls[0];
+    expect({ id, payload, revision, documentRevision, textRevision }).toEqual({
+      id: "home",
+      payload: viewDetail.payload,
+      revision: "view-one",
+      documentRevision: null,
+      textRevision: "text-one",
+    });
+    expect(document).toMatchObject({
+      schemaVersion: 1,
+      id: "home",
+      content: [{ type: "paragraph", content: [{ type: "text", text: "Hello" }] }],
+    });
+  });
+
+  it("recovers a revision-matched rich content draft after an interrupted session", async () => {
+    const recovered = {
+      schemaVersion: 1 as const,
+      id: "home",
+      content: [{ type: "paragraph" as const, content: [{ type: "text" as const, text: "Recovered draft" }] }],
+      metadata: {
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:01:00.000Z",
+        editorVersion: "1.0.0",
+        source: "botstudio" as const,
+      },
+    };
+    window.localStorage.setItem(
+      "botstudio:content-draft:v1:C%3A%2Fdemo:home",
+      JSON.stringify({ schemaVersion: 1, baseRevision: "view-one", updatedAt: recovered.metadata.updatedAt, document: recovered }),
+    );
+    const saveViewContent = vi.fn().mockImplementation(async (
+      _projectId: string,
+      _id: string,
+      _payload: ViewDetail["payload"],
+      _revision: string,
+      document: NonNullable<ViewDetail["content_document"]>,
+    ): Promise<ViewDetail> => ({ ...viewDetail, content_document: document, content_revision: "content-one" }));
+    render(<StudioPage api={apiMock({ saveViewContent })} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
+
+    expect(await screen.findByText("Recovered a newer local draft. It will be saved after validation.")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("textbox", { name: "Rich message content" })).toHaveTextContent("Recovered draft"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(saveViewContent).toHaveBeenCalled());
+    expect(saveViewContent.mock.calls.at(-1)?.[4]).toMatchObject(recovered);
+  });
+
+  it("removes the recovery draft when the user explicitly discards a dirty rich tab", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
+    await screen.findByRole("textbox", { name: "Rich message content" });
+
+    const draftKey = "botstudio:content-draft:v1:C%3A%2Fdemo:home";
+    window.localStorage.setItem(draftKey, "explicit-discard-sentinel");
+    fireEvent.click(screen.getByRole("button", { name: "Close home text" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith("Discard unsaved changes?");
+    expect(window.localStorage.getItem(draftKey)).toBeNull();
+    expect(screen.queryByLabelText("Rich text editor")).not.toBeInTheDocument();
   });
 
   it("shows backend health and opens a project", async () => {
@@ -693,7 +800,30 @@ describe("Studio", () => {
 
     fireEvent.keyDown(window, { key: "я", code: "KeyZ", ctrlKey: true });
 
-    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "home", viewDetail.payload, viewDetail.text_content));
+    await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "home", viewDetail.payload, viewDetail.text_content, undefined));
+  });
+
+  it("does not silently discard an inactive dirty rich-text tab from the explorer", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const saveViewContent = vi.fn().mockReturnValue(new Promise<ViewDetail>(() => undefined));
+    const api = apiMock({ saveViewContent });
+    const { container } = render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+    const homeResource = container.querySelector<HTMLButtonElement>(".explorer__view-main")!;
+
+    fireEvent.click(homeResource);
+    await screen.findByLabelText("View editor");
+    fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
+    await screen.findByRole("textbox", { name: "Rich message content" });
+    fireEvent.click(homeResource);
+    expect(screen.getByLabelText("Rich text editor")).toBeInTheDocument();
+    expect(screen.getByText("Save this view text (or wait for autosave) before switching editor modes.")).toBeInTheDocument();
+
+    fireEvent.contextMenu(homeResource);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+
+    expect(confirmSpy).toHaveBeenCalledWith("Delete this resource and discard unsaved changes in its open tabs?");
+    expect(api.deleteView).not.toHaveBeenCalled();
+    expect(screen.getByRole("tab", { name: /home text$/ })).toBeInTheDocument();
   });
 
   it("undoes a rename with Ctrl+Z", async () => {
@@ -767,11 +897,15 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     describe: vi.fn().mockResolvedValue(workspace),
     getProjectSettings: vi.fn().mockResolvedValue({ telegram_bot_token_configured: false, revision: null }),
     saveProjectSettings: vi.fn().mockResolvedValue({ telegram_bot_token_configured: true, revision: "settings-one" }),
+    resolveCustomEmojis: vi.fn().mockResolvedValue({ items: [] }),
+    customEmojiPreviewUrl: vi.fn().mockReturnValue("http://studio.test/custom-emoji.webp"),
+    testCustomEmojiCapability: vi.fn().mockResolvedValue({ capability: "unknown" }),
     listUsers: vi.fn().mockResolvedValue([]),
     updateUser: vi.fn(),
     getView: vi.fn().mockResolvedValue(viewDetail),
     createView: vi.fn().mockResolvedValue(viewDetail),
     saveView: vi.fn().mockResolvedValue(viewDetail),
+    saveViewContent: vi.fn().mockResolvedValue(viewDetail),
     renameView: vi.fn().mockResolvedValue(viewDetail),
     deleteView: vi.fn().mockResolvedValue(undefined),
     getFlow: vi.fn().mockResolvedValue({ id: "checkout", source_path: "flows/checkout.json", revision: "flow-one", payload: { schema_version: 3, id: "checkout", initial_state: "start", lifecycle: {}, states: { start: { view: "home", events: {} } } } }),
@@ -794,6 +928,8 @@ function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
     handlerSource: vi.fn(),
     handlerUsages: vi.fn().mockResolvedValue([]),
     preview: vi.fn().mockResolvedValue({ text: "Hello", keyboard: [], warnings: [] }),
+    compileContent: vi.fn().mockResolvedValue({ messages: [{ text: "Hello", entities: [] }], warnings: [], errors: [] }),
+    sendPreviewMessage: vi.fn().mockResolvedValue({ sent: true, sentCount: 1, totalCount: 1, messageIds: [1], warnings: [] }),
     validate: vi.fn().mockResolvedValue([]),
     gitStatus: vi.fn().mockResolvedValue({ connected: false, git_installed: true }),
     gitChanges: vi.fn().mockResolvedValue({ changes: [], suggested_message: "" }),

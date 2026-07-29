@@ -18,6 +18,7 @@ import type {
   ViewSpec,
   Workspace,
 } from "../domain/project";
+import type { BotContentDocument, ContentDiagnostic, TelegramCompileResult } from "../domain/content";
 
 interface HandlerWire {
   id: string;
@@ -51,6 +52,7 @@ interface WorkspaceWire extends Omit<Workspace, "handlers"> {
 interface RequestOptions {
   method?: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
+  signal?: AbortSignal;
 }
 
 interface ErrorEnvelope {
@@ -68,6 +70,48 @@ export interface ProjectSettingsUpdate {
   telegram_bot_token?: string;
   clear_telegram_bot_token?: boolean;
   revision: string | null;
+}
+
+export type CustomEmojiSource = "telegram-message" | "sticker-set" | "manual-id" | "recent" | "favorite";
+export type CustomEmojiResolveStatus = "resolved" | "fallback-only" | "unavailable";
+export type CustomEmojiCapability = "unknown" | "available" | "unavailable" | "test-required";
+
+export interface ResolvedCustomEmoji {
+  id: string;
+  fallbackEmoji: string;
+  status: CustomEmojiResolveStatus;
+  source: CustomEmojiSource;
+  lastUsedAt: string;
+  lastCheckedAt: string;
+  cached: boolean;
+  reason?: string;
+  previewKey?: string;
+  preview?: {
+    key: string;
+    format: "webp" | "tgs" | "webm";
+    mimeType: string;
+    loadedAt: string;
+  };
+}
+
+export interface CustomEmojiCapabilityResult {
+  capability: CustomEmojiCapability;
+  reason?: string;
+}
+
+export interface SendPreviewMessageInput {
+  document: BotContentDocument;
+  variables?: Record<string, unknown>;
+  chatId: number | string;
+  splitLongMessages?: boolean;
+}
+
+export interface SendPreviewMessageResult {
+  sent: true;
+  sentCount: number;
+  totalCount: number;
+  messageIds: Array<number | null>;
+  warnings: ContentDiagnostic[];
 }
 
 export type UserRole = "user" | "trusted" | "moderator" | "administrator";
@@ -187,12 +231,16 @@ export interface StudioApiClient {
   describe(projectId: string): Promise<Workspace>;
   getProjectSettings(projectId: string): Promise<ProjectSettings>;
   saveProjectSettings(projectId: string, payload: ProjectSettingsUpdate): Promise<ProjectSettings>;
+  resolveCustomEmojis(projectId: string, ids: string[], fallbackById?: Record<string, string>, source?: CustomEmojiSource): Promise<{ items: ResolvedCustomEmoji[] }>;
+  customEmojiPreviewUrl(projectId: string, id: string): string;
+  testCustomEmojiCapability(projectId: string, id: string, chatId: number | string, fallbackEmoji?: string): Promise<CustomEmojiCapabilityResult>;
   listUsers(projectId: string): Promise<ManagedUser[]>;
   updateUser(projectId: string, telegramId: string, payload: ManagedUserUpdate): Promise<ManagedUser>;
   getView(projectId: string, id: string): Promise<ViewDetail>;
-  createView(projectId: string, id: string, payload: ViewSpec, textContent?: string): Promise<ViewDetail>;
-  createNamedView?(projectId: string, name?: string, textContent?: string): Promise<ViewDetail>;
+  createView(projectId: string, id: string, payload: ViewSpec, textContent?: string, contentDocument?: BotContentDocument): Promise<ViewDetail>;
+  createNamedView?(projectId: string, name?: string, textContent?: string, contentDocument?: BotContentDocument): Promise<ViewDetail>;
   saveView(projectId: string, id: string, payload: ViewSpec, revision: string, textContent: string, textRevision: string | null): Promise<ViewDetail>;
+  saveViewContent(projectId: string, id: string, payload: ViewSpec, revision: string, document: BotContentDocument, documentRevision: string | null, textRevision: string | null): Promise<ViewDetail>;
   renameView(projectId: string, id: string, name: string, revision: string): Promise<ViewDetail>;
   deleteView(projectId: string, id: string, revision: string): Promise<void>;
   getFlow(projectId: string, id: string): Promise<FlowDetail>;
@@ -217,6 +265,8 @@ export interface StudioApiClient {
   handlerSource(projectId: string, id: string): Promise<OpenCodeTarget>;
   handlerUsages(projectId: string, id: string): Promise<HandlerUsage[]>;
   preview(projectId: string, payload: ViewSpec): Promise<Preview>;
+  compileContent(projectId: string, document: BotContentDocument, variables?: Record<string, unknown>, signal?: AbortSignal): Promise<TelegramCompileResult>;
+  sendPreviewMessage(projectId: string, input: SendPreviewMessageInput): Promise<SendPreviewMessageResult>;
   validate(projectId: string): Promise<Diagnostic[]>;
   setDisplayName?(projectId: string, kind: "views" | "flows" | "schedules" | "handlers" | "commands", key: string, name: string, manifestRevision: string): Promise<{ name: string; name_is_default: boolean }>;
   gitStatus(projectId: string): Promise<GitStatus>;
@@ -274,18 +324,50 @@ export class StudioApi implements StudioApiClient {
     return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}`);
   }
 
-  createView(projectId: string, id: string, payload: ViewSpec, textContent?: string): Promise<ViewDetail> {
-    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { id, payload, text_content: textContent } });
+  createView(projectId: string, id: string, payload: ViewSpec, textContent?: string, contentDocument?: BotContentDocument): Promise<ViewDetail> {
+    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { id, payload, text_content: textContent, content_document: contentDocument } });
   }
 
-  createNamedView(projectId: string, name?: string, textContent?: string): Promise<ViewDetail> {
-    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { name, text_content: textContent } });
+  resolveCustomEmojis(projectId: string, ids: string[], fallbackById: Record<string, string> = {}, source: CustomEmojiSource = "manual-id"): Promise<{ items: ResolvedCustomEmoji[] }> {
+    return this.request(`/projects/${projectId}/telegram/custom-emojis/resolve`, {
+      method: "POST",
+      body: { customEmojiIds: ids, fallbackById, source },
+    });
+  }
+
+  customEmojiPreviewUrl(projectId: string, id: string): string {
+    const root = this.baseUrl.replace(/\/$/, "");
+    return `${root}/api/v1/projects/${encodeURIComponent(projectId)}/telegram/custom-emojis/${encodeURIComponent(id)}/preview`;
+  }
+
+  testCustomEmojiCapability(projectId: string, id: string, chatId: number | string, fallbackEmoji = "🙂"): Promise<CustomEmojiCapabilityResult> {
+    return this.request(`/projects/${projectId}/telegram/custom-emojis/capability-test`, {
+      method: "POST",
+      body: { customEmojiId: id, chatId, fallbackEmoji },
+    });
+  }
+
+  createNamedView(projectId: string, name?: string, textContent?: string, contentDocument?: BotContentDocument): Promise<ViewDetail> {
+    return this.request(`/projects/${projectId}/views`, { method: "POST", body: { name, text_content: textContent, content_document: contentDocument } });
   }
 
   saveView(projectId: string, id: string, payload: ViewSpec, revision: string, textContent: string, textRevision: string | null): Promise<ViewDetail> {
     return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}`, {
       method: "PUT",
       body: { payload, revision, text_content: textContent, text_revision: textRevision },
+    });
+  }
+
+  saveViewContent(projectId: string, id: string, payload: ViewSpec, revision: string, document: BotContentDocument, documentRevision: string | null, textRevision: string | null): Promise<ViewDetail> {
+    return this.request(`/projects/${projectId}/views/${encodeURIComponent(id)}/content`, {
+      method: "PUT",
+      body: {
+        payload,
+        revision,
+        document,
+        document_revision: documentRevision,
+        text_revision: textRevision,
+      },
     });
   }
 
@@ -404,6 +486,26 @@ export class StudioApi implements StudioApiClient {
     return this.request(`/projects/${projectId}/preview`, { method: "POST", body: { payload } });
   }
 
+  compileContent(projectId: string, document: BotContentDocument, variables: Record<string, unknown> = {}, signal?: AbortSignal): Promise<TelegramCompileResult> {
+    return this.request(`/projects/${projectId}/content/compile`, {
+      method: "POST",
+      body: { document, variables },
+      signal,
+    });
+  }
+
+  sendPreviewMessage(projectId: string, input: SendPreviewMessageInput): Promise<SendPreviewMessageResult> {
+    return this.request(`/projects/${projectId}/content/send-preview`, {
+      method: "POST",
+      body: {
+        document: input.document,
+        variables: input.variables ?? {},
+        chatId: input.chatId,
+        splitLongMessages: input.splitLongMessages ?? true,
+      },
+    });
+  }
+
   async validate(projectId: string): Promise<Diagnostic[]> {
     const value = await this.request<Diagnostic[] | { issues?: Diagnostic[]; diagnostics?: Diagnostic[] }>(`/projects/${projectId}/validation`);
     if (Array.isArray(value)) return value;
@@ -475,6 +577,7 @@ export class StudioApi implements StudioApiClient {
         ...(options.body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      signal: options.signal,
     });
     if (response.status === 204) return undefined as T;
 

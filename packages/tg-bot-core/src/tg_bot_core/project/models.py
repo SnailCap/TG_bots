@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
+from ..content import BotContentDocument
+
 
 SCHEMA_VERSION = 3
 HANDLER_KINDS = frozenset({"button", "message", "command", "lifecycle", "task"})
@@ -64,6 +66,7 @@ class HandlerInvocation:
 class TextSpec:
     inline: str | None = None
     template: str | None = None
+    document: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +179,7 @@ class ProjectDefinition:
     commands: CommandsSpec
     schedules: Mapping[str, ScheduleSpec]
     templates: Mapping[str, str]
+    content_documents: Mapping[str, BotContentDocument] = field(default_factory=dict)
 
     @property
     def actions(self) -> Mapping[str, ActionSpec]:

@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+from .content import TelegramMessageEntity
 from .events import InteractionEvent
 
 
@@ -19,6 +20,7 @@ class OutboundMessage:
     text: str
     keyboard: tuple[tuple[OutboundButton, ...], ...] = ()
     edit_message_id: int | None = None
+    entities: tuple[TelegramMessageEntity, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

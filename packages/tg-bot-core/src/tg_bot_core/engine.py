@@ -564,18 +564,32 @@ class FlowEngine:
             **(session.variables or {}),
             "user": {
                 "id": actor.user_id,
+                "telegram_id": actor.user_id,
                 "username": actor.username,
                 "first_name": actor.first_name,
                 "last_name": actor.last_name,
+                "language_code": actor.language_code,
                 "role": actor.role,
             },
         }
-        text, keyboard = self.catalog.render(view_id, values)
+        compiled = self.catalog.compile_view(view_id, values)
         outbound = tuple(
             tuple(OutboundButton(button.text, self.codec.encode(button.id)) for button in row)
-            for row in keyboard
+            for row in compiled.keyboard
         )
-        await self.transport.send(OutboundMessage(actor.chat_id, text, outbound, edit_message_id))
+        for warning in compiled.warnings:
+            log.warning("View %s compile warning [%s]: %s", view_id, warning.code, warning.message)
+        for index, message in enumerate(compiled.messages):
+            last = index == len(compiled.messages) - 1
+            await self.transport.send(
+                OutboundMessage(
+                    actor.chat_id,
+                    message.text,
+                    outbound if last else (),
+                    edit_message_id if index == 0 else None,
+                    message.entities,
+                )
+            )
         await self.analytics.record(
             AnalyticsEventType.VIEW_RENDERED,
             actor=actor,

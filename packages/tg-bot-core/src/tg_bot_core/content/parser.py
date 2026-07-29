@@ -43,7 +43,13 @@ def parse_content_document(value: str | bytes | Mapping[str, Any]) -> BotContent
     except ContentMigrationError as error:
         raise ContentDocumentError(str(error)) from error
 
+    _reject_unknown(data, {"schemaVersion", "id", "content", "metadata"}, "document")
     metadata = _mapping(data.get("metadata"), "metadata")
+    _reject_unknown(
+        metadata,
+        {"createdAt", "updatedAt", "editorVersion", "source"},
+        "metadata",
+    )
     blocks = _sequence(data.get("content"), "content")
     return BotContentDocument(
         schema_version=_integer(data.get("schemaVersion"), "schemaVersion"),
@@ -78,6 +84,7 @@ def _block(value: Any, path: str) -> ContentBlock:
     data = _mapping(value, path)
     block_type = _string(data.get("type"), f"{path}.type")
     if block_type in {"paragraph", "blockquote", "expandableBlockquote"}:
+        _reject_unknown(data, {"type", "content"}, path)
         raw_content = _sequence(data.get("content", []), f"{path}.content")
         content = tuple(
             _inline(item, f"{path}.content[{index}]")
@@ -89,11 +96,13 @@ def _block(value: Any, path: str) -> ContentBlock:
             return BlockquoteBlock(content)
         return ExpandableBlockquoteBlock(content)
     if block_type == "codeBlock":
+        _reject_unknown(data, {"type", "language", "text"}, path)
         return CodeBlock(
             text=_string(data.get("text"), f"{path}.text", allow_empty=True),
             language=_optional_string(data.get("language"), f"{path}.language"),
         )
     if block_type == "legacyTemplate":
+        _reject_unknown(data, {"type", "source"}, path)
         return LegacyTemplateBlock(
             source=_string(data.get("source"), f"{path}.source", allow_empty=True)
         )
@@ -104,12 +113,19 @@ def _inline(value: Any, path: str) -> ContentInlineNode:
     data = _mapping(value, path)
     node_type = _string(data.get("type"), f"{path}.type")
     if node_type == "text":
+        _reject_unknown(data, {"type", "text", "marks"}, path)
         return TextNode(
             _string(data.get("text"), f"{path}.text", allow_empty=True),
             _marks(data.get("marks", []), f"{path}.marks"),
         )
     if node_type == "variable":
+        _reject_unknown(data, {"type", "variableReference", "marks"}, path)
         reference = _mapping(data.get("variableReference"), f"{path}.variableReference")
+        _reject_unknown(
+            reference,
+            {"path", "fieldId", "source"},
+            f"{path}.variableReference",
+        )
         return VariableNode(
             VariableReference(
                 path=_string(reference.get("path"), f"{path}.variableReference.path"),
@@ -123,6 +139,7 @@ def _inline(value: Any, path: str) -> ContentInlineNode:
             _marks(data.get("marks", []), f"{path}.marks"),
         )
     if node_type == "customEmoji":
+        _reject_unknown(data, {"type", "customEmojiId", "fallbackEmoji"}, path)
         return CustomEmojiNode(
             custom_emoji_id=_string(
                 data.get("customEmojiId"), f"{path}.customEmojiId"
@@ -132,6 +149,7 @@ def _inline(value: Any, path: str) -> ContentInlineNode:
             ),
         )
     if node_type == "hardBreak":
+        _reject_unknown(data, {"type"}, path)
         return HardBreakNode()
     raise ContentDocumentError(f"{path}.type has unsupported value '{node_type}'.")
 
@@ -141,6 +159,7 @@ def _marks(value: Any, path: str) -> tuple[ContentMark, ...]:
     result: list[ContentMark] = []
     for index, raw in enumerate(values):
         mark = _mapping(raw, f"{path}[{index}]")
+        _reject_unknown(mark, {"type", "href"}, f"{path}[{index}]")
         mark_type = _string(mark.get("type"), f"{path}[{index}].type")
         result.append(
             ContentMark(
@@ -227,3 +246,13 @@ def _string(value: Any, path: str, *, allow_empty: bool = False) -> str:
 
 def _optional_string(value: Any, path: str) -> str | None:
     return None if value is None else _string(value, path)
+
+
+def _reject_unknown(
+    value: Mapping[str, Any], allowed: set[str], path: str
+) -> None:
+    unknown = sorted(str(key) for key in value if key not in allowed)
+    if unknown:
+        raise ContentDocumentError(
+            f"{path} contains unsupported field(s): {', '.join(unknown)}."
+        )

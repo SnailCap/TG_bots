@@ -108,6 +108,8 @@ async def handle(ctx: MessageContext) -> HandlerResult:
 
 `ctx.state.get/set/delete/snapshot` работает с draft session values. `HandlerResult.values` объединяется с draft и выигрывает при совпадении ключа. Значения обязаны сериализоваться в JSON.
 
+Rich Text Content Editor не расширяет public handler context и не даёт handler raw send API. Его variable picker переиспользует общий Studio context catalog, а runtime разрешает сохранённые dotted paths из того же session/user mapping. Поэтому handler передаёт данные через `ctx.state` или `HandlerResult.values`, после чего декларативный view компилирует текст и Telegram entities. `variableReference.source` нужен только для lossless legacy round-trip и не выполняется как произвольный Jinja expression. Подробности — в [Content Editor guide](content-editor.md#variables-и-jinja).
+
 `TaskContext` отличается: у background job есть только `job_id`, `payload`, `services`, `logger`; нет user/chat/event/session state.
 
 Context намеренно не раскрывает `BotApp`, dispatcher, raw SQLite store, transport или переходы.
@@ -203,4 +205,4 @@ pytest
 
 ## Deployment без Studio
 
-Все bindings и source files находятся в bot project. После commit/copy на VPS устанавливается только сам project и pinned `tg-bot-core`; `backend/`, `frontend/` и Electron не копируются. См. [VPS guide](../deployment/vps.md).
+Все bindings, content documents, templates и source files находятся в bot project. После commit/copy на VPS устанавливается только сам project и pinned `tg-bot-core`; `backend/`, `frontend/` и Electron не копируются. См. [VPS guide](../deployment/vps.md).
