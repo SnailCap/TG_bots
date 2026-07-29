@@ -14,6 +14,7 @@ export function ViewEditor({
   options,
   handlerActions,
   onChange,
+  onOpenTextEditor,
   textContent,
   onTextContentChange,
   displayName,
@@ -26,6 +27,7 @@ export function ViewEditor({
   options: ActionOptions;
   handlerActions: HandlerActions;
   onChange(value: ViewSpec): void;
+  onOpenTextEditor?(): void;
   textContent: string;
   onTextContentChange(content: string): void;
   displayName?: string;
@@ -63,7 +65,7 @@ export function ViewEditor({
         </FormField>
         <FormSectionDivider />
         <div className="view-settings__content">
-          <TemplateComposer content={textContent} onContentChange={onTextContentChange} />
+          <TemplateComposer content={textContent} onContentChange={onTextContentChange} onOpenRichEditor={onOpenTextEditor} />
         </div>
         <FormSectionDivider />
         <KeyboardComposer

@@ -1,4 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
+import { X } from "lucide-react";
 
 export const DEFAULT_TOAST_TIMEOUT_MS = 5_000;
 
@@ -29,6 +30,6 @@ export function Toast({
   return <section className={`toast toast--${tone}`} role={tone === "error" ? "alert" : "status"} aria-live={tone === "error" ? "assertive" : "polite"}>
     <span>{message}</span>
     {action}
-    <button type="button" className="button--icon toast__dismiss" aria-label={`Dismiss ${tone === "error" ? "error" : "notice"}`} onClick={onDismiss}>×</button>
+    <button type="button" className="button--icon toast__dismiss" aria-label={`Dismiss ${tone === "error" ? "error" : "notice"}`} onClick={onDismiss}><X aria-hidden="true" /></button>
   </section>;
 }

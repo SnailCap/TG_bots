@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent, type RefObject } from "react";
+import { X } from "lucide-react";
 
 import {
   DATE_TIME_FORMAT_OPTIONS,
@@ -96,7 +97,7 @@ export function FormattingDialog({
           <span className="format-dialog__kicker">Telegram HTML</span>
           <h3 id={titleId}>{title}</h3>
         </div>
-        <button type="button" className="format-dialog__close" aria-label={`Close ${title.toLowerCase()}`} onClick={onCancel}>×</button>
+        <button type="button" className="format-dialog__close" aria-label={`Close ${title.toLowerCase()}`} onClick={onCancel}><X aria-hidden="true" /></button>
       </header>
       <form onSubmit={submit}>
         {dialog.kind === "link" ? (

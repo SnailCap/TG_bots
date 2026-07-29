@@ -1,4 +1,5 @@
 import { useId, useState } from "react";
+import { ChevronDown, ExternalLink, Folder, X } from "lucide-react";
 
 import { OverlayDialog } from "./OverlayDialog";
 
@@ -162,7 +163,7 @@ export function SuggestionInput({
         {showBrowse && <button type="button" className="suggestion-input__browse" aria-label={browseLabel} title={browseLabel} disabled={disabled} onClick={() => { setSuggestionsOpen(false); setFilter(""); setPickerOpen(true); }}><FolderIcon /></button>}
       </div>
       <OverlayDialog open={pickerOpen} label={pickerLabel} onClose={() => setPickerOpen(false)} className="suggestion-picker">
-        <header><div><p className="eyebrow">{pickerEyebrow}</p><h3>{pickerLabel}</h3></div><button type="button" className="button--icon" aria-label={`Close ${pickerLabel.toLowerCase()}`} onClick={() => setPickerOpen(false)}>×</button></header>
+        <header><div><p className="eyebrow">{pickerEyebrow}</p><h3>{pickerLabel}</h3></div><button type="button" className="button--icon" aria-label={`Close ${pickerLabel.toLowerCase()}`} onClick={() => setPickerOpen(false)}><X aria-hidden="true" /></button></header>
         <input aria-label={`Filter ${ariaLabel.toLowerCase()}`} autoFocus value={filter} placeholder="Filter…" onChange={(event) => setFilter(event.target.value)} />
         <div className="suggestion-picker__list">
           {visibleItems.length
@@ -191,13 +192,13 @@ function saveRecentItems(storageKey: string, items: string[]): string[] {
 }
 
 function FolderIcon() {
-  return <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true"><path d="M2.5 4.5h4l1.2 1.5h5.8v5.75c0 .42-.33.75-.75.75h-9.5a.75.75 0 0 1-.75-.75V5.25c0-.42.33-.75.75-.75Z" /></svg>;
+  return <Folder aria-hidden="true" />;
 }
 
 function OpenIcon() {
-  return <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true"><path d="M8.75 2.75h4.5v4.5M12.9 3.1 7 9M12.25 9.75v2.5c0 .41-.34.75-.75.75h-7a.75.75 0 0 1-.75-.75v-7c0-.41.34-.75.75-.75h2.5" /></svg>;
+  return <ExternalLink aria-hidden="true" />;
 }
 
 function ChevronDownIcon() {
-  return <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true"><path d="m4.5 6.25 3.5 3.5 3.5-3.5" /></svg>;
+  return <ChevronDown aria-hidden="true" />;
 }

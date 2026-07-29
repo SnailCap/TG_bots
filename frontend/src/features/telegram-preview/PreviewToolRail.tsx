@@ -1,3 +1,5 @@
+import { Eye } from "lucide-react";
+
 export function PreviewToolRail({ open, onToggle }: { open: boolean; onToggle(): void }) {
   return (
     <aside className="studio-side-rail preview-tool-rail" aria-label="Studio tools">
@@ -17,5 +19,5 @@ export function PreviewToolRail({ open, onToggle }: { open: boolean; onToggle():
 }
 
 function PreviewIcon() {
-  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M2.25 10s2.7-4.5 7.75-4.5 7.75 4.5 7.75 4.5-2.7 4.5-7.75 4.5S2.25 10 2.25 10Z" /><circle cx="10" cy="10" r="2.1" /></svg>;
+  return <Eye aria-hidden="true" />;
 }

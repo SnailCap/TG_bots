@@ -1,4 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  ExternalLink,
+  GitBranch,
+  RefreshCw,
+  Rocket,
+  Upload,
+} from "lucide-react";
 import { useOutletContext } from "react-router-dom";
 
 import { ConfirmationDialog } from "../../shared/ui/ConfirmationDialog";
@@ -308,13 +319,13 @@ function detailsFor(caught: unknown): string[] {
   return [];
 }
 
-function GitMark() { return <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2.4" /><path d="M4.8 12h4.8M14.4 12h4.8" /></svg>; }
-function RefreshIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M15.7 7.4A6.2 6.2 0 1 0 16 11M15.7 3.8v3.6h-3.6" /></svg>; }
-function DownloadIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.8v9.1m-3.4-3.4 3.4 3.4 3.4-3.4M3.3 14v2.7h13.4V14" /></svg>; }
-function UploadIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 13V3.9M6.6 7.3 10 3.9l3.4 3.4M3.3 14v2.7h13.4V14" /></svg>; }
-function RocketIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M11.4 3.2c2.1-1 4-1 5.4-.6.4 1.4.4 3.3-.6 5.4l-3.8 3.8-4.8-4.8 3.8-3.8Z" /><circle cx="13.2" cy="5.8" r="1.2" /><path d="m7.7 7-3.3.6-2 2 4.3.7m5.7 1.3-.6 3.3-2 2-.7-4.3M5.2 13.1l-1.8 3.5 3.5-1.8" /></svg>; }
-function ArrowIcon() { return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m5.5 3.5 4.5 4.5-4.5 4.5" /></svg>; }
-function ChevronIcon() { return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>; }
-function ExternalIcon() { return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 3h4v4M13 3 7.5 8.5M11 8.5V13H3V5h4.5" /></svg>; }
-function CheckIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true"><path d="m4 10.5 3.5 3.5L16 5.5" /></svg>; }
+function GitMark() { return <GitBranch aria-hidden="true" />; }
+function RefreshIcon() { return <RefreshCw aria-hidden="true" />; }
+function DownloadIcon() { return <Download aria-hidden="true" />; }
+function UploadIcon() { return <Upload aria-hidden="true" />; }
+function RocketIcon() { return <Rocket aria-hidden="true" />; }
+function ArrowIcon() { return <ChevronRight aria-hidden="true" />; }
+function ChevronIcon() { return <ChevronDown aria-hidden="true" />; }
+function ExternalIcon() { return <ExternalLink aria-hidden="true" />; }
+function CheckIcon() { return <Check aria-hidden="true" />; }
 function Spinner() { return <span className="git-spinner" aria-hidden="true" />; }

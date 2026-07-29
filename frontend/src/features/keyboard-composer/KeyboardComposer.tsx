@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
+import { Copy, Keyboard, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { actionFor, type ActionOptions, type ButtonSpec, type HandlerCreateOptions, type ViewSpec } from "../../domain/project";
 import { useInertialDragPreview } from "../../shared/lib/useInertialDragPreview";
@@ -338,15 +339,16 @@ function buttonIssue(button: ButtonSpec): string | null {
 }
 
 function Icon({ name }: { name: "plus" | "trash" | "edit" | "copy" }) {
-  const paths = {
-    plus: <path d="M8 3.25v9.5M3.25 8h9.5" />,
-    trash: <><path d="M3.75 5.1h8.5M6.2 5.1V3.65h3.6V5.1M5.1 5.1l.55 7.15h4.7l.55-7.15" /><path d="M7 7.15v3.15M9 7.15v3.15" /></>,
-    edit: <><path d="m3.5 11.8.45-2.15 6.8-6.8 2.05 2.05-6.8 6.8-2.5.1Z" /><path d="m9.8 3.8 2.05 2.05" /></>,
-    copy: <><rect x="5.25" y="5.25" width="7.25" height="7.25" rx="1" /><path d="M10.75 5.25V4.5a1 1 0 0 0-1-1H4.5a1 1 0 0 0-1 1v5.25a1 1 0 0 0 1 1h.75" /></>,
+  const icons = {
+    plus: Plus,
+    trash: Trash2,
+    edit: Pencil,
+    copy: Copy,
   };
-  return <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true">{paths[name]}</svg>;
+  const Glyph = icons[name];
+  return <Glyph aria-hidden="true" />;
 }
 
 function KeyboardIcon() {
-  return <svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M6.5 9h.01M10 9h.01M13.5 9h.01M17 9h.01M6.5 13h7M17 13h.01" /></svg>;
+  return <Keyboard aria-hidden="true" />;
 }

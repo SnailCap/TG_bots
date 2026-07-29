@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 
 export interface SelectOption {
   value: string;
@@ -85,5 +86,5 @@ export function Select({ id, value, options, placeholder, disabled = false, read
 }
 
 function ChevronIcon() {
-  return <svg viewBox="0 0 16 16" focusable="false"><path d="m4.5 6.25 3.5 3.5 3.5-3.5" /></svg>;
+  return <ChevronDown aria-hidden="true" />;
 }

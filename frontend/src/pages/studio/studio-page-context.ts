@@ -79,6 +79,7 @@ export type StudioPageContext = {
   dismissError(): void;
   dismissNotice(): void;
   select(selection: Selection): void;
+  openViewTextEditor(viewId: string, displayName: string): void;
   addResource(kind: CreatableResource): Promise<void>;
   renameFromExplorer(selection: Exclude<Selection, { kind: "commands" }>, name: string): Promise<void>;
   removeFromExplorer(selection: Selection): void;

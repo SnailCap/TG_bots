@@ -1,4 +1,5 @@
 import { useOutletContext } from "react-router-dom";
+import { X } from "lucide-react";
 
 import { PreviewToolRail } from "../../features/telegram-preview/PreviewToolRail";
 import { TelegramPreview } from "../../features/telegram-preview/TelegramPreview";
@@ -53,21 +54,22 @@ export function ResourcesPage() {
     openHandler,
     findUsages,
     createAndOpenHandler,
+    openViewTextEditor,
   } = useOutletContext<StudioPageContext>();
 
   return <>
-    <ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onAdd={addResource} onRename={renameFromExplorer} onDelete={removeFromExplorer} />
+    <ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onOpenViewTextEditor={openViewTextEditor} onAdd={addResource} onRename={renameFromExplorer} onDelete={removeFromExplorer} />
     <ResizeHandle className="workspace__resizer" axis="horizontal" label="Resize resource list" value={explorerWidth} min={180} max={() => maximumExplorerWidth(workspaceRef.current?.clientWidth ?? 0)} onResize={resizeExplorer} onResizeEnd={commitExplorerSize} />
     <section className="workspace__main" aria-busy={busy}>
       {tabs.length > 0 && <nav className="editor-tabs" aria-label="Open resources" role="tablist">
         {tabs.map((tab) => <div key={tab.key} className={tab.key === activeTabKey ? "editor-tab editor-tab--active" : "editor-tab"} role="presentation">
           <button type="button" className="editor-tab__select" role="tab" aria-selected={tab.key === activeTabKey} onClick={() => activateTab(tab.key)}><span className="editor-tab__dirty-slot">{tab.dirty && <span className={isEditorInvalid(tab.editor) ? "editor-tab__dirty editor-tab__dirty--invalid" : "editor-tab__dirty"} aria-label={isEditorInvalid(tab.editor) ? "Invalid unsaved changes" : "Unsaved changes"} title={isEditorInvalid(tab.editor) ? "This resource needs attention before it can be used" : "Unsaved changes"} />}</span><ResourceIcon selection={editorTabSelection(tab.editor)} title={editorTabLabel(tab.editor)} /><span className="editor-tab__label">{editorTabLabel(tab.editor)}</span></button>
-          <button type="button" className="editor-tab__close" aria-label={`Close ${editorTabLabel(tab.editor)}`} title="Close tab" onClick={() => closeTab(tab.key)}><svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5 5 6 6m0-6-6 6" /></svg></button>
+          <button type="button" className="editor-tab__close" aria-label={`Close ${editorTabLabel(tab.editor)}`} title="Close tab" onClick={() => closeTab(tab.key)}><X aria-hidden="true" /></button>
         </div>)}
       </nav>}
       <div key={firstContentKey ?? "empty"} className={firstContentKey ? "workspace__content workspace__content--enter" : "workspace__content"}>
         {editor && <ResourceEditorHeader category={editorCategory(editor)} title={editorHeaderTitle(editor)} saveAction={isSaveableEditor(editor) ? { disabled: busy || !canSave(editor), saving, onSave: () => void save() } : undefined} />}
-        <StudioEditor editor={editor} options={options} handlerActions={handlerActions} setEditor={setEditor} setDirty={setDirty} repairHandler={repairHandler} openHandler={openHandler} findUsages={findUsages} createHandler={createAndOpenHandler} select={select} renameDisplayName={renameFromExplorer} />
+        <StudioEditor editor={editor} options={options} handlerActions={handlerActions} setEditor={setEditor} setDirty={setDirty} repairHandler={repairHandler} openHandler={openHandler} findUsages={findUsages} createHandler={createAndOpenHandler} select={select} openViewTextEditor={openViewTextEditor} renameDisplayName={renameFromExplorer} />
         {editor?.kind === "handler" && <footer className="editor__actions editor__actions--danger"><span>Deleting a binding can break the resources that use it.</span><button type="button" className="button--danger" disabled={busy} onClick={() => void remove()}>Delete binding</button></footer>}
         {!editor && <div className="workspace__empty"><div><p className="eyebrow">Ready to edit</p><h2>Select a resource</h2><p>Choose an item from the explorer, or add a view, flow, schedule or handler to begin.</p></div></div>}
       </div>

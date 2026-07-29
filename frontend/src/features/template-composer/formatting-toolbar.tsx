@@ -1,4 +1,22 @@
 import { useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from "react";
+import {
+  AtSign,
+  Bold,
+  Braces,
+  Check,
+  Clock3,
+  CodeXml,
+  Ellipsis,
+  EyeOff,
+  Italic,
+  Link2,
+  ListCollapse,
+  Quote,
+  RemoveFormatting,
+  Smile,
+  Strikethrough,
+  Underline,
+} from "lucide-react";
 
 import {
   MORE_FORMATTING_ACTIONS,
@@ -57,7 +75,7 @@ export function FormattingToolbar({
           title="Clear formatting (Ctrl+Shift+N)"
           onClick={onClear}
         >
-          <span aria-hidden="true">Tx</span>
+          <RemoveFormatting aria-hidden="true" />
         </button>
         <div className="format-toolbar__more-wrap">
           <button
@@ -125,14 +143,19 @@ function FormatButton({
 }
 
 function FormattingGlyph({ action }: { action: TelegramFormattingAction }) {
+  if (action.kind === "bold") return <Bold aria-hidden="true" />;
+  if (action.kind === "italic") return <Italic aria-hidden="true" />;
+  if (action.kind === "underline") return <Underline aria-hidden="true" />;
+  if (action.kind === "strikethrough") return <Strikethrough aria-hidden="true" />;
+  if (action.kind === "spoiler") return <EyeOff aria-hidden="true" />;
   if (action.kind === "link") return <LinkIcon />;
-  if (action.kind === "inline-code") return <span className="format-toolbar__code-glyph" aria-hidden="true">&lt;/&gt;</span>;
-  if (action.kind === "mention") return <span className="format-more-menu__glyph" aria-hidden="true">@</span>;
-  if (action.kind === "code-block") return <span className="format-more-menu__glyph" aria-hidden="true">{`{ }`}</span>;
+  if (action.kind === "inline-code") return <CodeXml aria-hidden="true" />;
+  if (action.kind === "mention") return <AtSign aria-hidden="true" />;
+  if (action.kind === "code-block") return <Braces aria-hidden="true" />;
   if (action.kind === "quote" || action.kind === "expandable-quote") return <QuoteIcon expandable={action.kind === "expandable-quote"} />;
   if (action.kind === "custom-emoji") return <EmojiIcon />;
   if (action.kind === "date-time") return <ClockIcon />;
-  return <span className="format-toolbar__text-glyph" aria-hidden="true">{action.shortLabel}</span>;
+  return null;
 }
 
 function hotkeyLabel(action: TelegramFormattingAction): string {
@@ -142,25 +165,25 @@ function hotkeyLabel(action: TelegramFormattingAction): string {
 }
 
 function MoreIcon() {
-  return <svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="4" cy="9" r="1" /><circle cx="9" cy="9" r="1" /><circle cx="14" cy="9" r="1" /></svg>;
+  return <Ellipsis aria-hidden="true" />;
 }
 
 function LinkIcon() {
-  return <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M7.1 11.4 5.7 12.8a2.5 2.5 0 0 1-3.5-3.6l2.2-2.1A2.5 2.5 0 0 1 8 7" /><path d="m10.9 6.6 1.4-1.4a2.5 2.5 0 1 1 3.5 3.6l-2.2 2.1A2.5 2.5 0 0 1 10 11" /><path d="m6.7 9.3 4.6-.6" /></svg>;
+  return <Link2 aria-hidden="true" />;
 }
 
 function QuoteIcon({ expandable }: { expandable: boolean }) {
-  return <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M4.5 5.5h3v3h-3v-3Zm6 0h3v3h-3v-3ZM4.5 8.5c0 2.1-.7 3.3-2 4M10.5 8.5c0 2.1-.7 3.3-2 4" />{expandable ? <path d="m13 12 1.5 1.5L16 12" /> : null}</svg>;
+  return expandable ? <ListCollapse aria-hidden="true" /> : <Quote aria-hidden="true" />;
 }
 
 function EmojiIcon() {
-  return <svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="6.3" /><path d="M6.5 7h.1M11.4 7h.1M6.3 10.2c.8 1.4 1.7 2 2.7 2s1.9-.6 2.7-2" /></svg>;
+  return <Smile aria-hidden="true" />;
 }
 
 function ClockIcon() {
-  return <svg viewBox="0 0 18 18" aria-hidden="true"><circle cx="9" cy="9" r="6.2" /><path d="M9 5.5V9l2.6 1.5" /></svg>;
+  return <Clock3 aria-hidden="true" />;
 }
 
 function CheckIcon() {
-  return <svg className="format-more-menu__check" viewBox="0 0 18 18" aria-hidden="true"><path d="m4.5 9 3 3 6-6" /></svg>;
+  return <Check className="format-more-menu__check" aria-hidden="true" />;
 }

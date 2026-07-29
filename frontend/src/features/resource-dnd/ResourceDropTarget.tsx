@@ -1,4 +1,5 @@
 import { useEffect, useId, type ReactNode } from "react";
+import { Download } from "lucide-react";
 
 import { canDropResource } from "./compatibility";
 import { useResourceDragContext } from "./ResourceDragProvider";
@@ -35,5 +36,5 @@ export function ResourceDropTarget({
 }
 
 function DropIcon() {
-  return <svg viewBox="0 0 16 16" focusable="false" aria-hidden="true"><path d="M8 2.5v7M5.25 7 8 9.75 10.75 7M3 12.5h10" /></svg>;
+  return <Download aria-hidden="true" />;
 }

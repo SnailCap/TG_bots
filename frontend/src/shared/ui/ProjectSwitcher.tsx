@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ChevronDown, FolderOpen, Plus } from "lucide-react";
 
 import type { Workspace } from "../../domain/project";
 
@@ -86,15 +87,15 @@ function ProjectMark({ name }: { name: string }) {
 }
 
 function ChevronIcon() {
-  return <svg className="project-switcher__chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.25 3.5 3.5 3.5-3.5" /></svg>;
+  return <ChevronDown className="project-switcher__chevron" aria-hidden="true" />;
 }
 
 function FolderIcon() {
-  return <svg className="project-switcher__action-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.3 4.7h4l1.1 1.4h6.3v5.7c0 .5-.4.9-.9.9H3.2c-.5 0-.9-.4-.9-.9V5.6c0-.5.4-.9.9-.9Z" /></svg>;
+  return <FolderOpen className="project-switcher__action-icon" aria-hidden="true" />;
 }
 
 function PlusIcon() {
-  return <svg className="project-switcher__action-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10" /></svg>;
+  return <Plus className="project-switcher__action-icon" aria-hidden="true" />;
 }
 
 function initials(name: string): string {

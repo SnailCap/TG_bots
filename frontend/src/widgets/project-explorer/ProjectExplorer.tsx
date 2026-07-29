@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
+import { CalendarDays, ChevronDown, FileText, LayoutGrid, Terminal, Workflow, Zap } from "lucide-react";
 
 import type { FlowSummary, HandlerKind, Selection, Workspace } from "../../domain/project";
 import { useResourceDraggable, type DraggableResource } from "../../features/resource-dnd";
@@ -10,17 +11,19 @@ export type ExplorerDraft = { kind: CreatableResource; label: string };
 type ResourceSection = "views" | "flows" | "handlers" | "commands" | "schedules";
 type ContextTarget = { x: number; y: number; kind?: CreatableResource; selection?: Selection } | null;
 
-export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, onRename = () => undefined, onDelete = () => undefined }: {
+export function ProjectExplorer({ workspace, selection, draft, onSelect, onOpenViewTextEditor = () => undefined, onAdd, onRename = () => undefined, onDelete = () => undefined }: {
   workspace: Workspace;
   selection: Selection | null;
   draft?: ExplorerDraft | null;
   onSelect(selection: Selection): void;
+  onOpenViewTextEditor?(viewId: string, displayName: string): void;
   onAdd(kind: CreatableResource): void;
   onRename?(selection: Selection, name: string): Promise<void> | void;
   onDelete?(selection: Selection): void;
 }) {
   const [openSections, setOpenSections] = useState<Set<ResourceSection>>(() => new Set());
   const [openFlows, setOpenFlows] = useState<Set<string>>(() => new Set());
+  const [openViews, setOpenViews] = useState<Set<string>>(() => new Set());
   const [context, setContext] = useState<ContextTarget>(null);
   const [renaming, setRenaming] = useState<Selection | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -51,6 +54,9 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, 
   });
   const toggleFlow = (flowId: string) => setOpenFlows((current) => {
     const next = new Set(current); if (next.has(flowId)) next.delete(flowId); else next.add(flowId); return next;
+  });
+  const toggleView = (viewId: string) => setOpenViews((current) => {
+    const next = new Set(current); if (next.has(viewId)) next.delete(viewId); else next.add(viewId); return next;
   });
   const openContext = (event: MouseEvent, target: Omit<NonNullable<ContextTarget>, "x" | "y">) => {
     event.preventDefault(); setContext({ x: event.clientX, y: event.clientY, ...target });
@@ -89,7 +95,34 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onAdd, 
 
   const item = (next: Selection, title: string, handlerKind?: HandlerKind) => <ResourceButton key={`${next.kind}:${title}`} active={selectionKeyEquals(selection, next)} selection={next} title={title} editing={selectionKeyEquals(renaming, next)} renameValue={renameValue} resource={dragResource(next, title, handlerKind)} onRenameChange={setRenameValue} onRenameFinish={() => finishRename(next)} onRenameKeyDown={(event) => { if (event.key === "Escape") { cancelRename.current = true; event.currentTarget.blur(); } if (event.key === "Enter") event.currentTarget.blur(); }} onClick={() => onSelect(next)} onContextMenu={(event) => { event.stopPropagation(); onSelect(next); openContext(event, { selection: next }); }} />;
   return <nav className="explorer explorer--ide" aria-label="Project resources" onContextMenu={(event) => { if (event.target === event.currentTarget) openContext(event, { kind: "view" }); }}>
-    <Section id="views" title="views" open={openSections.has("views")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "view" })}>{draft?.kind === "view" && <DraftResource label={draft.label} kind="view" />}{workspace.views.map((view) => item({ kind: "view", id: view.id }, view.name ?? view.id))}</Section>
+    <Section id="views" title="views" open={openSections.has("views")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "view" })}>
+      {draft?.kind === "view" && <DraftResource label={draft.label} kind="view" />}
+      {workspace.views.map((view) => <ViewResource
+        key={view.id}
+        view={view}
+        active={selectionKeyEquals(selection, { kind: "view", id: view.id })}
+        editing={selectionKeyEquals(renaming, { kind: "view", id: view.id })}
+        renameValue={renameValue}
+        onRenameChange={setRenameValue}
+        onRenameFinish={() => finishRename({ kind: "view", id: view.id })}
+        onRenameKeyDown={(event) => {
+          if (event.key === "Escape") {
+            cancelRename.current = true;
+            event.currentTarget.blur();
+          }
+          if (event.key === "Enter") event.currentTarget.blur();
+        }}
+        onClick={() => onSelect({ kind: "view", id: view.id })}
+        onContextMenu={(event) => {
+          event.stopPropagation();
+          onSelect({ kind: "view", id: view.id });
+          openContext(event, { selection: { kind: "view", id: view.id } });
+        }}
+        onOpenTextEditor={() => onOpenViewTextEditor(view.id, view.name ?? view.id)}
+        open={openViews.has(view.id)}
+        onToggle={() => toggleView(view.id)}
+      />)}
+    </Section>
     <Section id="flows" title="flows" open={openSections.has("flows")} onToggle={toggle} onContextMenu={(event) => openContext(event, { kind: "flow" })}>
       {draft?.kind === "flow" && <DraftResource label={draft.label} kind="flow" />}
       {workspace.flows.map((flow) => (
@@ -214,6 +247,85 @@ function FlowResource({
   </div>;
 }
 
+function ViewResource({
+  view,
+  active,
+  editing,
+  renameValue,
+  onRenameChange,
+  onRenameFinish,
+  onRenameKeyDown,
+  onClick,
+  onContextMenu,
+  onOpenTextEditor,
+  open,
+  onToggle,
+}: {
+  view: Workspace["views"][number];
+  active: boolean;
+  editing: boolean;
+  renameValue: string;
+  onRenameChange(value: string): void;
+  onRenameFinish(): void;
+  onRenameKeyDown(event: KeyboardEvent<HTMLInputElement>): void;
+  onClick(): void;
+  onContextMenu(event: MouseEvent): void;
+  onOpenTextEditor(): void;
+  open: boolean;
+  onToggle(): void;
+}) {
+  const selection: Selection = { kind: "view", id: view.id };
+  const resource = dragResource(selection, view.name ?? view.id, undefined);
+  const dragProps = useResourceDraggable(editing ? null : resource);
+  const className = open ? "explorer__view-resource explorer__view-resource--open" : "explorer__view-resource";
+  const mainClassName = [
+    "explorer__item",
+    "explorer__view-main",
+    active ? "explorer__item--active" : "",
+    resource ? "explorer__item--draggable" : "",
+  ].filter(Boolean).join(" ");
+  const contentId = `explorer-view-${view.id}`;
+
+  return <div className={className} onContextMenu={onContextMenu}>
+    <div className="explorer__view-row">
+      <button
+        type="button"
+        className="explorer__view-toggle"
+        aria-label={open ? `Collapse ${view.name ?? view.id}` : `Expand ${view.name ?? view.id}`}
+        aria-expanded={open}
+        aria-controls={contentId}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle();
+        }}
+      >
+        <span className={open ? "explorer__view-arrow explorer__view-arrow--open" : "explorer__view-arrow"} aria-hidden="true"><ChevronIcon /></span>
+      </button>
+      {editing
+        ? <div className={mainClassName} aria-current={active ? "page" : undefined}>
+            <ResourceIcon selection={selection} title={view.name ?? view.id} />
+            <input className="explorer__rename-input" aria-label={`Rename ${view.name ?? view.id}`} autoFocus value={renameValue} onFocus={(event) => event.currentTarget.select()} onChange={(event) => onRenameChange(event.target.value)} onBlur={onRenameFinish} onKeyDown={onRenameKeyDown} />
+          </div>
+        : <button
+            type="button"
+            aria-current={active ? "page" : undefined}
+            className={mainClassName}
+            onClick={onClick}
+            onPointerDown={dragProps.onPointerDown}
+            onClickCapture={dragProps.onClickCapture}
+          >
+            <ResourceIcon selection={selection} title={view.name ?? view.id} />
+            <strong>{view.name ?? view.id}</strong>
+          </button>}
+    </div>
+    <div id={contentId} className="explorer__view-content">
+      <div className="explorer__view-items">
+        <button type="button" className="explorer__view-text" aria-label={`Open text editor for ${view.name ?? view.id}`} onClick={onOpenTextEditor}><FileText aria-hidden="true" /><span>Text editor</span></button>
+      </div>
+    </div>
+  </div>;
+}
+
 function ResourceButton({ active, selection, title, editing, renameValue, resource, onRenameChange, onRenameFinish, onRenameKeyDown, onClick, onContextMenu }: { active: boolean; selection: Selection; title: string; editing: boolean; renameValue: string; resource: DraggableResource | null; onRenameChange(value: string): void; onRenameFinish(): void; onRenameKeyDown(event: KeyboardEvent<HTMLInputElement>): void; onClick(): void; onContextMenu(event: MouseEvent): void }) {
   const dragProps = useResourceDraggable(editing ? null : resource);
   const className = ["explorer__item", active ? "explorer__item--active" : "", resource ? "explorer__item--draggable" : ""].filter(Boolean).join(" ");
@@ -229,18 +341,19 @@ function DraftResource({ kind, label }: ExplorerDraft) {
 }
 
 function ChevronIcon() {
-  return <svg viewBox="0 0 16 16" focusable="false"><path d="m4.5 6.25 3.5 3.5 3.5-3.5" /></svg>;
+  return <ChevronDown aria-hidden="true" />;
 }
 
 function CategoryIcon({ category }: { category: ResourceSection }) {
-  const paths: Record<ResourceSection, ReactNode> = {
-    views: <><rect x="3" y="3" width="4" height="4" rx=".65" /><rect x="9" y="3" width="4" height="4" rx=".65" /><rect x="3" y="9" width="4" height="4" rx=".65" /><rect x="9" y="9" width="4" height="4" rx=".65" /></>,
-    flows: <><circle cx="4" cy="4" r="1.5" /><circle cx="12" cy="4" r="1.5" /><circle cx="12" cy="12" r="1.5" /><path d="M5.5 4h2A2.5 2.5 0 0 1 10 6.5v4" /></>,
-    handlers: <><path d="m9.25 2.5-4.5 6h3l-.75 5 4.5-6h-3l.75-5Z" /></>,
-    commands: <><path d="m3.5 5 2.5 3-2.5 3M8 11h4.5" /></>,
-    schedules: <><rect x="3" y="4" width="10" height="9" rx="1.25" /><path d="M5.5 2.75v2.5M10.5 2.75v2.5M3 7h10M5.5 9.5h.01M8 9.5h.01M10.5 9.5h.01" /></>,
+  const icons = {
+    views: LayoutGrid,
+    flows: Workflow,
+    handlers: Zap,
+    commands: Terminal,
+    schedules: CalendarDays,
   };
-  return <span className={`explorer__category-icon explorer__category-icon--${category}`} aria-hidden="true"><svg viewBox="0 0 16 16" focusable="false">{paths[category]}</svg></span>;
+  const Icon = icons[category];
+  return <span className={`explorer__category-icon explorer__category-icon--${category}`} aria-hidden="true"><Icon /></span>;
 }
 
 function draftSection(kind: CreatableResource): ResourceSection {

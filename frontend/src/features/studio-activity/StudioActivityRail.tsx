@@ -1,4 +1,5 @@
 import type { ComponentType } from "react";
+import { Settings, SquareTerminal } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 type StudioRailRoute = {
@@ -54,9 +55,9 @@ export function StudioActivityRail({ routes, terminalOpen, onToggleTerminal, set
 }
 
 function TerminalIcon() {
-  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="2.8" y="4" width="14.4" height="12" rx="1" /><path d="m5.6 8 2.2 2-2.2 2m4.5.2h3.6" /></svg>;
+  return <SquareTerminal aria-hidden="true" />;
 }
 
 function SettingsIcon() {
-  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m8.15 2.7.45-1.15h2.8l.45 1.15 1.08.45 1.13-.5 1.98 1.98-.5 1.13.45 1.08 1.15.45v2.8l-1.15.45-.45 1.08.5 1.13-1.98 1.98-1.13-.5-1.08.45-.45 1.15H8.6l-.45-1.15-1.08-.45-1.13.5-1.98-1.98.5-1.13-.45-1.08-1.15-.45v-2.8l1.15-.45.45-1.08-.5-1.13 1.98-1.98 1.13.5 1.08-.45Z" /><circle cx="10" cy="8.7" r="2.3" /></svg>;
+  return <Settings aria-hidden="true" />;
 }

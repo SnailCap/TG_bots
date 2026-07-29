@@ -168,8 +168,7 @@ describe("Studio", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Saved");
     expect(screen.getByText("View · home")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Changed" } });
+    setVisualMessage("Changed");
     expect(screen.getByRole("status")).toHaveTextContent("Unsaved changes");
     expect(screen.getByText("Schema v3")).toBeInTheDocument();
   });
@@ -192,6 +191,18 @@ describe("Studio", () => {
     expect(resourceButton("checkout")).toHaveAttribute("aria-current", "page");
     expect(resourceButton("home")).not.toHaveAttribute("aria-current", "page");
     expect(await screen.findByLabelText("View editor")).toBeInTheDocument();
+  });
+
+  it("opens the view text editor in a separate non-saveable tab", async () => {
+    render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
+
+    expect(await screen.findByLabelText("Rich text editor")).toBeEmptyDOMElement();
+    expect(screen.getByRole("tab", { name: "home text" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
   });
 
   it("shows backend health and opens a project", async () => {
@@ -552,8 +563,7 @@ describe("Studio", () => {
     render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     fireEvent.click(screen.getByRole("button", { name: "home" }));
     await screen.findByLabelText("Message text editor");
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Changed" } });
+    setVisualMessage("Changed");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Changed outside Studio")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reload from disk" })).toBeInTheDocument();
@@ -565,11 +575,10 @@ describe("Studio", () => {
     fireEvent.click(screen.getByRole("button", { name: "home" }));
 
     await screen.findByLabelText("Message text editor");
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "   " } });
+    setVisualMessage("   ");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(screen.getByLabelText("Invalid unsaved changes")).toBeInTheDocument();
-    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Visible" } });
+    setVisualMessage("Visible");
     expect(screen.getByRole("button", { name: "Save" })).toBeEnabled();
     expect(screen.getByLabelText("Unsaved changes")).toBeInTheDocument();
   });
@@ -743,6 +752,13 @@ describe("BackendStatusCard", () => {
     expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
 });
+
+function setVisualMessage(value: string) {
+  const editor = screen.getByRole("textbox", { name: "Visual message content" });
+  const textNode = editor.querySelector<HTMLElement>("[data-template-node='text']") ?? editor;
+  textNode.textContent = value;
+  fireEvent.input(editor);
+}
 
 function apiMock(overrides: Partial<StudioApiClient> = {}): StudioApiClient {
   return {

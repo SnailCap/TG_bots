@@ -13,6 +13,7 @@ import { FlowEditor } from "../../features/flow-editor/FlowEditor";
 import { HandlerInspector, NewHandlerEditor } from "../../features/handler-inspector/HandlerInspector";
 import { ScheduleEditor } from "../../features/schedule-editor/ScheduleEditor";
 import { ViewEditor } from "../../features/view-editor/ViewEditor";
+import { ViewTextEditor } from "../../features/view-text-editor/ViewTextEditor";
 import { commandAt, type EditorState } from "./editor-model";
 
 type StudioEditorProps = {
@@ -32,6 +33,7 @@ type StudioEditorProps = {
     createOptions?: HandlerCreateOptions,
   ): Promise<void>;
   select(selection: Selection): void;
+  openViewTextEditor(viewId: string, displayName: string): void;
   renameDisplayName(selection: Exclude<Selection, { kind: "commands" }>, name: string): Promise<void>;
 };
 
@@ -46,10 +48,12 @@ export function StudioEditor({
   findUsages,
   createHandler,
   select,
+  openViewTextEditor,
   renameDisplayName,
 }: StudioEditorProps) {
   if (!editor) return null;
-  if (editor.kind === "view") return <ViewEditor value={editor.detail.payload} textContent={editor.detail.text_content} displayName={editor.detail.name} nameIsDefault={editor.detail.name_is_default} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onRename={(name) => { void renameDisplayName({ kind: "view", id: editor.detail.id }, name); }} onTextContentChange={(text_content) => { setEditor({ ...editor, detail: { ...editor.detail, text_content } }); setDirty(true); }} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
+  if (editor.kind === "view") return <ViewEditor value={editor.detail.payload} textContent={editor.detail.text_content} displayName={editor.detail.name} nameIsDefault={editor.detail.name_is_default} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onRename={(name) => { void renameDisplayName({ kind: "view", id: editor.detail.id }, name); }} onOpenTextEditor={() => openViewTextEditor(editor.detail.id, editor.detail.name ?? editor.detail.id)} onTextContentChange={(text_content) => { setEditor({ ...editor, detail: { ...editor.detail, text_content } }); setDirty(true); }} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
+  if (editor.kind === "view-text") return <ViewTextEditor />;
   if (editor.kind === "flow") return <FlowEditor value={editor.detail.payload} sourcePath={editor.detail.source_path} displayName={editor.detail.name} nameIsDefault={editor.detail.name_is_default} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onRename={(name) => { void renameDisplayName({ kind: "flow", id: editor.detail.id }, name); }} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "command") return <CommandEditor value={commandAt(editor)} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onOpenResource={select} onChange={(command) => { setEditor({ ...editor, detail: { ...editor.detail, payload: { ...editor.detail.payload, commands: editor.detail.payload.commands.map((item, index) => index === editor.commandIndex ? command : item) } } }); setDirty(true); }} />;
   if (editor.kind === "commands") return <CommandFallbacksEditor value={editor.detail.payload} revision={editor.detail.revision} options={options} handlerActions={handlerActions} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;

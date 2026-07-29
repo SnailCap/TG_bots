@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { Play, Square } from "lucide-react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 
 import botStudioIcon from "../../assets/bot-studio-logo.svg";
@@ -148,13 +149,9 @@ function StudioShell({ context }: { context: StudioPageContext }) {
 }
 
 function RunIcon() {
-  return (
-    <svg className="topbar__run-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
-      <path d="m6.25 3.9 9.1 6.1-9.1 6.1V3.9Z" />
-    </svg>
-  );
+  return <Play className="topbar__run-icon" aria-hidden="true" />;
 }
 
 function StopIcon() {
-  return <svg className="topbar__stop-icon" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><rect x="5.2" y="5.2" width="9.6" height="9.6" rx=".8" /></svg>;
+  return <Square className="topbar__stop-icon" aria-hidden="true" fill="currentColor" />;
 }

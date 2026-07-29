@@ -39,4 +39,24 @@ describe("ProjectExplorer flows", () => {
     expect(screen.getByText("confirm")).toBeVisible();
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
+
+  it("reveals a view text editor through the same disclosure interaction", () => {
+    const onSelect = vi.fn();
+    const onOpenViewTextEditor = vi.fn();
+    render(<ProjectExplorer workspace={workspace} selection={null} onSelect={onSelect} onOpenViewTextEditor={onOpenViewTextEditor} onAdd={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "views" }));
+    const viewButton = screen.getByRole("button", { name: "home" });
+    const disclosure = screen.getByRole("button", { name: "Expand home" });
+
+    fireEvent.click(viewButton);
+    expect(onSelect).toHaveBeenCalledWith({ kind: "view", id: "home" });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(disclosure);
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Open text editor for home" }));
+    expect(onOpenViewTextEditor).toHaveBeenCalledWith("home", "home");
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
 });

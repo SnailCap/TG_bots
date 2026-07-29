@@ -1,3 +1,5 @@
+import { Eye } from "lucide-react";
+
 import { SYSTEM_CONTEXT_FIELDS } from "./context-catalog";
 import type { PreviewValues } from "./preview";
 
@@ -45,5 +47,5 @@ export function TemplatePreviewPanel({
 }
 
 function PreviewIcon() {
-  return <svg className="template-preview__icon" viewBox="0 0 20 20" aria-hidden="true"><path d="M2.5 10s2.6-4.75 7.5-4.75S17.5 10 17.5 10s-2.6 4.75-7.5 4.75S2.5 10 2.5 10Z" /><circle cx="10" cy="10" r="2.1" /></svg>;
+  return <Eye className="template-preview__icon" aria-hidden="true" />;
 }

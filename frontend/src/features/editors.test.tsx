@@ -211,8 +211,9 @@ describe("view button IDs", () => {
 });
 
 describe("view message editor", () => {
-  it("edits message source without exposing template resource controls", () => {
+  it("opens the rich text editor without exposing a template resource", () => {
     const onTextContentChange = vi.fn();
+    const onOpenTextEditor = vi.fn();
     render(<ViewEditor
       value={{ schema_version: 3, id: "home", text: { template: "views/home.txt" }, keyboard: [] }}
       textContent="Hello {{ user.first_name }}"
@@ -222,13 +223,14 @@ describe("view message editor", () => {
       handlerActions={handlerActions()}
       onChange={vi.fn()}
       onTextContentChange={onTextContentChange}
+      onOpenTextEditor={onOpenTextEditor}
     />);
 
     expect(screen.getByLabelText("Message text editor")).toBeInTheDocument();
     expect(screen.queryByLabelText("Text source")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Source" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "Message source" }), { target: { value: "Updated" } });
-    expect(onTextContentChange).toHaveBeenCalledWith("Updated");
+    fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
+    expect(onOpenTextEditor).toHaveBeenCalledOnce();
+    expect(onTextContentChange).not.toHaveBeenCalled();
   });
 });
 

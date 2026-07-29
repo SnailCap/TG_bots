@@ -9,6 +9,14 @@ import {
   type FormEvent,
   type KeyboardEvent,
 } from "react";
+import { Clock3, TriangleAlert } from "lucide-react";
+import {
+  Clock3 as Clock3Node,
+  TriangleAlert as TriangleAlertNode,
+  UserRound as UserRoundNode,
+  createElement as createLucideElement,
+  type IconNode,
+} from "lucide";
 
 import { ContextAutocomplete, UserIcon } from "./autocomplete";
 import { findContextField, searchContextFields, type ContextFieldDefinition } from "./context-catalog";
@@ -568,39 +576,24 @@ function createDomTextElement(owner: Document, tag: string, text: string): HTMLE
 }
 
 function createDomUserIcon(owner: Document): SVGSVGElement {
-  const svg = createDomSvg(owner, "context-user-icon");
-  svg.append(createDomSvgShape(owner, "circle", { cx: "8", cy: "5.25", r: "2.45" }));
-  svg.append(createDomSvgShape(owner, "path", { d: "M3.5 13c.35-2.35 2.02-3.7 4.5-3.7s4.15 1.35 4.5 3.7" }));
-  return svg;
+  return createDomLucideIcon(owner, UserRoundNode, "context-user-icon");
 }
 
 function createDomWarningIcon(owner: Document): SVGSVGElement {
-  const svg = createDomSvg(owner, "context-warning-icon");
-  svg.append(createDomSvgShape(owner, "path", { d: "M8 2.1 14 13H2L8 2.1Z" }));
-  svg.append(createDomSvgShape(owner, "path", { d: "M8 5.6v3.6M8 11.4v.1" }));
-  return svg;
+  return createDomLucideIcon(owner, TriangleAlertNode, "context-warning-icon");
 }
 
 function createDomClockIcon(owner: Document): SVGSVGElement {
-  const svg = createDomSvg(owner);
-  svg.append(createDomSvgShape(owner, "circle", { cx: "8", cy: "8", r: "5.4" }));
-  svg.append(createDomSvgShape(owner, "path", { d: "M8 5v3l2.2 1.3" }));
-  return svg;
+  return createDomLucideIcon(owner, Clock3Node);
 }
 
-function createDomSvg(owner: Document, className?: string): SVGSVGElement {
-  const svg = owner.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.setAttribute("viewBox", "0 0 16 16");
-  svg.setAttribute("aria-hidden", "true");
-  svg.setAttribute("focusable", "false");
-  if (className) svg.setAttribute("class", className);
-  return svg;
-}
-
-function createDomSvgShape(owner: Document, tag: "circle" | "path", attributes: Record<string, string>): SVGElement {
-  const element = owner.createElementNS("http://www.w3.org/2000/svg", tag);
-  Object.entries(attributes).forEach(([name, value]) => element.setAttribute(name, value));
-  return element;
+function createDomLucideIcon(owner: Document, iconNode: IconNode, className?: string): SVGSVGElement {
+  const svg = createLucideElement(iconNode, {
+    class: ["lucide", className].filter(Boolean).join(" "),
+    "aria-hidden": "true",
+    focusable: "false",
+  }) as SVGSVGElement;
+  return svg.ownerDocument === owner ? svg : owner.importNode(svg, true);
 }
 
 function TemplateNodeView({ node, path }: { node: TemplateNode; path: readonly number[] }) {
@@ -723,11 +716,11 @@ function UnresolvedToken({ path, source, nodePath }: { path: string; source: str
 }
 
 function WarningIcon() {
-  return <svg className="context-warning-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.1 14 13H2L8 2.1Z" /><path d="M8 5.6v3.6M8 11.4v.1" /></svg>;
+  return <TriangleAlert className="context-warning-icon" aria-hidden="true" />;
 }
 
 function ClockIcon() {
-  return <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.4" /><path d="M8 5v3l2.2 1.3" /></svg>;
+  return <Clock3 aria-hidden="true" />;
 }
 
 function fieldTooltip(field: ContextFieldDefinition): string {

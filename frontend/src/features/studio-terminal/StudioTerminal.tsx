@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { X } from "lucide-react";
 
 import type { ProjectProcessEvent } from "../../../electron/contracts";
 
@@ -46,5 +47,5 @@ export function StudioTerminal({
 }
 
 function CloseIcon() {
-  return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>;
+  return <X aria-hidden="true" />;
 }

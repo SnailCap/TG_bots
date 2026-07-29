@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type FormEvent } from "react";
+import { Eye, EyeOff, X } from "lucide-react";
 
 import { OverlayDialog } from "../../shared/ui/OverlayDialog";
 import type { ProjectSettings } from "../../studio/api";
@@ -75,9 +76,9 @@ export function ProjectSettingsDialog({ open, settings, loading, saving, onClose
 }
 
 function CloseIcon() {
-  return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m5 5 6 6m0-6-6 6" /></svg>;
+  return <X aria-hidden="true" />;
 }
 
 function VisibilityIcon({ visible }: { visible: boolean }) {
-  return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false">{visible ? <><path d="M1.8 8S4.1 4.5 8 4.5 14.2 8 14.2 8 11.9 11.5 8 11.5 1.8 8 1.8 8Z" /><path d="m2.15 2.15 11.7 11.7" /></> : <><path d="M1.8 8S4.1 4.5 8 4.5 14.2 8 14.2 8 11.9 11.5 8 11.5 1.8 8 1.8 8Z" /><circle cx="8" cy="8" r="1.8" /></>}</svg>;
+  return visible ? <EyeOff aria-hidden="true" /> : <Eye aria-hidden="true" />;
 }

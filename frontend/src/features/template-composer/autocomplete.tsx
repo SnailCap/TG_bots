@@ -1,4 +1,5 @@
 import type { CSSProperties, MouseEvent } from "react";
+import { UserRound } from "lucide-react";
 
 import type { ContextFieldDefinition } from "./context-catalog";
 
@@ -53,6 +54,5 @@ function groupFields(fields: readonly ContextFieldDefinition[]): [string, { fiel
 }
 
 export function UserIcon() {
-  return <svg className="context-user-icon" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="5.25" r="2.45" /><path d="M3.5 13c.35-2.35 2.02-3.7 4.5-3.7s4.15 1.35 4.5 3.7" /></svg>;
+  return <UserRound className="context-user-icon" aria-hidden="true" />;
 }
-

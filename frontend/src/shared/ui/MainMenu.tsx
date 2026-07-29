@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { EllipsisVertical } from "lucide-react";
 
 type MenuSection = "File" | "Edit" | "View" | "Navigate" | "Code" | "Refactor" | "Run" | "Tools" | "Git" | "Window" | "Help";
 
@@ -100,5 +101,5 @@ function MenuSeparator() {
 }
 
 function DotsIcon() {
-  return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><circle cx="8" cy="3.25" r="1.15" /><circle cx="8" cy="8" r="1.15" /><circle cx="8" cy="12.75" r="1.15" /></svg>;
+  return <EllipsisVertical aria-hidden="true" />;
 }

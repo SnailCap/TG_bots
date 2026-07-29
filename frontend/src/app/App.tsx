@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronLeft as LucideChevronLeft, ChevronRight as LucideChevronRight, Folder } from "lucide-react";
 
 import type { Workspace } from "../domain/project";
 import { StudioPage } from "../pages/studio/StudioPage";
@@ -198,15 +199,15 @@ function LauncherHeader({ title, onBack }: { title: string; onBack(): void }) {
 }
 
 function ProjectMark() {
-  return <span className="welcome__project-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 7.5h6l1.8 2H20.5v8.8a2.2 2.2 0 0 1-2.2 2.2H5.7a2.2 2.2 0 0 1-2.2-2.2z" /><path d="M3.5 9.5h17" /></svg></span>;
+  return <span className="welcome__project-mark" aria-hidden="true"><Folder /></span>;
 }
 
 function ChevronRight() {
-  return <svg className="welcome__project-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" /></svg>;
+  return <LucideChevronRight className="welcome__project-chevron" aria-hidden="true" />;
 }
 
 function ChevronLeft() {
-  return <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 5-7 7 7 7" /></svg>;
+  return <LucideChevronLeft aria-hidden="true" />;
 }
 
 export { BackendStatusCard } from "./BackendStatusCard";

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Send } from "lucide-react";
 
 export function TelegramComposer({ onSend }: { onSend(text: string): void }) {
   const [value, setValue] = useState("");
@@ -17,5 +18,5 @@ export function TelegramComposer({ onSend }: { onSend(text: string): void }) {
 }
 
 function SendIcon() {
-  return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m17 3-6.35 13-1.7-5.3L3.6 9 17 3Z" /><path d="m8.95 10.7 3.2-3.15" /></svg>;
+  return <Send aria-hidden="true" />;
 }

@@ -18,6 +18,9 @@ import {
   selectionKeyEquals,
   selectionTabKey,
   isEditorInvalid,
+  openViewTextTab,
+  studioStatus,
+  viewTextTabKey,
   type DeletedResource,
   type EditorState,
   type EditorTab,
@@ -153,6 +156,18 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     void loadSelection(next, tabKey).catch(report).finally(() => setBusy(false));
   }, [activeTabKey, dirty, editor, loadSelection, report, tabs]);
 
+  const openViewTextEditor = useCallback((viewId: string, displayName: string) => {
+    const next = openViewTextTab(tabs, activeTabKey, editor, dirty, viewId, displayName);
+    setActiveTabKey(next.tabKey);
+    setSelection({ kind: "view", id: viewId });
+    setTabs(next.tabs);
+    setEditor(next.editor);
+    setDirty(next.dirty);
+    setNotice("");
+    setError("");
+    setConflict(false);
+  }, [activeTabKey, dirty, editor, tabs]);
+
   const restoreDeletedResource = useCallback(async (snapshot: DeletedResource) => {
     await restoreDeletedResourceViaApi(api, workspace.project_id, snapshot);
   }, [api, workspace.project_id]);
@@ -170,7 +185,8 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const closeTabsFor = useCallback((target: Selection) => {
     const remaining = tabsRef.current.filter((tab) => !selectionKeyEquals(selectionForEditor(tab.editor), target));
     setTabs(remaining);
-    if (activeTabKeyRef.current === selectionTabKey(target)) {
+    const activeTab = tabsRef.current.find((tab) => tab.key === activeTabKeyRef.current);
+    if (activeTab && selectionKeyEquals(selectionForEditor(activeTab.editor), target)) {
       const fallback = remaining[remaining.length - 1] ?? null;
       setActiveTabKey(fallback?.key ?? null);
       setEditor(fallback?.editor ?? null);
@@ -429,9 +445,27 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const applyRenameToTabs = useCallback((from: Selection, to: Selection, toEditor: Exclude<EditorState, null>) => {
     const previousTabKey = selectionTabKey(from);
     const nextTabKey = selectionTabKey(to);
-    setTabs((current) => current.map((tab) => selectionKeyEquals(selectionForEditor(tab.editor), from)
-      ? { ...tab, key: nextTabKey, editor: toEditor, dirty: false }
-      : tab));
+    const renamedViewTextEditor = toEditor.kind === "view"
+      ? { kind: "view-text" as const, viewId: toEditor.detail.id, displayName: toEditor.detail.name ?? toEditor.detail.id }
+      : null;
+    setTabs((current) => current.map((tab) => {
+      if (!selectionKeyEquals(selectionForEditor(tab.editor), from)) return tab;
+      if (tab.editor.kind === "view-text" && renamedViewTextEditor) {
+        return {
+          ...tab,
+          key: viewTextTabKey(renamedViewTextEditor.viewId),
+          editor: renamedViewTextEditor,
+          dirty: false,
+        };
+      }
+      return { ...tab, key: nextTabKey, editor: toEditor, dirty: false };
+    }));
+    const activeTab = tabsRef.current.find((tab) => tab.key === activeTabKeyRef.current);
+    if (activeTab?.editor.kind === "view-text" && selectionKeyEquals(selectionForEditor(activeTab.editor), from) && renamedViewTextEditor) {
+      setActiveTabKey(viewTextTabKey(renamedViewTextEditor.viewId));
+      setEditor(renamedViewTextEditor);
+      setDirty(false);
+    }
     if (activeTabKeyRef.current === previousTabKey) {
       setActiveTabKey(nextTabKey);
       setEditor(toEditor);
@@ -478,17 +512,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     if (dirty && !window.confirm("Discard unsaved changes and create a new project?")) return;
     onNewProject();
   };
-  const status = error
-    ? { label: "Error", tone: "error" }
-    : saving
-      ? { label: "Saving…", tone: "working" }
-      : busy
-        ? { label: "Working…", tone: "working" }
-        : dirty
-          ? { label: "Unsaved changes", tone: "dirty" }
-          : editor
-            ? { label: "Saved", tone: "saved" }
-            : { label: "Ready", tone: "ready" };
+  const status = studioStatus({ error: Boolean(error), saving, busy, dirty, hasEditor: Boolean(editor) });
 
   return <StudioRouter><StudioPageView
     api={api}
@@ -554,6 +578,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     dismissError={() => { setError(""); setConflict(false); }}
     dismissNotice={() => setNotice("")}
     select={select}
+    openViewTextEditor={openViewTextEditor}
     addResource={addResource}
     renameFromExplorer={renameFromExplorer}
     removeFromExplorer={removeFromExplorer}

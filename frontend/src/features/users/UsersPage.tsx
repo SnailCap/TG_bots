@@ -8,6 +8,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from "react";
+import { ArrowDown, ArrowUp, ChevronsUpDown, LockKeyhole, RotateCcw, Search, UsersRound, X } from "lucide-react";
 
 import { ResizeHandle } from "../../shared/ui/ResizeHandle";
 import { ConfirmationDialog } from "../../shared/ui/ConfirmationDialog";
@@ -383,9 +384,12 @@ function clampUserDetailsWidth(width: number): number {
 }
 function avatarTone(id: string): number { return (Array.from(id).reduce((sum, character) => sum + character.charCodeAt(0), 0) % 5) + 1; }
 
-function SearchIcon() { return <svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><circle cx="8.7" cy="8.7" r="5.2" /><path d="m12.6 12.6 4 4" /></svg>; }
-function CloseIcon() { return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="m4.5 4.5 7 7m0-7-7 7" /></svg>; }
-function SortIcon({ active, direction }: { active: boolean; direction: SortDirection }) { return <svg className={active ? `sort-icon sort-icon--active sort-icon--${direction}` : "sort-icon"} viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="m4.25 5.75 2.75-3 2.75 3M9.75 8.25 7 11.25l-2.75-3" /></svg>; }
-function UsersIcon() { return <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="9" cy="8" r="3.5" /><path d="M2.8 20c.5-4.2 2.6-6.3 6.2-6.3s5.7 2.1 6.2 6.3M15 6.4a3.3 3.3 0 0 1 0 6.4m1.4 1.7c2.8.3 4.4 2.1 4.8 5.5" /></svg>; }
-function RestoreIcon() { return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M13 7.6A5.2 5.2 0 1 1 11.5 4L13 5.5M13 2.7v2.8h-2.8" /></svg>; }
-function BlockIcon() { return <svg viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="M4.2 6.5V5A3.8 3.8 0 0 1 8 1.8 3.8 3.8 0 0 1 11.8 5v1.5M3 6.5h10v7.2H3z" /></svg>; }
+function SearchIcon() { return <Search aria-hidden="true" />; }
+function CloseIcon() { return <X aria-hidden="true" />; }
+function SortIcon({ active, direction }: { active: boolean; direction: SortDirection }) {
+  const Icon = !active ? ChevronsUpDown : direction === "asc" ? ArrowUp : ArrowDown;
+  return <Icon className={active ? "sort-icon sort-icon--active" : "sort-icon"} aria-hidden="true" />;
+}
+function UsersIcon() { return <UsersRound aria-hidden="true" />; }
+function RestoreIcon() { return <RotateCcw aria-hidden="true" />; }
+function BlockIcon() { return <LockKeyhole aria-hidden="true" />; }
