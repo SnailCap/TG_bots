@@ -54,6 +54,11 @@ class ResourceSaveRequest(BaseModel):
     revision: str
 
 
+class VariableCatalogSaveRequest(BaseModel):
+    payload: dict[str, Any]
+    revision: str | None = None
+
+
 class ViewSaveRequest(ResourceSaveRequest):
     text_content: str
     text_revision: str | None
@@ -822,6 +827,52 @@ async def compile_content(
             variables=body.variables,
             split_long_messages=body.split_long_messages,
         )
+    except WorkspaceError as error:
+        fail(error)
+
+
+# Resource variables -------------------------------------------------------------------
+
+
+@router.get("/{project_id}/variables")
+async def get_variables(
+    project_id: str,
+    request: Request,
+    resource_type: str | None = None,
+    resource_id: str | None = None,
+    flow_id: str | None = None,
+    state_id: str | None = None,
+    handler_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        return service(request).get_variables(
+            project_id,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            flow_id=flow_id,
+            state_id=state_id,
+            handler_id=handler_id,
+        )
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.put("/{project_id}/variables")
+async def save_variables(
+    project_id: str, body: VariableCatalogSaveRequest, request: Request
+) -> dict[str, Any]:
+    try:
+        return service(request).save_variables(project_id, body.payload, body.revision)
+    except WorkspaceError as error:
+        fail(error)
+
+
+@router.get("/{project_id}/variables/{variable_id}/usages")
+async def get_variable_usages(
+    project_id: str, variable_id: str, request: Request
+) -> dict[str, Any]:
+    try:
+        return {"usages": service(request).variable_usages(project_id, variable_id)}
     except WorkspaceError as error:
         fail(error)
 

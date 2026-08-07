@@ -6,7 +6,8 @@ import { NodeViewWrapper, ReactNodeViewRenderer, type ReactNodeViewProps } from 
 import { Braces, CircleAlert, UserRound } from "lucide-react";
 import { memo, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import { findContextField } from "../template-composer/context-catalog";
+import { findContextField, findContextFieldByReference } from "../template-composer/context-catalog";
+import { useVariableFields } from "../template-composer/variable-fields-context";
 import { CustomEmojiMedia } from "./custom-emoji-state";
 import { toggleSelectedVariableMark } from "./inline-atom-marks";
 import { loadCustomEmojiLibrary, saveCustomEmojiLibrary, toggleFavoriteCustomEmoji } from "./emoji-library";
@@ -260,7 +261,9 @@ function writeSelectionToClipboard(
 
 const VariableNodeView = memo(function VariableNodeView({ node, selected }: ReactNodeViewProps) {
   const path = String(node.attrs.path ?? "");
-  const field = findContextField(path);
+  const fieldId = typeof node.attrs.fieldId === "string" ? node.attrs.fieldId : null;
+  const fields = useVariableFields();
+  const field = findContextFieldByReference(fieldId, path, fields);
   const label = field?.label ?? path;
   const group = field?.group ?? "Unknown variable";
   return (

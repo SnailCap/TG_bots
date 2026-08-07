@@ -2,7 +2,7 @@ import { SYSTEM_CONTEXT_FIELDS, type ContextFieldDefinition } from "./context-ca
 import type { TemplateDocument, TemplateNode } from "./model";
 import { renderTelegramDateTime } from "./telegram-formatting";
 
-export type PreviewValues = Record<string, string | number>;
+export type PreviewValues = Record<string, unknown>;
 
 export function defaultPreviewValues(
   catalog: readonly ContextFieldDefinition[] = SYSTEM_CONTEXT_FIELDS,

@@ -10,6 +10,7 @@
 │  ├─ bot.json                 # обязателен
 │  ├─ handlers.json            # обязателен
 │  ├─ commands.json            # обязателен
+│  ├─ variables.json           # optional для старых v3 projects; starter создаёт файл
 │  ├─ views/                   # обязателен, JSON рекурсивно
 │  ├─ content/                 # optional, structured content JSON рекурсивно
 │  ├─ flows/                   # обязателен, JSON рекурсивно
@@ -56,6 +57,39 @@ Studio may add an optional `display_names` object to `bot.json`. It maps a Studi
 Studio creates IDs from a supplied display name using lowercase ASCII `snake_case`; spaces become `_` and Cyrillic is transliterated. The ID remains stable after a later display-name edit, so references, callback IDs, and resource file paths do not change.
 
 При `resume` активная session только re-rendered; если active flow нет, он запускается как обычно. `/start` зарезервирован и не может повторно объявляться в commands.
+
+## Переменные ресурсов: `resources/variables.json`
+
+Каталог хранит декларативные определения, но не пользовательские значения. Старый v3 project без файла загружается как каталог без custom variables; новый starter создаёт пустой файл. Системные `user.*` definitions добавляет core, поэтому проект не может переопределить или удалить их.
+
+```json
+{
+  "schema_version": 3,
+  "variables": [
+    {
+      "id": "var_order_total",
+      "owner": {"type": "flow", "id": "checkout"},
+      "path": "order.total",
+      "type": "number",
+      "source": "custom",
+      "required": true,
+      "writable": true,
+      "exampleValue": 120,
+      "persistence": "resource",
+      "exposedToTemplates": true,
+      "legacyPaths": []
+    }
+  ]
+}
+```
+
+`id` — стабильная runtime identity; `path` — Jinja/Python presentation path. Studio при переименовании сохраняет прежний путь в `legacyPaths`, поэтому structured reference с `fieldId` и старые `{{ order.total }}` продолжают разрешаться. ID и все current/legacy paths уникальны; path состоит из dotted Python identifiers и не может быть одновременно scalar и родителем другого path.
+
+Поддерживаемые типы: `string`, `number`, `boolean`, `date`, `datetime`, `object`, `array`. `defaultValue` и `exampleValue` проверяются по типу и должны быть JSON-serializable. `computed` зарезервирован, но в первой версии validator его отклоняет. Owner types соответствуют существующей v3-модели: `bot`, `flow`, `state` (ID вида `flow.state`), `view`, `handler`. Flow variable доступна его states/views и handlers во время этого flow; state/view/handler variable не выходит за своего владельца; core variables доступны везде.
+
+`persistence: "resource"` привязывает value к конкретному flow execution (`resource_instance_id`). Политики `session` и `user` сохраняют value между повторными flow starts в текущей user/chat session. Все values лежат отдельно от definitions и от свободного `ctx.state`, в runtime SQLite; definitions остаются единственным source of truth в `resources/variables.json`.
+
+Studio backend предоставляет revision-aware чтение/запись каталога и поиск usages. Удаление используемой custom variable блокируется. После успешной записи обновляется derived `src/<package>/_botstudio_variables.py`; этот модуль даёт autocomplete, но не является источником истины и не перезаписывается, если файл не имеет generated marker.
 
 ## Views и templates
 
@@ -112,7 +146,7 @@ Content document schema v1 поддерживает paragraphs, quotes, expandab
 
 Studio не показывает templates как отдельный ресурс. Обычный редактор работает с текстом выбранного view, а backend при сохранении пишет его в owned path `resources/templates/views/<view-id>.txt` и обновляет `text.template`. Открытые legacy `inline` или non-canonical template references читаются как обычно и канонизируются только при следующем сохранении через Studio. Rich editor revision-aware сохраняет document, derived template и view reference одной операцией. Это additive UI/storage policy Studio, а не новый project format.
 
-`keyboard` — массив rows, каждая row — массив buttons. Button `id` является глобальным action ID всего проекта. Core кодирует callback как `v3:a:<button-id>`; UTF-8 payload обязан помещаться в 64 bytes. Текст, handler ID или target в callback не включаются. При dispatch ID дополнительно должен принадлежать текущему сохранённому view session, поэтому кнопка из старого экрана не выполняет action другого экрана.
+`keyboard` — массив rows, каждая row — массив buttons. `button.text` проходит через тот же `StrictUndefined` Jinja context, что и view text, поэтому в подписи можно использовать доступные переменные ресурсов. Button `id` является глобальным action ID всего проекта. Core кодирует callback как `v3:a:<button-id>`; UTF-8 payload обязан помещаться в 64 bytes. Текст, handler ID или target в callback не включаются. При dispatch ID дополнительно должен принадлежать текущему сохранённому view session, поэтому кнопка из старого экрана не выполняет action другого экрана.
 
 ## Actions
 

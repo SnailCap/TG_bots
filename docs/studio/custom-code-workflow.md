@@ -87,6 +87,7 @@ ctx.chat       ChatInfo(id)
 ctx.event      typed CallbackEvent / MessageEvent / CommandEvent / LifecycleEvent
 ctx.payload    action payload; у on_error также содержит error text
 ctx.state      controlled StateValues
+ctx.vars       typed и resource-scoped VariableValues
 ctx.services   mapping явно зарегистрированных project services
 ctx.logger     logger данного handler
 ```
@@ -108,7 +109,20 @@ async def handle(ctx: MessageContext) -> HandlerResult:
 
 `ctx.state.get/set/delete/snapshot` работает с draft session values. `HandlerResult.values` объединяется с draft и выигрывает при совпадении ключа. Значения обязаны сериализоваться в JSON.
 
-Rich Text Content Editor не расширяет public handler context и не даёт handler raw send API. Его variable picker переиспользует общий Studio context catalog, а runtime разрешает сохранённые dotted paths из того же session/user mapping. Поэтому handler передаёт данные через `ctx.state` или `HandlerResult.values`, после чего декларативный view компилирует текст и Telegram entities. `variableReference.source` нужен только для lossless legacy round-trip и не выполняется как произвольный Jinja expression. Подробности — в [Content Editor guide](content-editor.md#variables-и-jinja).
+`ctx.vars` предназначен только для заранее объявленных переменных ресурсов и не смешивается с `ctx.state`. Generated projection обновляется из `resources/variables.json`:
+
+```python
+from my_bot._botstudio_variables import Vars
+from tg_bot_core import HandlerResult, LifecycleContext
+
+
+async def handle(ctx: LifecycleContext) -> HandlerResult:
+    ctx.vars.set(Vars.order.total, 120)
+    current = ctx.vars.get(Vars.order.total)
+    return HandlerResult.success(values={"debug_total": current})
+```
+
+`get/has/set/unset/list` проверяют scope, read-only flag, declared type и JSON serialization. Generated member содержит stable ID и current path; runtime identity не меняется при rename. Rich Text Editor и Template Composer запрашивают тот же resource-scoped catalog, а preview/runtime используют общий resolver. `variableReference.source` нужен только для lossless legacy round-trip и не выполняется как произвольный Jinja expression. Подробности — в [Content Editor guide](content-editor.md#variables-и-jinja).
 
 `TaskContext` отличается: у background job есть только `job_id`, `payload`, `services`, `logger`; нет user/chat/event/session state.
 

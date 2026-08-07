@@ -3,11 +3,17 @@ import { StrictMode, useState } from "react";
 import { describe, expect, it } from "vitest";
 
 import { TemplateComposer } from "./TemplateComposer";
+import type { ContextFieldDefinition } from "./context-catalog";
 import { useFieldHistory } from "../../shared/lib/useFieldHistory";
 
 function Harness({ initial = "" }: { initial?: string }) {
   const [content, setContent] = useState(initial);
   return <><TemplateComposer content={content} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
+}
+
+function ResourceHarness({ fields }: { fields: readonly ContextFieldDefinition[] }) {
+  const [content, setContent] = useState("");
+  return <><TemplateComposer content={content} fields={fields} onContentChange={setContent} /><output data-testid="source-value">{content}</output></>;
 }
 
 function HistoryHarness({ initial = "" }: { initial?: string }) {
@@ -31,6 +37,26 @@ function typeVisual(value: string) {
 }
 
 describe("visual template composer", () => {
+  it("uses the resource-scoped catalog for autocomplete and insertion", () => {
+    render(<ResourceHarness fields={[{
+      id: "var_order_total",
+      path: "order.total",
+      label: "total",
+      group: "flow: checkout",
+      valueType: "number",
+      optional: false,
+      description: "Order total",
+      example: 120,
+      source: "custom",
+      writable: true,
+    }]} />);
+
+    const editor = typeVisual("$");
+    expect(screen.getByRole("option", { name: /total/ })).toBeInTheDocument();
+    fireEvent.keyDown(editor, { key: "Enter" });
+    expect(screen.getByTestId("source-value")).toHaveTextContent("{{ order.total }}");
+  });
+
   it("opens autocomplete with $, filters it, and closes with Escape", () => {
     render(<Harness />);
     const editor = typeVisual("$");

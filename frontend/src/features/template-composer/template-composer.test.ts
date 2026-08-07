@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { searchContextFields, SYSTEM_CONTEXT_FIELDS } from "./context-catalog";
+import {
+  contextFieldsFromDefinitions,
+  searchContextFields,
+  SYSTEM_CONTEXT_FIELDS,
+} from "./context-catalog";
 import { parseTemplate } from "./parser";
 import { defaultPreviewValues, renderTemplatePreview } from "./preview";
 import { serializeTemplate } from "./serializer";
@@ -65,6 +69,46 @@ describe("context catalog", () => {
     expect(searchContextFields("telegram_id").map((field) => field.path)).toEqual(["user.telegram_id"]);
     expect(searchContextFields("код языка").map((field) => field.path)).toEqual(["user.language_code"]);
     expect(searchContextFields("", SYSTEM_CONTEXT_FIELDS)).toHaveLength(5);
+  });
+
+  it("adapts resource definitions into the shared searchable catalog", () => {
+    const fields = contextFieldsFromDefinitions([{
+      id: "var_order_total",
+      owner: { type: "flow", id: "checkout" },
+      path: "order.total",
+      type: "number",
+      source: "custom",
+      required: true,
+      writable: true,
+      persistence: "resource",
+      exposedToTemplates: true,
+      exampleValue: 120,
+      legacyPaths: ["order.legacy_total"],
+    }]);
+
+    expect(searchContextFields("checkout", fields)).toEqual([
+      expect.objectContaining({
+        id: "var_order_total",
+        path: "order.total",
+        valueType: "number",
+        example: 120,
+      }),
+    ]);
+    expect(parseTemplate("{{ order.total }}", fields).nodes).toEqual([
+      expect.objectContaining({
+        type: "context-token",
+        fieldId: "var_order_total",
+        path: "order.total",
+      }),
+    ]);
+    expect(parseTemplate("{{ order.legacy_total }}", fields).nodes).toEqual([
+      expect.objectContaining({
+        type: "context-token",
+        fieldId: "var_order_total",
+        path: "order.total",
+        source: "{{ order.legacy_total }}",
+      }),
+    ]);
   });
 
   it("validates unknown fields and unsupported fragments", () => {

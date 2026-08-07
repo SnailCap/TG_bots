@@ -1,11 +1,11 @@
 import { Fragment, useMemo, useState, type FormEvent, type ReactNode } from "react";
 import { CircleAlert, CircleCheck, Eye, LoaderCircle, MessageSquareText, Send } from "lucide-react";
 
-import { SYSTEM_CONTEXT_FIELDS } from "../template-composer/context-catalog";
+import { SYSTEM_CONTEXT_FIELDS, type ContextFieldDefinition } from "../template-composer/context-catalog";
 import { CustomEmojiMedia } from "./custom-emoji-state";
 import { isSafeContentLink, type TelegramCompileResult, type TelegramMessageEntity } from "./model";
 
-export type RichEditorPreviewValues = Record<string, string | number>;
+export type RichEditorPreviewValues = Record<string, unknown>;
 export type SendPreviewResult = { sentCount: number; totalCount: number };
 
 type EntityTreeNode = {
@@ -21,11 +21,13 @@ export function TelegramCompiledPreview({
   values,
   onValuesChange,
   onSendPreview,
+  fields = SYSTEM_CONTEXT_FIELDS,
 }: {
   result: TelegramCompileResult | null;
   values: RichEditorPreviewValues;
   onValuesChange(values: RichEditorPreviewValues): void;
   onSendPreview?(chatId: string): Promise<SendPreviewResult>;
+  fields?: readonly ContextFieldDefinition[];
 }) {
   const [chatId, setChatId] = useState("");
   const [sendState, setSendState] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -132,16 +134,16 @@ export function TelegramCompiledPreview({
       <details className="view-rich-preview__values">
         <summary>Test variable values</summary>
         <div>
-          {SYSTEM_CONTEXT_FIELDS.map((field) => (
+          {fields.map((field) => (
             <label key={field.id}>
               <span>{field.label}</span>
               <input
                 aria-label={`Preview ${field.label}`}
-                type={field.valueType === "integer" ? "number" : "text"}
-                value={values[field.path] ?? ""}
+                type={field.valueType === "number" ? "number" : "text"}
+                value={previewInputValue(values[field.path])}
                 onChange={(event) => onValuesChange({
                   ...values,
-                  [field.path]: field.valueType === "integer" ? Number(event.target.value) : event.target.value,
+                  [field.path]: field.valueType === "number" ? Number(event.target.value) : event.target.value,
                 })}
               />
             </label>
@@ -150,6 +152,12 @@ export function TelegramCompiledPreview({
       </details>
     </aside>
   );
+}
+
+function previewInputValue(value: unknown): string | number {
+  if (typeof value === "string" || typeof value === "number") return value;
+  if (value === null || value === undefined) return "";
+  return JSON.stringify(value);
 }
 
 /**

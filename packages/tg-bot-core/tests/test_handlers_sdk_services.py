@@ -65,6 +65,7 @@ def test_context_mappings_are_read_only_and_state_uses_controlled_json_writes() 
         event=MessageEvent(Actor(1, 2), 3, "hello"),
         payload=original_payload,
         state=StateValues(),
+        vars=object(),  # type: ignore[arg-type]
         services={"api": object()},
         logger=logging.getLogger("test"),
     )

@@ -57,7 +57,8 @@ describe("ProjectExplorer flows", () => {
   it("reveals a view text editor through the same disclosure interaction", () => {
     const onSelect = vi.fn();
     const onOpenViewTextEditor = vi.fn();
-    render(<ProjectExplorer workspace={workspace} selection={null} onSelect={onSelect} onOpenViewTextEditor={onOpenViewTextEditor} onAdd={vi.fn()} />);
+    const onOpenVariables = vi.fn();
+    render(<ProjectExplorer workspace={workspace} selection={null} onSelect={onSelect} onOpenViewTextEditor={onOpenViewTextEditor} onOpenVariables={onOpenVariables} onAdd={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "views" }));
     const viewButton = screen.getByRole("button", { name: "home" });
@@ -74,7 +75,20 @@ describe("ProjectExplorer flows", () => {
     expect(textEditor.querySelector("svg")).toBeInTheDocument();
     fireEvent.click(textEditor);
     expect(onOpenViewTextEditor).toHaveBeenCalledWith("home", "home");
+    fireEvent.click(screen.getByRole("button", { name: "Open variables for home" }));
+    expect(onOpenVariables).toHaveBeenCalledWith({ resourceType: "view", resourceId: "home" }, "home");
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows flow variables beside its state resources", () => {
+    const onOpenVariables = vi.fn();
+    render(<ProjectExplorer workspace={workspace} selection={null} onSelect={vi.fn()} onOpenVariables={onOpenVariables} onAdd={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "flows" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expand checkout" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open variables for checkout" }));
+
+    expect(onOpenVariables).toHaveBeenCalledWith({ resourceType: "flow", resourceId: "checkout" }, "checkout");
   });
 
   it("does not reserve disclosure space for any terminal resource node", () => {

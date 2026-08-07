@@ -17,6 +17,7 @@ type LocalProjectRunOptions = {
   dirty: boolean;
   busy: boolean;
   saving: boolean;
+  saveBeforeRun(): Promise<void>;
   setTerminalOpen: Dispatch<SetStateAction<boolean>>;
   setNotice: Dispatch<SetStateAction<string>>;
   setError: Dispatch<SetStateAction<string>>;
@@ -28,6 +29,7 @@ export function useLocalProjectRun({
   dirty,
   busy,
   saving,
+  saveBeforeRun,
   setTerminalOpen,
   setNotice,
   setError,
@@ -67,11 +69,12 @@ export function useLocalProjectRun({
   }, [workspace.project_root]);
 
   const runProject = useCallback(async () => {
-    if (dirty || busy || saving || startingLocalRun) return;
+    if (busy || saving || startingLocalRun) return;
     localRunCommandRevision.current += 1;
     setTerminalOpen(true);
     setStartingLocalRun(true);
     try {
+      if (dirty) await saveBeforeRun();
       await approveProjectRoot(workspace.project_root);
       const result = await runLocalProject({ projectRoot: workspace.project_root, packageName: workspace.package });
       setLocalRunPid(result.pid || null);
@@ -82,7 +85,7 @@ export function useLocalProjectRun({
     } finally {
       setStartingLocalRun(false);
     }
-  }, [busy, dirty, report, saving, setError, setNotice, setTerminalOpen, startingLocalRun, workspace.package, workspace.project_root]);
+  }, [busy, dirty, report, saveBeforeRun, saving, setError, setNotice, setTerminalOpen, startingLocalRun, workspace.package, workspace.project_root]);
 
   const stopProject = useCallback(async () => {
     if (!localRunPid || stoppingLocalRun) return;

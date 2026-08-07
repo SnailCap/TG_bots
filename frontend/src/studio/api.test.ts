@@ -99,6 +99,42 @@ describe("StudioApi", () => {
     }));
   });
 
+  it("loads a resource-scoped variable catalog and saves definitions revision-safely", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        source_path: "variables.json",
+        revision: "vars-two",
+        payload: { schema_version: 3, variables: [] },
+        definitions: [],
+      }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const api = new StudioApi("http://studio.test");
+
+    await api.getVariables("project-1", {
+      resourceType: "view",
+      resourceId: "checkout",
+      flowId: "main",
+      stateId: "confirm",
+    });
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "http://studio.test/api/v1/projects/project-1/variables?resource_type=view&resource_id=checkout&flow_id=main&state_id=confirm",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+
+    const payload = { schema_version: 3 as const, variables: [] };
+    await api.saveVariables("project-1", payload, "vars-one");
+    expect(fetchMock).toHaveBeenLastCalledWith(
+      "http://studio.test/api/v1/projects/project-1/variables",
+      expect.objectContaining({
+        method: "PUT",
+        body: JSON.stringify({ payload, revision: "vars-one" }),
+      }),
+    );
+  });
+
   it("sends an explicit compiled preview through the project-scoped endpoint", async () => {
     const document: BotContentDocument = {
       schemaVersion: 1,

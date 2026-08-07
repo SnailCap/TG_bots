@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import keyword
+import json
 import re
 from collections import Counter, deque
+from datetime import date, datetime
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
@@ -25,11 +27,18 @@ from .models import (
     Diagnostic,
     HandlerInvocation,
     ProjectDefinition,
+    VARIABLE_OWNER_TYPES,
+    VARIABLE_PERSISTENCE,
+    VARIABLE_SOURCES,
+    VARIABLE_TYPES,
+    VARIABLE_UNSET,
 )
 
 _ID = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 _COMMAND = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
 _MODULE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$")
+_VARIABLE_PATH = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+$")
+_RESERVED_RUNTIME_VARIABLE_PATHS = frozenset({"user.id", "user.role"})
 class ProjectValidationError(RuntimeError):
     def __init__(self, diagnostics: Iterable[Diagnostic]) -> None:
         self.diagnostics = tuple(diagnostics)
@@ -195,6 +204,8 @@ def validate_project(project: ProjectDefinition, *, inspect_code: bool = False) 
     if project.manifest.start.flow not in project.flows:
         issue("error", "missing_start_flow", f"Start flow '{project.manifest.start.flow}' does not exist.", source="bot.json", field="start.flow")
 
+    _validate_variable_definitions(project, issue, valid_id)
+
     action_ids = [button.id for view in project.views.values() for row in view.keyboard for button in row]
     for action_id, count in Counter(action_ids).items():
         if count > 1:
@@ -324,6 +335,18 @@ def validate_project(project: ProjectDefinition, *, inspect_code: bool = False) 
                 if len(f"v3:a:{button.id}".encode("utf-8")) > 64:
                     issue("error", "callback_encoding_invalid", f"Button id '{button.id}' exceeds Telegram's callback limit.", source=view.source_path, entity=button.id, field="id")
                 validate_action(button.action, "button", view.source_path, button.id, f"keyboard.{row_index}.{button_index}.action")
+                try:
+                    Environment().parse(button.text)
+                except TemplateError as error:
+                    issue(
+                        "error",
+                        "jinja_syntax",
+                        f"Invalid Jinja button template: {error}",
+                        source=view.source_path,
+                        entity=button.id,
+                        field=f"keyboard.{row_index}.{button_index}.text",
+                    )
+        _validate_view_variable_references(project, view, issue)
 
     for flow in project.flows.values():
         valid_id(flow.id, flow.source_path, flow.id)
@@ -443,3 +466,153 @@ def _content_document_has_potential_output(document) -> bool:
             if isinstance(node, (VariableNode, CustomEmojiNode)):
                 return True
     return False
+
+
+def _validate_variable_definitions(project, issue, valid_id) -> None:
+    from ..variables import CORE_VARIABLE_DEFINITIONS
+
+    definitions = [*CORE_VARIABLE_DEFINITIONS, *project.variable_definitions.values()]
+    paths: dict[str, str] = {}
+    for definition in definitions:
+        source = definition.source_path or "variables.json"
+        valid_id(definition.id, source, definition.id)
+        if definition.source != "core" and definition.source not in VARIABLE_SOURCES:
+            issue("error", "invalid_variable_source", f"Variable '{definition.id}' has unknown source '{definition.source}'.", source=source, entity=definition.id, field="source")
+        if definition.source == "core" and definition.id in project.variable_definitions:
+            issue("error", "protected_variable_definition", f"Core variable '{definition.id}' cannot be declared by the project.", source=source, entity=definition.id, field="source")
+        if definition.source == "computed":
+            issue("error", "unsupported_variable_source", f"Computed variable '{definition.id}' is not supported yet.", source=source, entity=definition.id, field="source")
+        if definition.type not in VARIABLE_TYPES:
+            issue("error", "invalid_variable_type", f"Variable '{definition.id}' has unknown type '{definition.type}'.", source=source, entity=definition.id, field="type")
+        if definition.persistence not in VARIABLE_PERSISTENCE:
+            issue("error", "invalid_variable_persistence", f"Variable '{definition.id}' has unknown persistence '{definition.persistence}'.", source=source, entity=definition.id, field="persistence")
+        if definition.owner.type not in VARIABLE_OWNER_TYPES:
+            issue("error", "invalid_variable_owner", f"Variable '{definition.id}' has unknown owner type '{definition.owner.type}'.", source=source, entity=definition.id, field="owner.type")
+        elif definition.source != "core" and not _variable_owner_exists(project, definition.owner):
+            issue("error", "unknown_variable_owner", f"Variable '{definition.id}' references unknown {definition.owner.type} '{definition.owner.id}'.", source=source, entity=definition.id, field="owner.id")
+        all_paths = (definition.path, *definition.legacy_paths)
+        if len(set(all_paths)) != len(all_paths):
+            issue("error", "variable_path_duplicate", f"Variable '{definition.id}' repeats its current or legacy path.", source=source, entity=definition.id, field="legacyPaths")
+        for index, path in enumerate(all_paths):
+            field = "path" if index == 0 else f"legacyPaths.{index - 1}"
+            if definition.source != "core" and path in _RESERVED_RUNTIME_VARIABLE_PATHS:
+                issue("error", "protected_variable_path", f"Variable path '{path}' is reserved by the runtime.", source=source, entity=definition.id, field=field)
+            if not _VARIABLE_PATH.fullmatch(path) or any(
+                keyword.iskeyword(part) for part in path.split(".")
+            ):
+                issue("error", "invalid_variable_path", f"Variable '{definition.id}' has invalid path '{path}'.", source=source, entity=definition.id, field=field)
+                continue
+            conflict = paths.get(path)
+            if conflict and conflict != definition.id:
+                issue("error", "variable_path_conflict", f"Variable path '{path}' conflicts with '{conflict}'.", source=source, entity=definition.id, field=field)
+            else:
+                paths[path] = definition.id
+        for field, value in (("defaultValue", definition.default_value), ("exampleValue", definition.example_value)):
+            if value is not VARIABLE_UNSET and not _matches_variable_type(definition.type, value):
+                issue("error", "variable_value_type_mismatch", f"Variable '{definition.id}' {field} does not match type '{definition.type}'.", source=source, entity=definition.id, field=field)
+
+    path_entries = [
+        (path, item.id, item.source_path or "variables.json")
+        for item in definitions
+        for path in (item.path, *item.legacy_paths)
+    ]
+    for path, variable_id, source in path_entries:
+        for other_path, other_id, _other_source in path_entries:
+            if variable_id != other_id and other_path.startswith(f"{path}."):
+                issue("error", "variable_path_conflict", f"Variable path '{path}' cannot also be a parent of '{other_path}'.", source=source, entity=variable_id, field="path")
+                break
+
+
+def _variable_owner_exists(project, owner) -> bool:
+    if owner.type == "bot":
+        return owner.id == project.manifest.id
+    if owner.type == "flow":
+        return owner.id in project.flows
+    if owner.type == "view":
+        return owner.id in project.views
+    if owner.type == "handler":
+        return owner.id in project.handlers
+    if owner.type == "state":
+        return any(
+            owner.id == f"{flow.id}.{state.id}"
+            for flow in project.flows.values()
+            for state in flow.states.values()
+        )
+    return False
+
+
+def _matches_variable_type(variable_type: str, value) -> bool:
+    if variable_type == "string":
+        valid = isinstance(value, str)
+    elif variable_type == "number":
+        valid = isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif variable_type == "boolean":
+        valid = isinstance(value, bool)
+    elif variable_type == "object":
+        valid = isinstance(value, dict)
+    elif variable_type == "array":
+        valid = isinstance(value, list)
+    elif variable_type == "date":
+        if not isinstance(value, str):
+            return False
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+        valid = True
+    elif variable_type == "datetime":
+        if not isinstance(value, str):
+            return False
+        try:
+            datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        valid = True
+    else:
+        return False
+    if not valid:
+        return False
+    try:
+        json.dumps(value, allow_nan=False)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _validate_view_variable_references(project, view, issue) -> None:
+    from ..variables import ResourceVariableContext, VariableCatalog, UnknownVariableError
+
+    if view.text.document is None:
+        return
+    document = project.content_documents.get(view.text.document)
+    if document is None:
+        return
+    catalog = VariableCatalog(project)
+    contexts = [
+        ResourceVariableContext(
+            project.manifest.id,
+            flow_id=flow.id,
+            state_id=state.id,
+            view_id=view.id,
+        )
+        for flow in project.flows.values()
+        for state in flow.states.values()
+        if state.view == view.id
+    ]
+    if not contexts:
+        contexts.append(ResourceVariableContext(project.manifest.id, view_id=view.id))
+    for block_index, block in enumerate(document.content):
+        for node_index, node in enumerate(getattr(block, "content", ())):
+            if not isinstance(node, VariableNode):
+                continue
+            reference = node.variable_reference
+            identity = reference.field_id or reference.path
+            try:
+                definition = catalog.get(identity)
+            except UnknownVariableError:
+                issue("warning", "unknown_variable_reference", f"Content references unknown variable '{identity}'.", source=f"content/{view.text.document}", entity=document.id, field=f"content[{block_index}].content[{node_index}].variableReference")
+                continue
+            if reference.field_id and reference.path != definition.path and reference.path not in definition.legacy_paths:
+                issue("warning", "stale_variable_path", f"Variable '{definition.id}' is now named '{definition.path}'; the stable reference remains valid.", source=f"content/{view.text.document}", entity=document.id, field=f"content[{block_index}].content[{node_index}].variableReference.path")
+            if not all(catalog.is_available(definition, context) for context in contexts):
+                issue("error", "variable_unavailable", f"Variable '{definition.path}' is not available to view '{view.id}'.", source=f"content/{view.text.document}", entity=document.id, field=f"content[{block_index}].content[{node_index}].variableReference")

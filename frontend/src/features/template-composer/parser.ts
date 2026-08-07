@@ -8,7 +8,7 @@ import {
 } from "./telegram-formatting";
 
 const JINJA_FRAGMENT = /({{[\s\S]*?}}|{%[\s\S]*?%}|{#[\s\S]*?#})/g;
-const SIMPLE_CONTEXT_PATH = /^[A-Za-z_]\w*\.[A-Za-z_]\w*$/;
+const SIMPLE_CONTEXT_PATH = /^[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+$/;
 const PLACEHOLDER_PREFIX = "\uE000TGJINJA";
 const PLACEHOLDER_SUFFIX = "\uE001";
 

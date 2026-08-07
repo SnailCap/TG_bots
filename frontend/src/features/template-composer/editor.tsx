@@ -19,7 +19,7 @@ import {
 } from "lucide";
 
 import { ContextAutocomplete, UserIcon } from "./autocomplete";
-import { findContextField, searchContextFields, type ContextFieldDefinition } from "./context-catalog";
+import { findContextField, searchContextFields, SYSTEM_CONTEXT_FIELDS, type ContextFieldDefinition } from "./context-catalog";
 import {
   FormattingDialog,
   type FormattingDialogResult,
@@ -50,9 +50,11 @@ type AutocompleteState = {
 
 export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   document,
+  fields = SYSTEM_CONTEXT_FIELDS,
   onChange,
 }: {
   document: TemplateDocument;
+  fields?: readonly ContextFieldDefinition[];
   onChange(source: string): void;
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -65,7 +67,7 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
   const [autocomplete, setAutocomplete] = useState<AutocompleteState | null>(null);
   const [formatToolbar, setFormatToolbar] = useState<FormattingToolbarState | null>(null);
   const [dialog, setDialog] = useState<FormattingDialogState | null>(null);
-  const suggestions = autocomplete ? searchContextFields(autocomplete.query) : [];
+  const suggestions = autocomplete ? searchContextFields(autocomplete.query, fields) : [];
   const restorePendingCaret = () => {
     const editor = editorRef.current;
     const caret = pendingCaret.current;
@@ -103,9 +105,9 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
 
   useLayoutEffect(() => {
     const editor = editorRef.current;
-    if (editor) renderEditorDocument(editor, document);
+    if (editor) renderEditorDocument(editor, document, fields);
     restorePendingCaret();
-  }, [document]);
+  }, [document, fields]);
 
   useEffect(() => {
     const updateSelectionUi = () => {
@@ -174,7 +176,7 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
     const editorRect = editor.getBoundingClientRect();
     setAutocomplete((current) => ({
       query: trigger.query,
-      activeIndex: Math.min(current?.activeIndex ?? 0, Math.max(searchContextFields(trigger.query).length - 1, 0)),
+      activeIndex: Math.min(current?.activeIndex ?? 0, Math.max(searchContextFields(trigger.query, fields).length - 1, 0)),
       position: {
         left: Math.max(4, Math.min(rect.left - editorRect.left, Math.max(editorRect.width - 272, 4))),
         top: Math.max(36, rect.bottom - editorRect.top + 6),
@@ -421,17 +423,17 @@ export const VisualTemplateEditor = memo(function VisualTemplateEditor({
 });
 
 // Browser editing owns the contenteditable subtree; React only owns the outer editor node.
-function renderEditorDocument(root: HTMLElement, document: TemplateDocument): void {
+function renderEditorDocument(root: HTMLElement, document: TemplateDocument, fields: readonly ContextFieldDefinition[]): void {
   const nodes = document.nodes.length ? document.nodes : [{ type: "text" as const, text: "" }];
   const fragment = root.ownerDocument.createDocumentFragment();
-  nodes.forEach((node, index) => fragment.append(createEditorDomNode(root.ownerDocument, node, [index])));
+  nodes.forEach((node, index) => fragment.append(createEditorDomNode(root.ownerDocument, node, [index], fields)));
   if (nodes.at(-1)?.type !== "text") {
-    fragment.append(createEditorDomNode(root.ownerDocument, { type: "text", text: "" }, [nodes.length]));
+    fragment.append(createEditorDomNode(root.ownerDocument, { type: "text", text: "" }, [nodes.length], fields));
   }
   root.replaceChildren(fragment);
 }
 
-function createEditorDomNode(owner: Document, node: TemplateNode, path: readonly number[]): Node {
+function createEditorDomNode(owner: Document, node: TemplateNode, path: readonly number[], fields: readonly ContextFieldDefinition[]): Node {
   const nodePath = path.join(".");
   if (node.type === "text") {
     const element = owner.createElement("span");
@@ -441,7 +443,7 @@ function createEditorDomNode(owner: Document, node: TemplateNode, path: readonly
     return element;
   }
   if (node.type === "context-token") {
-    const field = findContextField(node.path);
+    const field = findContextField(node.path, fields);
     if (!field) return createUnresolvedDomToken(owner, node.path, node.source ?? `{{ ${node.path} }}`, nodePath);
     const element = createAtomicDomSpan(owner, "context-token", nodePath);
     element.dataset.templateNode = "context-token";
@@ -467,10 +469,10 @@ function createEditorDomNode(owner: Document, node: TemplateNode, path: readonly
     element.append(createDomWarningIcon(owner), createDomTextElement(owner, "code", node.source));
     return element;
   }
-  return createTelegramFormatDomNode(owner, node, path);
+  return createTelegramFormatDomNode(owner, node, path, fields);
 }
 
-function createTelegramFormatDomNode(owner: Document, node: TemplateFormatNode, path: readonly number[]): HTMLElement {
+function createTelegramFormatDomNode(owner: Document, node: TemplateFormatNode, path: readonly number[], fields: readonly ContextFieldDefinition[]): HTMLElement {
   const tag = node.format === "bold" ? "b"
     : node.format === "italic" ? "i"
       : node.format === "underline" ? "u"
@@ -532,7 +534,7 @@ function createTelegramFormatDomNode(owner: Document, node: TemplateFormatNode, 
     return element;
   }
 
-  node.children.forEach((child, index) => element.append(createEditorDomNode(owner, child, [...path, index])));
+  node.children.forEach((child, index) => element.append(createEditorDomNode(owner, child, [...path, index], fields)));
   if (node.format === "expandable-quote") {
     const indicator = createDomTextElement(owner, "span", "Expandable");
     indicator.className = "telegram-expandable-indicator";

@@ -62,7 +62,7 @@ def content_document(*, long: bool = False, variable: bool = False) -> dict[str,
                 "content": [
                     {
                         "type": "variable",
-                        "variableReference": {"path": "user.first_name"},
+                        "variableReference": {"path": "missing.preview_value"},
                         "marks": [{"type": "bold"}],
                     }
                 ],

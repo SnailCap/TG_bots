@@ -2,7 +2,12 @@
 
 from .loader import ProjectLoadError, ProjectLoader
 from .inspection import HandlerSourceInspection, inspect_handler_source
-from .references import HandlerUsage, find_handler_usages
+from .references import (
+    HandlerUsage,
+    VariableUsage,
+    find_handler_usages,
+    find_variable_usages,
+)
 from .models import (
     ActionSpec,
     BotManifest,
@@ -18,6 +23,13 @@ from .models import (
     ScheduleSpec,
     StateSpec,
     ViewSpec,
+    VariableDefinition,
+    VariableOwner,
+    VARIABLE_OWNER_TYPES,
+    VARIABLE_PERSISTENCE,
+    VARIABLE_SOURCES,
+    VARIABLE_TYPES,
+    VARIABLE_UNSET,
 )
 from .validation import (
     ProjectValidationError,
@@ -38,6 +50,7 @@ __all__ = [
     "HandlerInvocation",
     "HandlerSourceInspection",
     "HandlerUsage",
+    "VariableUsage",
     "ProjectDefinition",
     "ProjectLoadError",
     "ProjectLoader",
@@ -45,8 +58,16 @@ __all__ = [
     "ScheduleSpec",
     "StateSpec",
     "ViewSpec",
+    "VariableDefinition",
+    "VariableOwner",
+    "VARIABLE_OWNER_TYPES",
+    "VARIABLE_PERSISTENCE",
+    "VARIABLE_SOURCES",
+    "VARIABLE_TYPES",
+    "VARIABLE_UNSET",
     "load_and_validate_project",
     "validate_project",
     "find_handler_usages",
+    "find_variable_usages",
     "inspect_handler_source",
 ]

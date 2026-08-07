@@ -1,11 +1,12 @@
 import type { ComponentType } from "react";
-import { GitBranch, LayoutGrid, Users } from "lucide-react";
+import { Braces, GitBranch, LayoutGrid, Users } from "lucide-react";
 
 import { GitPage } from "../git/GitPage";
 import { ResourcesPage } from "../resources/ResourcesPage";
 import { UsersPage } from "../users/UsersPage";
+import { VariablesPage } from "../variables/VariablesPage";
 
-export type StudioRouteId = "resources" | "users" | "git";
+export type StudioRouteId = "resources" | "variables" | "users" | "git";
 
 export type StudioRouteDefinition = {
   id: StudioRouteId;
@@ -22,6 +23,13 @@ export const STUDIO_ROUTES = [
     label: "Resources",
     icon: ResourcesIcon,
     page: ResourcesPage,
+  },
+  {
+    id: "variables",
+    path: "/variables",
+    label: "Variables",
+    icon: VariablesIcon,
+    page: VariablesPage,
   },
   {
     id: "users",
@@ -51,6 +59,10 @@ function ResourcesIcon() {
 
 function UsersIcon() {
   return <Users aria-hidden="true" />;
+}
+
+function VariablesIcon() {
+  return <Braces aria-hidden="true" />;
 }
 
 function GitIcon() {

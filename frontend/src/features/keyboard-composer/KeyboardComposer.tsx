@@ -1,12 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MouseEvent } from "react";
 import { createPortal } from "react-dom";
-import { Copy, Keyboard, Pencil, Plus, Trash2 } from "lucide-react";
+import { Copy, EllipsisVertical, Keyboard, Pencil, Plus, Trash2 } from "lucide-react";
 
 import { actionFor, type ActionOptions, type ButtonSpec, type HandlerCreateOptions, type ViewSpec } from "../../domain/project";
 import { useInertialDragPreview } from "../../shared/lib/useInertialDragPreview";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { FormField, FormGrid } from "../../shared/ui/Form";
 import { ActionEditor, type HandlerActions, VIEW_BUTTON_ACTION_TYPES } from "../action-editor/ActionEditor";
+import { SYSTEM_CONTEXT_FIELDS, type ContextFieldDefinition } from "../template-composer/context-catalog";
+import { VariableTextInput } from "../template-composer/VariableTextInput";
 
 type ButtonLocation = { row: number; button: number };
 type DropLocation = { row: number; index: number };
@@ -24,6 +26,7 @@ export function KeyboardComposer({
   options,
   handlerActions,
   createOptions,
+  variableFields = SYSTEM_CONTEXT_FIELDS,
   onChange,
 }: {
   viewId: string;
@@ -31,6 +34,7 @@ export function KeyboardComposer({
   options: ActionOptions;
   handlerActions: HandlerActions;
   createOptions?: HandlerCreateOptions;
+  variableFields?: readonly ContextFieldDefinition[];
   onChange(keyboard: ViewSpec["keyboard"]): void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -135,6 +139,19 @@ export function KeyboardComposer({
     onChange(next);
     setSelectedId(copy.id);
   };
+  const duplicateRow = (rowIndex: number) => {
+    const source = rows[rowIndex];
+    if (!source) return;
+    const usedIds = [...existingIds];
+    const copy = source.map((button) => {
+      const id = nextButtonId(viewId, usedIds);
+      usedIds.push(id);
+      return { ...structuredClone(button), id };
+    });
+    copy.forEach((button) => pendingButtonEntranceIdsRef.current.add(button.id));
+    onChange([...rows.slice(0, rowIndex + 1), copy, ...rows.slice(rowIndex + 1)]);
+    setSelectedId(copy[0]?.id ?? null);
+  };
   const deleteButton = (location: ButtonLocation) => {
     const deletedId = rows[location.row]?.[location.button]?.id;
     const rowRemains = (rows[location.row]?.length ?? 0) > 1;
@@ -207,7 +224,7 @@ export function KeyboardComposer({
       ]
     : context?.kind === "row"
       ? [
-          { id: "add-button", label: "Add button", icon: <Icon name="plus" />, onSelect: () => addButton(context.row) },
+          { id: "duplicate-row", label: "Duplicate row", icon: <Icon name="copy" />, onSelect: () => duplicateRow(context.row) },
           { id: "delete-row", label: "Delete row", icon: <Icon name="trash" />, danger: true, onSelect: () => deleteRow(context.row) },
         ]
       : context?.kind === "canvas"
@@ -260,8 +277,11 @@ export function KeyboardComposer({
                 <div className={dropTarget?.row === rowIndex && dropTarget.index === row.length ? "keyboard-composer__button-slot keyboard-composer__append-slot keyboard-composer__button-slot--active" : "keyboard-composer__button-slot keyboard-composer__append-slot"}>
                   <button type="button" className="keyboard-composer__append" aria-label={`Add button to row ${rowIndex + 1}`} title="Add button" onClick={() => addButton(rowIndex)}><Icon name="plus" /></button>
                 </div>
-                <div className="keyboard-composer__row-divider" aria-hidden="true" />
-                <div className="keyboard-composer__row-delete-control"><button type="button" className="keyboard-composer__icon-button keyboard-composer__row-delete" aria-label={`Delete row ${rowIndex + 1}`} title="Delete row" onClick={() => deleteRow(rowIndex)}><Icon name="trash" /></button></div>
+                <div className="keyboard-composer__row-delete-control"><button type="button" className="keyboard-composer__row-menu" aria-label={`Row actions for row ${rowIndex + 1}`} title="Row actions" onClick={(event) => {
+                  event.stopPropagation();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setContext({ kind: "row", row: rowIndex, x: rect.right - 178, y: rect.bottom + 4 });
+                }}><Icon name="more" /></button></div>
                 </div>
           </div>)}
         </div>
@@ -274,7 +294,7 @@ export function KeyboardComposer({
               <div className="keyboard-composer__settings-divider" />
               <FormGrid width="standard" className="keyboard-composer__form">
                 <FormField label="Label" layout="stacked">
-                  {(controlProps) => <input {...controlProps} ref={labelInputRef} aria-label="Button text" value={selectedButton.text} placeholder="Button label" onChange={(event) => updateButton(selected, { ...selectedButton, text: event.target.value })} />}
+                  {(controlProps) => <VariableTextInput {...controlProps} ref={labelInputRef} aria-label="Button text" fields={variableFields} value={selectedButton.text} placeholder="Button label" onValueChange={(text) => updateButton(selected, { ...selectedButton, text })} />}
                 </FormField>
                 <ActionEditor action={selectedButton.action} bare options={options} scope={{ expectedKind: "button", placement: "view_button" }} handlerActions={handlerActions} createOptions={selectedCreateOptions} onChange={(action) => updateButton(selected, { ...selectedButton, action })} />
               </FormGrid>
@@ -338,12 +358,13 @@ function buttonIssue(button: ButtonSpec): string | null {
   return null;
 }
 
-function Icon({ name }: { name: "plus" | "trash" | "edit" | "copy" }) {
+function Icon({ name }: { name: "plus" | "trash" | "edit" | "copy" | "more" }) {
   const icons = {
     plus: Plus,
     trash: Trash2,
     edit: Pencil,
     copy: Copy,
+    more: EllipsisVertical,
   };
   const Glyph = icons[name];
   return <Glyph aria-hidden="true" />;

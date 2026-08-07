@@ -19,6 +19,7 @@ type OpenViewTextEditorOptions = {
   setDirty: Dispatch<SetStateAction<boolean>>;
   setBusy: Dispatch<SetStateAction<boolean>>;
   setSaving: Dispatch<SetStateAction<boolean>>;
+  saveCurrentBeforeTransition(): Promise<void>;
   clearMessages(): void;
   report(error: unknown): void;
 };
@@ -37,6 +38,7 @@ export function useOpenViewTextEditor({
   setDirty,
   setBusy,
   setSaving,
+  saveCurrentBeforeTransition,
   clearMessages,
   report,
 }: OpenViewTextEditorOptions) {
@@ -45,20 +47,15 @@ export function useOpenViewTextEditor({
     const currentTabs = editor && activeTabKey
       ? tabs.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab)
       : [...tabs];
-    const existing = currentTabs.find((tab) => tab.key === tabKey);
-    if (existing?.editor.kind === "view-text") {
-      setTabs(currentTabs);
-      setActiveTabKey(tabKey);
-      setSelection({ kind: "view", id: viewId });
-      setEditor(existing.editor);
-      setDirty(existing.dirty);
-      clearMessages();
-      return;
-    }
-
-    setTabs(currentTabs);
+    if (tabKey === activeTabKey) return;
     setBusy(true);
     void (async () => {
+      const currentViewId = editor && (editor.kind === "view" || editor.kind === "view-text")
+        ? editor.detail.id
+        : null;
+      if (dirty && currentViewId !== viewId) await saveCurrentBeforeTransition();
+
+      const existing = currentTabs.find((tab) => tab.key === tabKey);
       const sibling = currentTabs.find((tab) =>
         tab.editor.kind === "view" && tab.editor.detail.id === viewId,
       );
@@ -71,6 +68,19 @@ export function useOpenViewTextEditor({
         : sibling?.editor.kind === "view"
           ? sibling.editor.detail
           : await api.getView(projectId, viewId);
+      if (existing?.editor.kind === "view-text") {
+        setTabs((current) => savedSibling?.editor.kind === "view"
+          ? current.map((tab) => tab.key === sibling?.key
+            ? { ...tab, editor: savedSibling.editor, dirty: false }
+            : tab)
+          : current);
+        setActiveTabKey(tabKey);
+        setSelection({ kind: "view", id: viewId });
+        setEditor(existing.editor);
+        setDirty(existing.dirty);
+        clearMessages();
+        return;
+      }
       const nextEditor = viewTextEditorFromDetail(detail);
       const nextDirty = nextEditor.version !== nextEditor.savedVersion;
       setActiveTabKey(tabKey);
@@ -106,6 +116,7 @@ export function useOpenViewTextEditor({
     setSelection,
     setSaving,
     setTabs,
+    saveCurrentBeforeTransition,
     tabs,
   ]);
 }

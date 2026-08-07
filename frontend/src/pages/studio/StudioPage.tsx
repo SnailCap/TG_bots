@@ -41,7 +41,7 @@ import {
 import { useLocalProjectRun } from "./useLocalProjectRun";
 import { useProjectSettings } from "./useProjectSettings";
 import { useOpenViewTextEditor } from "./useOpenViewTextEditor";
-import { dirtyViewModeConflicts, isDirtyViewModeSwitch, resourceHasDirtyTab } from "./studio-tab-guards";
+import { dirtyViewModeConflicts, resourceHasDirtyTab } from "./studio-tab-guards";
 import { useStudioHandlers } from "./useStudioHandlers";
 import { useStudioKeyboardShortcuts } from "./useStudioKeyboardShortcuts";
 import { useStudioLayout } from "./useStudioLayout";
@@ -65,6 +65,10 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const [previewOpen, setPreviewOpen] = useState(false);
   const editorRef = useRef(editor);
   editorRef.current = editor;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  const saveInFlightRef = useRef<Promise<void> | null>(null);
+  const saveRef = useRef<(rethrow?: boolean) => Promise<void>>(async () => undefined);
   const nextNewTabId = useRef(1);
   const firstContentKey = useRef<string | null>(null);
   if (!firstContentKey.current && activeTabKey) firstContentKey.current = activeTabKey;
@@ -95,6 +99,14 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const clearError = useCallback(() => {
     setError("");
     setConflict(false);
+  }, []);
+  const saveCurrentBeforeTransition = useCallback(async () => {
+    if (!editorRef.current || !dirtyRef.current) return;
+    if (saveInFlightRef.current) {
+      await saveInFlightRef.current;
+      return;
+    }
+    await saveRef.current(true);
   }, []);
   const { undoAvailable, pushUndo, performUndo } = useStudioUndo({ busy, setBusy, clearError, report });
 
@@ -133,6 +145,7 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     dirty,
     busy,
     saving,
+    saveBeforeRun: saveCurrentBeforeTransition,
     setTerminalOpen,
     setNotice,
     setError,
@@ -160,30 +173,36 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const select = useCallback((next: Selection) => {
     const tabKey = selectionTabKey(next);
     const existing = tabs.find((tab) => tab.key === tabKey);
-    if (existing) {
-      if (isDirtyViewModeSwitch(editor, dirty, existing.editor)) {
-        setNotice("Save this view text (or wait for autosave) before switching editor modes.");
+    if (tabKey === activeTabKey) return;
+    const wasDirty = dirty;
+    const continueSelection = () => {
+      if (existing) {
+        setActiveTabKey(tabKey);
+        setEditor(existing.editor);
+        setSelection(selectionForEditor(existing.editor));
+        setDirty(existing.dirty);
+        setNotice("");
+        setError("");
+        setConflict(false);
         return;
       }
+      if (!wasDirty && editor && activeTabKey) setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
       setActiveTabKey(tabKey);
-      setEditor(existing.editor);
-      setSelection(selectionForEditor(existing.editor));
-      setDirty(existing.dirty);
-      setNotice("");
-      setError("");
-      setConflict(false);
+      setSelection(next);
+      setBusy(true);
+      void loadSelection(next, tabKey).catch(report).finally(() => setBusy(false));
+    };
+    if (!dirty || !editor) {
+      continueSelection();
       return;
     }
-    if (editor && activeTabKey) setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
-    setActiveTabKey(tabKey);
-    setSelection(next);
-    setBusy(true);
-    void loadSelection(next, tabKey).catch(report).finally(() => setBusy(false));
-  }, [activeTabKey, dirty, editor, loadSelection, report, tabs]);
+    void saveCurrentBeforeTransition().then(continueSelection).catch(() => undefined);
+  }, [activeTabKey, dirty, editor, loadSelection, report, saveCurrentBeforeTransition, tabs]);
 
   const openViewTextEditor = useOpenViewTextEditor({
     api, projectId: workspace.project_id, tabs, activeTabKey, editor, dirty,
     setTabs, setActiveTabKey, setEditor, setSelection, setDirty, setBusy, setSaving,
+    saveCurrentBeforeTransition,
     clearMessages: () => { setNotice(""); clearError(); }, report,
   });
 
@@ -235,7 +254,13 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
   const previewModel = useMemo(() => createTelegramPreviewModel(workspace, previewEditor(editor)), [editor, workspace]);
 
   const addResource = async (kind: CreatableResource) => {
-    if (editor && activeTabKey) setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
+    const wasDirty = dirty;
+    try {
+      await saveCurrentBeforeTransition();
+    } catch {
+      return;
+    }
+    if (!wasDirty && editor && activeTabKey) setTabs((current) => current.map((tab) => tab.key === activeTabKey ? { ...tab, editor, dirty } : tab));
     if (kind === "handler") {
       const nextEditor: Exclude<EditorState, null> = { kind: "new-handler" };
       const tabKey = `new:${kind}:${nextNewTabId.current++}`;
@@ -278,60 +303,83 @@ export function StudioPage({ api, apiBaseUrl, initialWorkspace, recentProjects =
     const tab = tabs.find((item) => item.key === tabKey);
     if (!tab) return;
     if (tabKey === activeTabKey) return;
-    if (isDirtyViewModeSwitch(editor, dirty, tab.editor)) {
-      setNotice("Save this view text (or wait for autosave) before switching editor modes.");
-      return;
-    }
-    if (editor && activeTabKey) setTabs((current) => current.map((item) => item.key === activeTabKey ? { ...item, editor, dirty } : item));
-    setActiveTabKey(tabKey);
-    setEditor(tab.editor);
-    setDirty(tab.dirty);
-    setNotice("");
-    setError("");
-    setConflict(false);
-  }, [activeTabKey, dirty, editor, tabs]);
-
-  const save = async () => {
-    if (!editor) return;
-    const editorToSave = editor;
-    const tabKeyToSave = activeTabKey;
-    setBusy(true);
-    setSaving(true);
-    try {
-      const { editor: savedEditor, selection: nextSelection } = await saveEditor(api, workspace.project_id, editorToSave, selection);
-      const nextWorkspace = await api.describe(workspace.project_id);
-      setWorkspace(nextWorkspace);
-      const nextTabKey = editorTabKey(savedEditor);
-      setTabs((current) => current.map((tab) => {
-        if (tab.key === tabKeyToSave) {
-          const reconciled = reconcileSavedEditor(tab.editor, savedEditor);
-          return { ...tab, key: nextTabKey, ...reconciled };
-        }
-        if (savedEditor.kind === "view-text"
-          && tab.editor.kind === "view"
-          && tab.editor.detail.id === savedEditor.detail.id
-          && !tab.dirty) {
-          return { ...tab, editor: { ...tab.editor, detail: savedEditor.detail } };
-        }
-        return tab;
-      }));
-      if (tabKeyToSave && activeTabKeyRef.current === tabKeyToSave) {
-        const reconciled = reconcileSavedEditor(editorRef.current, savedEditor);
-        setActiveTabKey(nextTabKey);
-        setEditor(reconciled.editor);
-        setSelection(nextSelection);
-        setDirty(reconciled.dirty);
-      }
+    const wasDirty = dirty;
+    const continueActivation = () => {
+      if (!wasDirty && editor && activeTabKey) setTabs((current) => current.map((item) => item.key === activeTabKey ? { ...item, editor, dirty } : item));
+      setActiveTabKey(tabKey);
+      setEditor(tab.editor);
+      setDirty(tab.dirty);
       setNotice("");
       setError("");
       setConflict(false);
+    };
+    if (!dirty || !editor) {
+      continueActivation();
+      return;
+    }
+    void saveCurrentBeforeTransition().then(continueActivation).catch(() => undefined);
+  }, [activeTabKey, dirty, editor, saveCurrentBeforeTransition, tabs]);
+
+  const save = async (rethrow = false) => {
+    if (!editor) return;
+    const existingSave = saveInFlightRef.current;
+    if (existingSave) {
+      try {
+        await existingSave;
+      } catch (caught) {
+        if (rethrow) throw caught;
+      }
+      return;
+    }
+    const editorToSave = editor;
+    const tabKeyToSave = activeTabKey;
+    const operation = (async () => {
+      setBusy(true);
+      setSaving(true);
+      try {
+        const { editor: savedEditor, selection: nextSelection } = await saveEditor(api, workspace.project_id, editorToSave, selection);
+        const nextWorkspace = await api.describe(workspace.project_id);
+        setWorkspace(nextWorkspace);
+        const nextTabKey = editorTabKey(savedEditor);
+        setTabs((current) => current.map((tab) => {
+          if (tab.key === tabKeyToSave) {
+            const reconciled = reconcileSavedEditor(tab.editor, savedEditor);
+            return { ...tab, key: nextTabKey, ...reconciled };
+          }
+          if (savedEditor.kind === "view-text"
+            && tab.editor.kind === "view"
+            && tab.editor.detail.id === savedEditor.detail.id
+            && !tab.dirty) {
+            return { ...tab, editor: { ...tab.editor, detail: savedEditor.detail } };
+          }
+          return tab;
+        }));
+        if (tabKeyToSave && activeTabKeyRef.current === tabKeyToSave) {
+          const reconciled = reconcileSavedEditor(editorRef.current, savedEditor);
+          setActiveTabKey(nextTabKey);
+          setEditor(reconciled.editor);
+          setSelection(nextSelection);
+          setDirty(reconciled.dirty);
+        }
+        setNotice("");
+        setError("");
+        setConflict(false);
+      } finally {
+        setSaving(false);
+        setBusy(false);
+      }
+    })();
+    saveInFlightRef.current = operation;
+    try {
+      await operation;
     } catch (caught) {
       report(caught);
+      if (rethrow) throw caught;
     } finally {
-      setSaving(false);
-      setBusy(false);
+      if (saveInFlightRef.current === operation) saveInFlightRef.current = null;
     }
   };
+  saveRef.current = save;
 
   const saveAll = async () => {
     const currentTabs = tabsRef.current.map((tab) => tab.key === activeTabKeyRef.current && editorRef.current

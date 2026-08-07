@@ -113,13 +113,15 @@ Normalization сортирует marks в стабильном порядке, �
 
 ## Variables и Jinja
 
+В Studio каталог переменных доступен отдельным экраном `Variables` в левом rail. Внутри resource explorer тот же экран открывается из вложенной настройки `Variables` у view/flow/state либо через контекстное меню handler; scoped-режим показывает только значения, доступные выбранному ресурсу, но сохраняет общий `resources/variables.json`. Built-in Telegram fields отображаются только для чтения, custom definitions можно добавлять и сохранять с revision-aware API.
+
 Rich editor не поддерживает второй hard-coded список переменных. Picker переиспользует существующий context catalog из Template Composer. Запись содержит:
 
-- `path` — единственная runtime identity, dotted Jinja identifier вроде `user.first_name`;
-- `fieldId` — optional stable Studio catalog ID;
+- `fieldId` — stable runtime identity definition, если переменная известна каталогу;
+- `path` — сохранённый presentation/Jinja path вроде `user.first_name` и fallback для legacy content;
 - `source` — optional точное legacy-написание для lossless round-trip.
 
-Компилятор разрешает только validated `path` через Jinja `StrictUndefined`. Он не выполняет `source` как произвольное выражение. В production `FlowEngine` передаёт session variables и объект `user`; preview строит вложенный mapping из test values того же каталога. Поэтому новый context field добавляется в общий catalog и runtime context adapter, а не отдельным условием в rich editor.
+Компилятор не выполняет `source` как произвольное выражение. Core resolver сначала ищет `fieldId`, проверяет доступность definition текущему view и подставляет значение по актуальному path. После переименования сохранённый path остаётся alias; path-only legacy nodes разрешаются через current/legacy paths. В production `FlowEngine` объединяет свободный session state, managed resource values и core user fields; preview использует example/default из того же resource-scoped каталога. Поэтому новый context field добавляется в `resources/variables.json`, а не отдельным условием в rich editor.
 
 Простой legacy text и выражения вида `{{ dotted.path }}` мигрируют в структурные nodes. HTML, statements, filters, comments, неизвестные или неоднозначные expressions сохраняются целиком в `legacyTemplate`, пока lossless migration не сможет доказать эквивалентность. При компиляции такого блока Jinja values HTML-экранируются, поддерживаемая Telegram HTML-разметка переводится в entities, unsafe links удаляются до plain text, а неизвестная разметка сохраняется как текст с warning.
 

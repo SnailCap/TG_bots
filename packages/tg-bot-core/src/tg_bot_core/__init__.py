@@ -16,6 +16,20 @@ from .sdk import (
     TaskContext,
     UserInfo,
 )
+from .variables import (
+    CORE_VARIABLE_DEFINITIONS,
+    MissingVariableError,
+    ResourceVariableContext,
+    UnknownVariableError,
+    VariableAccessError,
+    VariableCatalog,
+    VariableError,
+    VariableRef,
+    VariableTypeError,
+    VariableValues,
+    generate_variable_module,
+    preview_variable_context,
+)
 from .services import ServiceProvider
 from .transport import BotTransport, OutboundButton, OutboundMessage
 
@@ -40,6 +54,18 @@ __all__ = [
     "OutboundMessage",
     "ServiceProvider",
     "StateValues",
+    "CORE_VARIABLE_DEFINITIONS",
+    "MissingVariableError",
+    "ResourceVariableContext",
+    "UnknownVariableError",
+    "VariableAccessError",
+    "VariableCatalog",
+    "VariableError",
+    "VariableRef",
+    "VariableTypeError",
+    "VariableValues",
+    "generate_variable_module",
+    "preview_variable_context",
     "TaskContext",
     "TelegramMessageEntity",
     "UserInfo",

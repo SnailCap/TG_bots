@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { CalendarDays, ChevronDown, CircleDot, FileText, LayoutGrid, Terminal, Workflow, Zap } from "lucide-react";
+import { Braces, CalendarDays, ChevronDown, CircleDot, FileText, LayoutGrid, Terminal, Workflow, Zap } from "lucide-react";
 
-import type { FlowSummary, HandlerKind, Selection, Workspace } from "../../domain/project";
+import type { FlowSummary, HandlerKind, Selection, VariableResourceContext, Workspace } from "../../domain/project";
 import { useResourceDraggable, type DraggableResource } from "../../features/resource-dnd";
 import { ContextMenu, type ContextMenuItem } from "../../shared/ui/ContextMenu";
 import { ResourceIcon } from "../../shared/ui/ResourceIcon";
@@ -12,12 +12,13 @@ export type ExplorerDraft = { kind: CreatableResource; label: string };
 type ResourceSection = "views" | "flows" | "handlers" | "commands" | "schedules";
 type ContextTarget = { x: number; y: number; kind?: CreatableResource; selection?: Selection } | null;
 
-export function ProjectExplorer({ workspace, selection, draft, onSelect, onOpenViewTextEditor = () => undefined, onAdd, onRename = () => undefined, onDelete = () => undefined }: {
+export function ProjectExplorer({ workspace, selection, draft, onSelect, onOpenViewTextEditor = () => undefined, onOpenVariables = () => undefined, onAdd, onRename = () => undefined, onDelete = () => undefined }: {
   workspace: Workspace;
   selection: Selection | null;
   draft?: ExplorerDraft | null;
   onSelect(selection: Selection): void;
   onOpenViewTextEditor?(viewId: string, displayName: string): void;
+  onOpenVariables?(context: VariableResourceContext, displayName: string): void;
   onAdd(kind: CreatableResource): void;
   onRename?(selection: Selection, name: string): Promise<void> | void;
   onDelete?(selection: Selection): void;
@@ -93,6 +94,11 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onOpenV
     const selected = context.selection;
     contextItems.push({ id: "delete", label: "Delete", danger: true, onSelect: () => onDelete(selected) });
   }
+  if (context?.selection) {
+    const selected = context.selection;
+    const variableContext = variableContextForSelection(selected);
+    if (variableContext) contextItems.unshift({ id: "variables", label: "Variables", onSelect: () => onOpenVariables(variableContext, resourceName(selected as Exclude<Selection, { kind: "commands" }>, workspace)) });
+  }
 
   const item = (next: Selection, title: string, handlerKind?: HandlerKind) => <ResourceButton key={`${next.kind}:${title}`} active={selectionKeyEquals(selection, next)} selection={next} title={title} editing={selectionKeyEquals(renaming, next)} renameValue={renameValue} resource={dragResource(next, title, handlerKind)} onRenameChange={setRenameValue} onRenameFinish={() => finishRename(next)} onRenameKeyDown={(event) => { if (event.key === "Escape") { cancelRename.current = true; event.currentTarget.blur(); } if (event.key === "Enter") event.currentTarget.blur(); }} onClick={() => onSelect(next)} onContextMenu={(event) => { event.stopPropagation(); onSelect(next); openContext(event, { selection: next }); }} />;
   return <nav className="explorer explorer--ide" aria-label="Project resources" onContextMenu={(event) => { if (event.target === event.currentTarget) openContext(event, { kind: "view" }); }}>
@@ -120,6 +126,7 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onOpenV
           openContext(event, { selection: { kind: "view", id: view.id } });
         }}
         onOpenTextEditor={() => onOpenViewTextEditor(view.id, view.name ?? view.id)}
+        onOpenVariables={() => onOpenVariables({ resourceType: "view", resourceId: view.id }, view.name ?? view.id)}
         open={openViews.has(view.id)}
         onToggle={() => toggleView(view.id)}
       />)}
@@ -148,6 +155,7 @@ export function ProjectExplorer({ workspace, selection, draft, onSelect, onOpenV
             onSelect({ kind: "flow", id: flow.id });
             openContext(event, { selection: { kind: "flow", id: flow.id } });
           }}
+          onOpenVariables={() => onOpenVariables({ resourceType: "flow", resourceId: flow.id }, flow.name ?? flow.id)}
           open={openFlows.has(flow.id)}
           onToggle={() => toggleFlow(flow.id)}
         />
@@ -181,6 +189,7 @@ function FlowResource({
   onRenameKeyDown,
   onClick,
   onContextMenu,
+  onOpenVariables,
   open,
   onToggle,
 }: {
@@ -193,6 +202,7 @@ function FlowResource({
   onRenameKeyDown(event: KeyboardEvent<HTMLInputElement>): void;
   onClick(): void;
   onContextMenu(event: MouseEvent): void;
+  onOpenVariables(context: VariableResourceContext, displayName: string): void;
   open: boolean;
   onToggle(): void;
 }) {
@@ -227,7 +237,11 @@ function FlowResource({
           </button>}
     </ExplorerTreeRow>
     <ExplorerTreeGroup id={contentId} open={open}>
-      {flow.states.map((stateId) => <ExplorerTreeLeaf key={stateId} depth={1} icon={<CircleDot />}>{stateId}</ExplorerTreeLeaf>)}
+      {flow.states.map((stateId) => <span key={stateId} className="explorer-tree__state-group">
+        <ExplorerTreeLeaf depth={1} icon={<CircleDot />}>{stateId}</ExplorerTreeLeaf>
+        <ExplorerTreeLeaf depth={2} icon={<Braces />} ariaLabel={`Open variables for ${flow.name ?? flow.id}.${stateId}`} onClick={() => onOpenVariables({ resourceType: "state", resourceId: `${flow.id}.${stateId}`, flowId: flow.id, stateId }, `${flow.name ?? flow.id}.${stateId}`)}>Variables</ExplorerTreeLeaf>
+      </span>)}
+      <ExplorerTreeLeaf depth={1} icon={<Braces />} ariaLabel={`Open variables for ${flow.name ?? flow.id}`} onClick={() => onOpenVariables({ resourceType: "flow", resourceId: flow.id }, flow.name ?? flow.id)}>Variables</ExplorerTreeLeaf>
     </ExplorerTreeGroup>
   </div>;
 }
@@ -243,6 +257,7 @@ function ViewResource({
   onClick,
   onContextMenu,
   onOpenTextEditor,
+  onOpenVariables,
   open,
   onToggle,
 }: {
@@ -256,6 +271,7 @@ function ViewResource({
   onClick(): void;
   onContextMenu(event: MouseEvent): void;
   onOpenTextEditor(): void;
+  onOpenVariables(): void;
   open: boolean;
   onToggle(): void;
 }) {
@@ -291,6 +307,7 @@ function ViewResource({
     </ExplorerTreeRow>
     <ExplorerTreeGroup id={contentId} open={open}>
       <ExplorerTreeLeaf depth={1} icon={<FileText />} ariaLabel={`Open text editor for ${view.name ?? view.id}`} onClick={onOpenTextEditor}>Text editor</ExplorerTreeLeaf>
+      <ExplorerTreeLeaf depth={1} icon={<Braces />} ariaLabel={`Open variables for ${view.name ?? view.id}`} onClick={onOpenVariables}>Variables</ExplorerTreeLeaf>
     </ExplorerTreeGroup>
   </div>;
 }
@@ -369,4 +386,11 @@ function selectionKeyEquals(left: Selection | null, right: Selection): boolean {
   if (left.kind === "commands" || right.kind === "commands") return left.kind === right.kind;
   if (left.kind === "command" && right.kind === "command") return left.name === right.name;
   return "id" in left && "id" in right && left.id === right.id;
+}
+
+function variableContextForSelection(selection: Selection): VariableResourceContext | null {
+  if (selection.kind === "view") return { resourceType: "view", resourceId: selection.id };
+  if (selection.kind === "flow") return { resourceType: "flow", resourceId: selection.id };
+  if (selection.kind === "handler") return { resourceType: "handler", resourceId: selection.id };
+  return null;
 }

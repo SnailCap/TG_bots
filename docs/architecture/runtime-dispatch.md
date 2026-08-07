@@ -45,8 +45,10 @@ Studio обращается к этой таблице через `SqliteStore` 
 Session содержит:
 
 ```text
-flow_id | state_id | view_id | variables | status | revision
+flow_id | state_id | view_id | variables | resource_variables | resource_instance_id | status | revision
 ```
+
+`variables` остаётся свободным состоянием `ctx.state`. `resource_variables` — отдельный typed value store, ключи которого включают persistence, owner, resource instance и stable variable ID. SQLite migration добавляет оба новых столбца к существующей v3 database без переписывания старых session values.
 
 Statuses: `idle`, `active`, `finished`, `cancelled`, `failed`. Save использует optimistic `revision`. При `SessionConflict` приложение повторно загружает session и один раз повторяет весь dispatch; второй conflict выходит ошибкой.
 
@@ -88,7 +90,7 @@ Unknown commands не превращаются в ordinary messages. Active stat
 
 ## `/start`
 
-- `start.policy = reset`: flow всегда создаётся заново, variables сбрасываются в `{}`.
+- `start.policy = reset`: flow всегда создаётся заново, `variables` сбрасываются в `{}`, создаётся новый `resource_instance_id`, а values прошлого resource execution удаляются.
 - `start.policy = resume`: если session `active`, runtime только показывает current view и не вызывает `on_start`/`on_enter`; иначе запускает start flow заново.
 
 Registered command `/start` запрещён validator, поэтому встроенная semantics однозначна.
@@ -158,6 +160,8 @@ sequenceDiagram
 
 Context type выбирается trigger kind. Interactive context не содержит `BotApp`, store или transport. State начинается как копия session variables. Изменения через `ctx.state` объединяются с `HandlerResult.values`; result values имеют приоритет. После JSON-serializability check полученная session передаётся следующей action/checkpoint.
 
+Тот же interactive context получает `ctx.vars`. API `get/has/set/unset/list` сначала разрешает stable `VariableRef`, затем проверяет owner scope, writable/source, declared type и JSON-serializability. Core variables read-only. Handler не получает raw variable store; после успешного вызова runtime сохраняет только контролируемый snapshot. `TaskContext` не имеет user/session resource variables.
+
 `HandlerExecutor` требует экземпляр `HandlerResult`, разрешает только `success` и binding `outcomes`, а exception custom-кода оборачивает в `HandlerExecutionError`. Startup validation требует explicit route для `success` и каждого declared outcome во всех invocations. Named outcome без route на runtime является ошибкой.
 
 ## Rendering и callbacks
@@ -167,7 +171,9 @@ Catalog выбирает source по `view.text`:
 - без `document` рендерит прежний inline/template Jinja с `StrictUndefined`;
 - с `document` вызывает Content Engine и получает один или несколько `CompiledTelegramMessage(text, entities)`.
 
-В обоих случаях variables включают session state и `user` mapping. Structured compiler разрешает typed variable только по validated dotted path, считает entity offsets/lengths в UTF-16 units и по умолчанию безопасно разбивает результат длиннее 4096 units. PTB получает готовые entities без HTML/Markdown parse mode. Compile errors становятся `CatalogError` и проходят через существующую flow error boundary; warnings логируются с view ID и code.
+В обоих случаях renderer строит context тем же resolver, что и `ctx.vars`: свободный session state, доступные managed values, defaults и read-only core `user.*`. Managed values перекрывают совпавший presentation path, но не попадают обратно в `ctx.state`. Structured reference сначала разрешается по stable `fieldId`; сохранённый старый `path` получает alias к текущему definition path. Legacy template без `fieldId` продолжает работать через current/`legacyPaths`. Required value без default приводит к явной ошибке, optional missing path остаётся `StrictUndefined` при фактическом обращении.
+
+Structured compiler считает entity offsets/lengths в UTF-16 units и по умолчанию безопасно разбивает результат длиннее 4096 units. Button labels рендерятся тем же Jinja context. PTB получает готовые entities без HTML/Markdown parse mode. Compile errors становятся `CatalogError` и проходят через существующую flow error boundary; warnings логируются с view ID и code.
 
 При нескольких chunks runtime отправляет их последовательно. Keyboard прикрепляется только к последнему message, чтобы callbacks соответствовали полностью показанному view; callback-driven edit применяется к первому chunk, а последующие всегда отправляются как новые messages. Подробный document/compiler contract описан в [Rich Text Content Editor](../studio/content-editor.md).
 

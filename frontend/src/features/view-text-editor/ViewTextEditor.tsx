@@ -29,6 +29,8 @@ import {
   type SendPreviewResult,
 } from "./TelegramCompiledPreview";
 import "./view-text-editor.css";
+import { SYSTEM_CONTEXT_FIELDS, type ContextFieldDefinition } from "../template-composer/context-catalog";
+import { VariableFieldsContext } from "../template-composer/variable-fields-context";
 
 export type RichEditorSaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -42,6 +44,7 @@ export type ViewTextEditorProps = {
   onSendPreview?(chatId: string): Promise<SendPreviewResult>;
   onSaveRetry?(): void;
   customEmojiAdapter?: CustomEmojiEditorAdapter;
+  variableFields?: readonly ContextFieldDefinition[];
 };
 
 type OpenPanel = "variables" | "emoji" | "link" | null;
@@ -56,6 +59,7 @@ export function ViewTextEditor({
   onSendPreview,
   onSaveRetry,
   customEmojiAdapter,
+  variableFields = SYSTEM_CONTEXT_FIELDS,
 }: ViewTextEditorProps) {
   const [openPanel, setOpenPanel] = useState<OpenPanel>(null);
   const documentRef = useRef(document);
@@ -134,6 +138,7 @@ export function ViewTextEditor({
   const togglePanel = (panel: Exclude<OpenPanel, null>) => setOpenPanel((current) => current === panel ? null : panel);
 
   return (
+    <VariableFieldsContext.Provider value={variableFields}>
     <CustomEmojiStateProvider adapter={customEmojiAdapter}>
       <section className="view-text-editor" aria-label="Rich text editor" aria-busy={saveState === "saving" || undefined}>
       <div className="view-rich-editor__toolbar-shell">
@@ -149,7 +154,7 @@ export function ViewTextEditor({
           />
         ) : <div className="view-rich-toolbar view-rich-toolbar--loading" aria-label="Loading editor" />}
         {editor ? <>
-          <VariablePickerPopover editor={editor} open={openPanel === "variables"} onClose={() => setOpenPanel(null)} />
+          <VariablePickerPopover fields={variableFields} editor={editor} open={openPanel === "variables"} onClose={() => setOpenPanel(null)} />
           <EmojiPickerPopover editor={editor} open={openPanel === "emoji"} onClose={() => setOpenPanel(null)} adapter={customEmojiAdapter} />
           <LinkEditorPopover editor={editor} open={openPanel === "link"} onClose={() => setOpenPanel(null)} />
         </> : null}
@@ -170,7 +175,7 @@ export function ViewTextEditor({
             />
           </> : <div className="view-rich-editor__loading">Preparing editor…</div>}
         </section>
-        <TelegramCompiledPreview result={compileResult} values={previewValues} onValuesChange={onPreviewValuesChange} onSendPreview={onSendPreview} />
+        <TelegramCompiledPreview fields={variableFields} result={compileResult} values={previewValues} onValuesChange={onPreviewValuesChange} onSendPreview={onSendPreview} />
       </div>
 
       <footer className="view-rich-editor__statusbar">
@@ -189,6 +194,7 @@ export function ViewTextEditor({
       </footer>
       </section>
     </CustomEmojiStateProvider>
+    </VariableFieldsContext.Provider>
   );
 }
 

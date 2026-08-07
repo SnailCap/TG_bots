@@ -109,8 +109,8 @@ function StudioShell({ context }: { context: StudioPageContext }) {
             className={localRunActive ? "topbar__run topbar__run--stop" : "topbar__run"}
             aria-label={localRunActive ? "Stop local bot" : "Run local bot"}
             aria-busy={startingLocalRun || stoppingLocalRun || undefined}
-            disabled={!canRunLocalProject || startingLocalRun || stoppingLocalRun || (!localRunActive && (dirty || busy || saving))}
-            title={!canRunLocalProject ? "Local run is available in the desktop Studio application" : localRunActive ? `Stop local bot${localRunPid ? ` (PID ${localRunPid})` : ""}` : dirty ? "Save changes before running" : "Run local bot"}
+            disabled={!canRunLocalProject || startingLocalRun || stoppingLocalRun || (!localRunActive && (busy || saving))}
+            title={!canRunLocalProject ? "Local run is available in the desktop Studio application" : localRunActive ? `Stop local bot${localRunPid ? ` (PID ${localRunPid})` : ""}` : dirty ? "Save changes and run local bot" : "Run local bot"}
             onClick={() => void (localRunActive ? stopProject() : runProject())}
           >
             {localRunActive ? <StopIcon /> : <RunIcon />}
@@ -119,7 +119,7 @@ function StudioShell({ context }: { context: StudioPageContext }) {
       </header>
       {error && <Toast message={error} tone="error" action={conflict && <button type="button" className="button--secondary" onClick={reloadCurrent}>Reload from disk</button>} onDismiss={dismissError} />}
       {notice && <Toast message={notice} tone="notice" onDismiss={dismissNotice} />}
-      <div ref={workspaceRef} className={`workspace${activeRoute === "users" ? " workspace--users" : ""}${activeRoute === "git" ? " workspace--git" : ""}${activeRoute === "resources" && previewOpen ? " workspace--preview-open" : ""}${terminalOpen ? " workspace--terminal-open" : ""}`} style={{ "--explorer-width": `${explorerWidth}px`, "--terminal-height": `${terminalHeight}px` } as CSSProperties}>
+      <div ref={workspaceRef} className={`workspace${activeRoute === "users" ? " workspace--users" : ""}${activeRoute === "variables" ? " workspace--variables" : ""}${activeRoute === "git" ? " workspace--git" : ""}${activeRoute === "resources" && previewOpen ? " workspace--preview-open" : ""}${terminalOpen ? " workspace--terminal-open" : ""}`} style={{ "--explorer-width": `${explorerWidth}px`, "--terminal-height": `${terminalHeight}px` } as CSSProperties}>
         <StudioActivityRail routes={STUDIO_ROUTES} terminalOpen={terminalOpen} onToggleTerminal={() => setTerminalOpen((open) => !open)} settingsOpen={settingsOpen} onOpenSettings={openProjectSettings} />
         <Outlet context={context} />
         {terminalOpen && <>

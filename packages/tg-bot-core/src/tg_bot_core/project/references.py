@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Iterator
+
+from ..content import LegacyTemplateBlock, VariableNode
 
 from .models import ActionSpec, HandlerInvocation, ProjectDefinition
 
@@ -24,9 +27,118 @@ class HandlerUsage:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class VariableUsage:
+    variable_id: str
+    entity_type: str
+    entity_id: str
+    field_path: str
+    source_path: str | None = None
+
+    def as_dict(self) -> dict[str, str]:
+        return {
+            "variable_id": self.variable_id,
+            "entity_type": self.entity_type,
+            "entity_id": self.entity_id,
+            "field_path": self.field_path,
+            **({"source_path": self.source_path} if self.source_path else {}),
+        }
+
+
 def find_handler_usages(project: ProjectDefinition, handler_id: str | None = None) -> list[HandlerUsage]:
     usages = list(_iter_handler_usages(project))
     return [usage for usage in usages if handler_id is None or usage.handler_id == handler_id]
+
+
+def find_variable_usages(
+    project: ProjectDefinition, variable_id: str | None = None
+) -> list[VariableUsage]:
+    usages = list(_iter_variable_usages(project))
+    return [
+        usage
+        for usage in usages
+        if variable_id is None or usage.variable_id == variable_id
+    ]
+
+
+def _iter_variable_usages(project: ProjectDefinition) -> Iterator[VariableUsage]:
+    paths = {
+        path: definition.id
+        for definition in project.variable_definitions.values()
+        for path in (definition.path, *definition.legacy_paths)
+    }
+    for view in project.views.values():
+        source = view.text.inline
+        source_path = view.source_path
+        if source is None and view.text.template:
+            source = project.templates.get(view.text.template)
+            source_path = f"templates/{view.text.template}"
+        if source:
+            yield from _text_variable_usages(
+                source, paths, "view", view.id, "text", source_path
+            )
+        for row_index, row in enumerate(view.keyboard):
+            for button_index, button in enumerate(row):
+                yield from _text_variable_usages(
+                    button.text,
+                    paths,
+                    "view_button",
+                    button.id,
+                    f"keyboard.{row_index}.{button_index}.text",
+                    view.source_path,
+                )
+        if view.text.document is None:
+            continue
+        document = project.content_documents.get(view.text.document)
+        if document is None:
+            continue
+        for block_index, block in enumerate(document.content):
+            if isinstance(block, LegacyTemplateBlock):
+                yield from _text_variable_usages(
+                    block.source,
+                    paths,
+                    "content",
+                    document.id,
+                    f"content.{block_index}.source",
+                    f"content/{view.text.document}",
+                )
+                continue
+            for node_index, node in enumerate(getattr(block, "content", ())):
+                if not isinstance(node, VariableNode):
+                    continue
+                reference = node.variable_reference
+                resolved_id = reference.field_id or paths.get(reference.path)
+                if resolved_id:
+                    yield VariableUsage(
+                        resolved_id,
+                        "content",
+                        document.id,
+                        f"content.{block_index}.content.{node_index}.variableReference",
+                        f"content/{view.text.document}",
+                    )
+
+
+def _text_variable_usages(
+    source: str,
+    paths: dict[str, str],
+    entity_type: str,
+    entity_id: str,
+    field_path: str,
+    source_path: str | None,
+) -> Iterator[VariableUsage]:
+    seen: set[str] = set()
+    for fragment in re.finditer(r"{{[\s\S]*?}}|{%[\s\S]*?%}", source):
+        for match in re.finditer(
+            r"\b[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)+\b",
+            fragment.group(0),
+        ):
+            path = match.group(0)
+            variable_id = paths.get(path)
+            if variable_id and variable_id not in seen:
+                seen.add(variable_id)
+                yield VariableUsage(
+                    variable_id, entity_type, entity_id, field_path, source_path
+                )
 
 
 def _iter_handler_usages(project: ProjectDefinition) -> Iterator[HandlerUsage]:

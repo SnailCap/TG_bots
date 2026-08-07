@@ -11,6 +11,47 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: JsonValue };
 
+export type VariableType = "string" | "number" | "boolean" | "date" | "datetime" | "object" | "array";
+export type VariableSource = "core" | "custom" | "computed";
+export type VariablePersistence = "resource" | "session" | "user";
+export type VariableOwnerType = "bot" | "flow" | "state" | "view" | "handler";
+
+export interface VariableDefinition {
+  id: string;
+  owner: { type: VariableOwnerType; id: string };
+  path: string;
+  type: VariableType;
+  source: VariableSource;
+  required: boolean;
+  writable: boolean;
+  defaultValue?: JsonValue;
+  exampleValue?: JsonValue;
+  description?: string;
+  persistence: VariablePersistence;
+  exposedToTemplates: boolean;
+  legacyPaths: string[];
+}
+
+export interface VariableCatalogSpec {
+  schema_version: typeof SCHEMA_VERSION;
+  variables: VariableDefinition[];
+}
+
+export interface VariableCatalogDetail {
+  source_path: string;
+  revision: string | null;
+  payload: VariableCatalogSpec;
+  definitions: VariableDefinition[];
+}
+
+export interface VariableResourceContext {
+  resourceType?: VariableOwnerType;
+  resourceId?: string;
+  flowId?: string;
+  stateId?: string;
+  handlerId?: string;
+}
+
 export interface NoopAction {
   type: "noop";
 }

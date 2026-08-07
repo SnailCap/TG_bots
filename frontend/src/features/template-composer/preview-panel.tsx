@@ -1,16 +1,18 @@
 import { Eye } from "lucide-react";
 
-import { SYSTEM_CONTEXT_FIELDS } from "./context-catalog";
+import type { ContextFieldDefinition } from "./context-catalog";
 import type { PreviewValues } from "./preview";
 
 export function TemplatePreviewPanel({
   preview,
   values,
   onValuesChange,
+  fields,
 }: {
   preview: string;
   values: PreviewValues;
   onValuesChange(values: PreviewValues): void;
+  fields: readonly ContextFieldDefinition[];
 }) {
   return (
     <aside className="template-preview" aria-label="Message preview">
@@ -26,16 +28,16 @@ export function TemplatePreviewPanel({
       <details className="template-preview__values">
         <summary>Test user values</summary>
         <div className="template-preview__fields">
-          {SYSTEM_CONTEXT_FIELDS.map((field) => (
+          {fields.map((field) => (
             <label key={field.id}>
               <span>{field.label}</span>
               <input
                 aria-label={`Preview ${field.label}`}
-                type={field.valueType === "integer" ? "number" : "text"}
-                value={values[field.path]}
+                type={field.valueType === "number" ? "number" : "text"}
+                value={previewInputValue(values[field.path])}
                 onChange={(event) => onValuesChange({
                   ...values,
-                  [field.path]: field.valueType === "integer" ? Number(event.target.value) : event.target.value,
+                  [field.path]: field.valueType === "number" ? Number(event.target.value) : event.target.value,
                 })}
               />
             </label>
@@ -44,6 +46,12 @@ export function TemplatePreviewPanel({
       </details>
     </aside>
   );
+}
+
+function previewInputValue(value: unknown): string | number {
+  if (typeof value === "string" || typeof value === "number") return value;
+  if (value === null || value === undefined) return "";
+  return JSON.stringify(value);
 }
 
 function PreviewIcon() {

@@ -69,7 +69,7 @@ export function StudioEditor({
   save,
 }: StudioEditorProps) {
   if (!editor) return null;
-  if (editor.kind === "view") return <ViewEditor value={editor.detail.payload} textContent={editor.detail.text_content} displayName={editor.detail.name} nameIsDefault={editor.detail.name_is_default} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onRename={(name) => { void renameDisplayName({ kind: "view", id: editor.detail.id }, name); }} onOpenTextEditor={() => openViewTextEditor(editor.detail.id, editor.detail.name ?? editor.detail.id)} onTextContentChange={(text_content) => { setEditor({ ...editor, detail: { ...editor.detail, text_content } }); setDirty(true); }} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
+  if (editor.kind === "view") return <ViewEditor api={api} projectId={projectId} value={editor.detail.payload} textContent={editor.detail.text_content} displayName={editor.detail.name} nameIsDefault={editor.detail.name_is_default} revision={editor.detail.revision} isNew={editor.isNew} options={options} handlerActions={handlerActions} onRename={(name) => { void renameDisplayName({ kind: "view", id: editor.detail.id }, name); }} onOpenTextEditor={() => openViewTextEditor(editor.detail.id, editor.detail.name ?? editor.detail.id)} onTextContentChange={(text_content) => { setEditor({ ...editor, detail: { ...editor.detail, text_content } }); setDirty(true); }} onChange={(payload) => { setEditor({ ...editor, detail: { ...editor.detail, payload } }); setDirty(true); }} />;
   if (editor.kind === "view-text") return <ViewTextEditorContainer
     key={JSON.stringify([projectId, projectRoot, editor.detail.id])}
     api={api}

@@ -23,6 +23,12 @@ ACTION_TYPES = frozenset(
     }
 )
 
+VARIABLE_TYPES = frozenset({"string", "number", "boolean", "date", "datetime", "object", "array"})
+VARIABLE_SOURCES = frozenset({"core", "custom", "computed"})
+VARIABLE_PERSISTENCE = frozenset({"resource", "session", "user"})
+VARIABLE_OWNER_TYPES = frozenset({"bot", "flow", "state", "view", "handler"})
+VARIABLE_UNSET = object()
+
 
 @dataclass(frozen=True, slots=True)
 class Diagnostic:
@@ -169,6 +175,30 @@ class BotManifest:
 
 
 @dataclass(frozen=True, slots=True)
+class VariableOwner:
+    type: str
+    id: str
+
+
+@dataclass(frozen=True, slots=True)
+class VariableDefinition:
+    id: str
+    owner: VariableOwner
+    path: str
+    type: str
+    source: str = "custom"
+    required: bool = False
+    writable: bool = True
+    default_value: Any = VARIABLE_UNSET
+    example_value: Any = VARIABLE_UNSET
+    description: str | None = None
+    persistence: str = "resource"
+    exposed_to_templates: bool = True
+    legacy_paths: tuple[str, ...] = ()
+    source_path: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectDefinition:
     root: Path
     resources: Path
@@ -180,6 +210,7 @@ class ProjectDefinition:
     schedules: Mapping[str, ScheduleSpec]
     templates: Mapping[str, str]
     content_documents: Mapping[str, BotContentDocument] = field(default_factory=dict)
+    variable_definitions: Mapping[str, VariableDefinition] = field(default_factory=dict)
 
     @property
     def actions(self) -> Mapping[str, ActionSpec]:

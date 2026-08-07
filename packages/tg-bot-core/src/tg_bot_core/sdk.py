@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 from .events import CallbackEvent, CommandEvent, InteractionEvent, LifecycleEvent, MessageEvent, UserRole
+from .variables import VariableValues
 
 _OUTCOME = re.compile(r"^[A-Za-z][A-Za-z0-9_.-]{0,127}$")
 
@@ -119,6 +120,7 @@ class BaseHandlerContext:
     event: InteractionEvent
     payload: Mapping[str, Any]
     state: StateValues
+    vars: VariableValues
     services: Mapping[str, Any]
     logger: logging.Logger
 

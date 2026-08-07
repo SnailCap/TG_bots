@@ -25,6 +25,9 @@ from .models import (
     StateSpec,
     TextSpec,
     ViewSpec,
+    VariableDefinition,
+    VariableOwner,
+    VARIABLE_UNSET,
 )
 
 
@@ -54,6 +57,12 @@ class ProjectLoader:
         schedules = self._load_directory(resources, "schedules", self._schedule)
         handlers = self._handlers(self._object(resources / "handlers.json"), "handlers.json")
         commands = self._commands(self._object(resources / "commands.json"), "commands.json")
+        variables_path = resources / "variables.json"
+        variable_definitions = (
+            self._variables(self._object(variables_path), "variables.json")
+            if variables_path.is_file()
+            else {}
+        )
         templates_dir = resources / "templates"
         if not templates_dir.is_dir():
             raise ProjectLoadError("resources/templates is required.")
@@ -85,7 +94,75 @@ class ProjectLoader:
             schedules=schedules,
             templates=templates,
             content_documents=content_documents,
+            variable_definitions=variable_definitions,
         )
+
+    def _variables(
+        self, data: Mapping[str, Any], source: str
+    ) -> dict[str, VariableDefinition]:
+        self._version(data, source)
+        values = data.get("variables", [])
+        if not isinstance(values, list):
+            raise ProjectLoadError(f"{source}: variables must be an array.")
+        result: dict[str, VariableDefinition] = {}
+        allowed = {
+            "id", "owner", "path", "type", "source", "required", "writable",
+            "defaultValue", "exampleValue", "description", "persistence",
+            "exposedToTemplates", "legacyPaths",
+        }
+        for index, raw in enumerate(values):
+            field = f"variables[{index}]"
+            value = self._mapping(raw, source, field)
+            unexpected = set(value) - allowed
+            if unexpected:
+                raise ProjectLoadError(
+                    f"{source}: {field} has unsupported fields: {', '.join(sorted(unexpected))}."
+                )
+            variable_id = self._string(value, "id", source)
+            if variable_id in result:
+                raise ProjectLoadError(f"Duplicate variable id '{variable_id}'.")
+            owner = self._mapping(value.get("owner"), source, f"{field}.owner")
+            owner_unexpected = set(owner) - {"type", "id"}
+            if owner_unexpected:
+                raise ProjectLoadError(
+                    f"{source}: {field}.owner has unsupported fields: {', '.join(sorted(owner_unexpected))}."
+                )
+            legacy_paths = value.get("legacyPaths", [])
+            if not isinstance(legacy_paths, list) or not all(
+                isinstance(item, str) for item in legacy_paths
+            ):
+                raise ProjectLoadError(f"{source}: {field}.legacyPaths must be an array of strings.")
+            description = value.get("description")
+            if description is not None and not isinstance(description, str):
+                raise ProjectLoadError(f"{source}: {field}.description must be a string.")
+            variable_source = value.get("source", "custom")
+            if not isinstance(variable_source, str):
+                raise ProjectLoadError(f"{source}: {field}.source must be a string.")
+            persistence = value.get("persistence", "resource")
+            if not isinstance(persistence, str):
+                raise ProjectLoadError(f"{source}: {field}.persistence must be a string.")
+            result[variable_id] = VariableDefinition(
+                id=variable_id,
+                owner=VariableOwner(
+                    self._string(owner, "type", source),
+                    self._string(owner, "id", source),
+                ),
+                path=self._string(value, "path", source),
+                type=self._string(value, "type", source),
+                source=variable_source,
+                required=self._boolean(value, "required", source, default=False),
+                writable=self._boolean(value, "writable", source, default=True),
+                default_value=value.get("defaultValue", VARIABLE_UNSET),
+                example_value=value.get("exampleValue", VARIABLE_UNSET),
+                description=description,
+                persistence=persistence,
+                exposed_to_templates=self._boolean(
+                    value, "exposedToTemplates", source, default=True
+                ),
+                legacy_paths=tuple(legacy_paths),
+                source_path=source,
+            )
+        return result
 
     def _load_directory(self, resources: Path, name: str, parser):
         directory = resources / name
@@ -347,6 +424,15 @@ class ProjectLoader:
     def _version(data: Mapping[str, Any], source: str) -> None:
         if data.get("schema_version") != SCHEMA_VERSION:
             raise ProjectLoadError(f"{source}: schema_version must be {SCHEMA_VERSION}.")
+
+    @staticmethod
+    def _boolean(
+        data: Mapping[str, Any], key: str, source: str, *, default: bool
+    ) -> bool:
+        value = data.get(key, default)
+        if not isinstance(value, bool):
+            raise ProjectLoadError(f"{source}: {key} must be a boolean.")
+        return value
 
     @staticmethod
     def _finite_number(

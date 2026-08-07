@@ -32,11 +32,16 @@ type PopoverProps = {
   onClose(): void;
 };
 
-export function VariablePickerPopover({ editor, open, onClose }: PopoverProps) {
+export function VariablePickerPopover({
+  editor,
+  open,
+  onClose,
+  fields: catalog,
+}: PopoverProps & { fields: readonly ContextFieldDefinition[] }) {
   const titleId = useId();
   const searchRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
-  const fields = useMemo(() => searchContextFields(query), [query]);
+  const fields = useMemo(() => searchContextFields(query, catalog), [query, catalog]);
 
   useEffect(() => {
     if (!open) return;

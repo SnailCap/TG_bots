@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from tg_bot_core.project import ProjectLoader, validate_project
+from tg_bot_core.variables import generate_variable_module
 
 from .repository import WorkspaceError
 
@@ -96,6 +97,7 @@ class StarterScaffolder:
         })
         self._json(resources / "handlers.json", {"schema_version": 3, "handlers": []})
         self._json(resources / "commands.json", {"schema_version": 3, "commands": []})
+        self._json(resources / "variables.json", {"schema_version": 3, "variables": []})
         self._text(resources / "schedules" / ".gitkeep", "")
         self._json(resources / "views" / "home.json", {
             "schema_version": 3,
@@ -114,6 +116,10 @@ class StarterScaffolder:
         self._text(package_root / "__init__.py", "")
         self._text(package_root / "handlers" / "__init__.py", "")
         self._text(package_root / "services" / "__init__.py", "")
+        self._text(
+            package_root / "_botstudio_variables.py",
+            generate_variable_module(self._loader.load(root)),
+        )
         self._text(package_root / "__main__.py", self._main_module())
         self._text(root / "tests" / "test_project.py", self._project_test(package))
         self._text(root / ".env.example", "BOT_TOKEN=\n")

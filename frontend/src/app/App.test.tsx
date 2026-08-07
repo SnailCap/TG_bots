@@ -159,6 +159,34 @@ describe("Studio", () => {
     expect(screen.queryByLabelText("Bot terminal")).not.toBeInTheDocument();
   });
 
+  it("saves the active resource before starting the local bot", async () => {
+    const saveView = vi.fn().mockResolvedValue(viewDetail);
+    const runProject = vi.fn().mockResolvedValue({ pid: 4210, alreadyRunning: false });
+    window.studioDesktop = {
+      backendInfo: vi.fn(),
+      selectDirectory: vi.fn(),
+      openCode: vi.fn(),
+      approveProjectRoot: vi.fn().mockResolvedValue(undefined),
+      runProject,
+      stopProject: vi.fn().mockResolvedValue(undefined),
+      projectRunStatus: vi.fn().mockResolvedValue({ running: false, pid: null }),
+      onProjectOutput: vi.fn(() => vi.fn()),
+    };
+    const api = apiMock({ saveView });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    setVisualMessage("Changed before run");
+
+    const runButton = screen.getByRole("button", { name: "Run local bot" });
+    expect(runButton).toBeEnabled();
+    fireEvent.click(runButton);
+
+    await waitFor(() => expect(saveView).toHaveBeenCalled());
+    await waitFor(() => expect(runProject).toHaveBeenCalledWith({ projectRoot: "C:/demo", packageName: "demo" }));
+  });
+
   it("shows live editor information in the application status bar", async () => {
     render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     expect(screen.getByRole("status")).toHaveTextContent("Ready");
@@ -193,6 +221,22 @@ describe("Studio", () => {
     expect(await screen.findByLabelText("View editor")).toBeInTheDocument();
   });
 
+  it("saves the active resource before switching to another resource", async () => {
+    const saveView = vi.fn().mockResolvedValue(viewDetail);
+    const api = apiMock({ saveView });
+    const { container } = render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+    const resourceButton = (label: string) => Array.from(container.querySelectorAll<HTMLButtonElement>(".explorer__item, .explorer__flow-main"))
+      .find((button) => button.textContent?.trim() === label)!;
+
+    fireEvent.click(resourceButton("home"));
+    await screen.findByLabelText("View editor");
+    setVisualMessage("Changed before switching");
+    fireEvent.click(resourceButton("checkout"));
+
+    await waitFor(() => expect(saveView).toHaveBeenCalled());
+    expect(await screen.findByLabelText("Flow editor")).toBeInTheDocument();
+  });
+
   it("opens the rich view text editor in a separate saveable tab", async () => {
     render(<StudioPage api={apiMock()} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
 
@@ -205,6 +249,21 @@ describe("Studio", () => {
     expect(screen.getByRole("complementary", { name: "Telegram message preview" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /home text$/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+  });
+
+  it("saves the compact resource before opening its text tab", async () => {
+    const saveView = vi.fn().mockResolvedValue(viewDetail);
+    const api = apiMock({ saveView });
+    render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "home" }));
+    await screen.findByLabelText("View editor");
+    setVisualMessage("Changed before opening text");
+    fireEvent.click(screen.getByRole("button", { name: "Expand home" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open text editor for home" }));
+
+    await waitFor(() => expect(saveView).toHaveBeenCalled());
+    expect(await screen.findByLabelText("Rich text editor")).toBeInTheDocument();
   });
 
   it("mounts the rich view text editor safely in React StrictMode", async () => {
@@ -803,9 +862,9 @@ describe("Studio", () => {
     await waitFor(() => expect(api.createView).toHaveBeenCalledWith("project-1", "home", viewDetail.payload, viewDetail.text_content, undefined));
   });
 
-  it("does not silently discard an inactive dirty rich-text tab from the explorer", async () => {
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-    const saveViewContent = vi.fn().mockReturnValue(new Promise<ViewDetail>(() => undefined));
+  it("saves a dirty rich-text tab before switching back to the compact editor", async () => {
+    let resolveSave!: (detail: ViewDetail) => void;
+    const saveViewContent = vi.fn().mockReturnValue(new Promise<ViewDetail>((resolve) => { resolveSave = resolve; }));
     const api = apiMock({ saveViewContent });
     const { container } = render(<StudioPage api={api} apiBaseUrl="http://studio.test" initialWorkspace={workspace} />);
     const homeResource = container.querySelector<HTMLButtonElement>(".explorer__view-main")!;
@@ -815,15 +874,12 @@ describe("Studio", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open rich text editor" }));
     await screen.findByRole("textbox", { name: "Rich message content" });
     fireEvent.click(homeResource);
+    await waitFor(() => expect(saveViewContent).toHaveBeenCalled());
     expect(screen.getByLabelText("Rich text editor")).toBeInTheDocument();
-    expect(screen.getByText("Save this view text (or wait for autosave) before switching editor modes.")).toBeInTheDocument();
 
-    fireEvent.contextMenu(homeResource);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
-
-    expect(confirmSpy).toHaveBeenCalledWith("Delete this resource and discard unsaved changes in its open tabs?");
-    expect(api.deleteView).not.toHaveBeenCalled();
-    expect(screen.getByRole("tab", { name: /home text$/ })).toBeInTheDocument();
+    resolveSave({ ...viewDetail, content_revision: "content-one" });
+    expect(await screen.findByLabelText("View editor")).toBeInTheDocument();
+    expect(screen.queryByText("Save this view text (or wait for autosave) before switching editor modes.")).not.toBeInTheDocument();
   });
 
   it("undoes a rename with Ctrl+Z", async () => {

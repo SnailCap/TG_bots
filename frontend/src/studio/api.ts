@@ -16,6 +16,9 @@ import type {
   ScheduleSpec,
   ViewDetail,
   ViewSpec,
+  VariableCatalogDetail,
+  VariableCatalogSpec,
+  VariableResourceContext,
   Workspace,
 } from "../domain/project";
 import type { BotContentDocument, ContentDiagnostic, TelegramCompileResult } from "../domain/content";
@@ -251,6 +254,8 @@ export interface StudioApiClient {
   deleteFlow(projectId: string, id: string, revision: string): Promise<void>;
   getCommands(projectId: string): Promise<CommandsDetail>;
   saveCommands(projectId: string, payload: CommandsSpec, revision: string): Promise<CommandsDetail>;
+  getVariables?(projectId: string, context?: VariableResourceContext): Promise<VariableCatalogDetail>;
+  saveVariables?(projectId: string, payload: VariableCatalogSpec, revision: string | null): Promise<VariableCatalogDetail>;
   getSchedule(projectId: string, id: string): Promise<ScheduleDetail>;
   createSchedule(projectId: string, id: string, payload: ScheduleSpec): Promise<ScheduleDetail>;
   createNamedSchedule?(projectId: string, name?: string): Promise<ScheduleDetail>;
@@ -484,6 +489,24 @@ export class StudioApi implements StudioApiClient {
 
   preview(projectId: string, payload: ViewSpec): Promise<Preview> {
     return this.request(`/projects/${projectId}/preview`, { method: "POST", body: { payload } });
+  }
+
+  getVariables(projectId: string, context: VariableResourceContext = {}): Promise<VariableCatalogDetail> {
+    const query = new URLSearchParams();
+    if (context.resourceType) query.set("resource_type", context.resourceType);
+    if (context.resourceId) query.set("resource_id", context.resourceId);
+    if (context.flowId) query.set("flow_id", context.flowId);
+    if (context.stateId) query.set("state_id", context.stateId);
+    if (context.handlerId) query.set("handler_id", context.handlerId);
+    const suffix = query.size ? `?${query.toString()}` : "";
+    return this.request(`/projects/${projectId}/variables${suffix}`);
+  }
+
+  saveVariables(projectId: string, payload: VariableCatalogSpec, revision: string | null): Promise<VariableCatalogDetail> {
+    return this.request(`/projects/${projectId}/variables`, {
+      method: "PUT",
+      body: { payload, revision },
+    });
   }
 
   compileContent(projectId: string, document: BotContentDocument, variables: Record<string, unknown> = {}, signal?: AbortSignal): Promise<TelegramCompileResult> {

@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 import json
+from uuid import uuid4
 from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from .analytics import AnalyticsEventType, AnalyticsRecorder
-from .catalog import CallbackCodec, ProjectCatalog
+from .catalog import CallbackCodec, CatalogError, ProjectCatalog
 from .events import (
     Actor,
     CallbackEvent,
@@ -30,6 +31,13 @@ from .sdk import (
 )
 from .store import FlowSession, SqliteStore
 from .transport import BotTransport, OutboundButton, OutboundMessage
+from .variables import (
+    ResourceVariableContext,
+    VariableCatalog,
+    VariableError,
+    VariableValues,
+    render_variable_context,
+)
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +74,7 @@ class FlowEngine:
         self.analytics = analytics
         self.codec = CallbackCodec()
         self.outcome_router = OutcomeRouter()
+        self.variable_catalog = VariableCatalog(project)
         self.max_auto_transitions = max_auto_transitions
 
     def active_message_handler(self, session: FlowSession) -> HandlerInvocation | None:
@@ -253,6 +262,12 @@ class FlowEngine:
             state_id=flow.initial_state,
             view_id=None,
             variables={},
+            resource_variables={
+                key: value
+                for key, value in (previous.resource_variables or {}).items()
+                if not key.startswith("resource:")
+            },
+            resource_instance_id=str(uuid4()),
             status="active",
         )
         if flow.lifecycle.on_start:
@@ -389,6 +404,20 @@ class FlowEngine:
         payload: Mapping[str, Any] | None = None,
     ) -> tuple[FlowSession, ActionSpec | None]:
         state = StateValues(session.variables or {})
+        variable_context = ResourceVariableContext(
+            bot_id=session.bot_id,
+            flow_id=session.flow_id,
+            state_id=session.state_id,
+            view_id=session.view_id,
+            handler_id=invocation.handler,
+            instance_id=session.resource_instance_id,
+        )
+        vars_api = VariableValues(
+            self.variable_catalog,
+            variable_context,
+            session.resource_variables or {},
+            self._system_variable_values(event.actor),
+        )
         actor = event.actor
         common = {
             "user": UserInfo(actor.user_id, actor.username, actor.first_name, actor.last_name, actor.role),
@@ -396,6 +425,7 @@ class FlowEngine:
             "event": event,
             "payload": dict(payload or {}),
             "state": state,
+            "vars": vars_api,
             "services": self.executor_services,
             "logger": logging.getLogger(f"handler.{invocation.handler}"),
         }
@@ -427,7 +457,11 @@ class FlowEngine:
             raise HandlerExecutionError(
                 f"Handler '{invocation.handler}' stored non-JSON session values."
             ) from error
-        updated = replace(session, variables=values)
+        updated = replace(
+            session,
+            variables=values,
+            resource_variables=vars_api._snapshot(),
+        )
         return updated, self.outcome_router.route(invocation, result)
 
     @property
@@ -560,18 +594,25 @@ class FlowEngine:
 
     async def _render(self, session: FlowSession, view_id: str, edit_message_id: int | None = None) -> None:
         actor = session.actor
-        values = {
-            **(session.variables or {}),
-            "user": {
-                "id": actor.user_id,
-                "telegram_id": actor.user_id,
-                "username": actor.username,
-                "first_name": actor.first_name,
-                "last_name": actor.last_name,
-                "language_code": actor.language_code,
-                "role": actor.role,
-            },
-        }
+        system_values = self._system_variable_values(actor)
+        try:
+            values = render_variable_context(
+                self.variable_catalog,
+                ResourceVariableContext(
+                    bot_id=session.bot_id,
+                    flow_id=session.flow_id,
+                    state_id=session.state_id,
+                    view_id=view_id,
+                    instance_id=session.resource_instance_id,
+                ),
+                session.resource_variables or {},
+                system_values,
+                session.variables or {},
+            )
+        except VariableError as error:
+            raise CatalogError(f"Failed to resolve variables for view '{view_id}': {error}") from error
+        values.setdefault("user", {})["id"] = actor.user_id
+        values["user"]["role"] = actor.role
         compiled = self.catalog.compile_view(view_id, values)
         outbound = tuple(
             tuple(OutboundButton(button.text, self.codec.encode(button.id)) for button in row)
@@ -597,6 +638,16 @@ class FlowEngine:
             state_id=session.state_id,
             view_id=view_id,
         )
+
+    @staticmethod
+    def _system_variable_values(actor: Actor) -> dict[str, Any]:
+        return {
+            "user.telegram_id": actor.user_id,
+            "user.username": actor.username,
+            "user.first_name": actor.first_name,
+            "user.last_name": actor.last_name,
+            "user.language_code": actor.language_code,
+        }
 
     async def _flush_pending(
         self, pending: list[_PendingAnalyticsEvent]

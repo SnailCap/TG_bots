@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from copy import deepcopy
 from typing import Any, Mapping
 
 from jinja2 import Environment, StrictUndefined, TemplateError
@@ -9,10 +10,12 @@ from .content import (
     CompiledTelegramMessage,
     ContentDiagnostic,
     TelegramCompileResult,
+    VariableNode,
     compile_content_document,
 )
 from .project import ActionSpec, ProjectDefinition
 from .project.models import ButtonSpec
+from .variables import UnknownVariableError, VariableCatalog, set_render_alias
 
 
 class CatalogError(RuntimeError):
@@ -50,6 +53,7 @@ class ProjectCatalog:
     def __init__(self, project: ProjectDefinition) -> None:
         self.project = project
         self._jinja = Environment(undefined=StrictUndefined, autoescape=False)
+        self._variables = VariableCatalog(project)
         self._actions = dict(project.actions)
         self._action_views = {
             button.id: view.id
@@ -84,13 +88,18 @@ class ProjectCatalog:
             raise CatalogError(
                 f"View '{view_id}' references unavailable content document '{view.text.document}'."
             )
-        result: TelegramCompileResult = compile_content_document(document, variables)
+        compatible_values = self._reference_compatible_values(document, variables)
+        result: TelegramCompileResult = compile_content_document(document, compatible_values)
         if result.errors:
             summary = "; ".join(error.message for error in result.errors)
             raise CatalogError(f"Failed to compile view '{view_id}': {summary}")
         if not result.messages:
             raise CatalogError(f"View '{view_id}' compiled no Telegram messages.")
-        return CompiledView(result.messages, view.keyboard, result.warnings)
+        return CompiledView(
+            result.messages,
+            self._render_keyboard(view.keyboard, compatible_values),
+            result.warnings,
+        )
 
     def _view(self, view_id: str):
         try:
@@ -115,4 +124,41 @@ class ProjectCatalog:
             raise CatalogError(
                 f"View '{view_id}' rendered {len(rendered)} characters; Telegram allows at most 4096."
             )
-        return rendered, view.keyboard
+        return rendered, self._render_keyboard(view.keyboard, variables)
+
+    def _render_keyboard(
+        self,
+        keyboard: tuple[tuple[ButtonSpec, ...], ...],
+        variables: Mapping[str, Any],
+    ) -> tuple[tuple[ButtonSpec, ...], ...]:
+        rows: list[tuple[ButtonSpec, ...]] = []
+        for row in keyboard:
+            rendered_row: list[ButtonSpec] = []
+            for button in row:
+                try:
+                    text = self._jinja.from_string(button.text).render(**variables)
+                except TemplateError as error:
+                    raise CatalogError(
+                        f"Failed to render button '{button.id}': {error}"
+                    ) from error
+                if not text.strip():
+                    raise CatalogError(f"Button '{button.id}' rendered empty text.")
+                rendered_row.append(replace(button, text=text))
+            rows.append(tuple(rendered_row))
+        return tuple(rows)
+
+    def _reference_compatible_values(
+        self, document, variables: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        values = deepcopy(dict(variables))
+        for block in document.content:
+            for node in getattr(block, "content", ()):
+                if not isinstance(node, VariableNode) or not node.variable_reference.field_id:
+                    continue
+                try:
+                    definition = self._variables.get(node.variable_reference.field_id)
+                except UnknownVariableError:
+                    continue
+                if node.variable_reference.path != definition.path:
+                    set_render_alias(values, node.variable_reference.path, definition.path)
+        return values

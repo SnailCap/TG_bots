@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ViewSpec } from "../../domain/project";
 import { KeyboardComposer } from "./KeyboardComposer";
+import type { ContextFieldDefinition } from "../template-composer/context-catalog";
 
 const options = { views: ["home"], flows: [], states: [], handlers: [] };
 const handlerActions = { create: vi.fn(), repair: vi.fn(), open: vi.fn(), usages: vi.fn().mockResolvedValue([]) };
@@ -93,6 +94,62 @@ describe("KeyboardComposer", () => {
     expect(screen.getByLabelText("Button text")).toHaveFocus();
   });
 
+  it("inserts a resource variable into a button label from the shared $ picker", () => {
+    const fields: ContextFieldDefinition[] = [{
+      id: "var_order_total",
+      path: "order.total",
+      label: "total",
+      group: "flow: home",
+      valueType: "number",
+      optional: false,
+      description: "Order total",
+      example: 120,
+      source: "custom",
+      writable: true,
+    }];
+    render(<KeyboardHarness keyboard={[[button("pay", "Pay ")]]} fields={fields} />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    const label = screen.getByLabelText("Button text");
+    fireEvent.change(label, { target: { value: "Pay $", selectionStart: 5 } });
+
+    expect(screen.getByRole("option", { name: /total/ })).toBeInTheDocument();
+    fireEvent.keyDown(label, { key: "Enter" });
+    expect(label).toHaveValue("Pay {{ order.total }}");
+  });
+
+  it("offers row duplication and deletion from the row actions menu", () => {
+    const { container } = render(<KeyboardHarness keyboard={[[button("continue", "Continue")]]} />);
+
+    expect(container.querySelector(".keyboard-composer__row-divider")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Row actions for row 1" })).not.toHaveClass("keyboard-composer__icon-button");
+
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for row 1" }));
+
+    expect(screen.getByRole("menuitem", { name: "Duplicate row" })).toBeInTheDocument();
+    expect(screen.getByRole("menuitem", { name: "Delete row" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Add button" })).not.toBeInTheDocument();
+  });
+
+  it("duplicates a row from the row actions menu", () => {
+    const { container } = render(<KeyboardHarness keyboard={[[button("continue", "Continue")]]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for row 1" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate row" }));
+
+    expect(container.querySelectorAll(".keyboard-composer__row")).toHaveLength(2);
+    expect(container.querySelectorAll("[data-keyboard-button]")).toHaveLength(2);
+    expect(screen.getAllByText("Continue")).toHaveLength(2);
+  });
+
+  it("deletes a row from the row actions menu", () => {
+    const { container } = render(<KeyboardHarness keyboard={[[button("continue", "Continue")]]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Row actions for row 1" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete row" }));
+
+    expect(container.querySelectorAll(".keyboard-composer__row")).toHaveLength(0);
+  });
+
   it("moves a button to another row through the keyboard canvas", () => {
     const { container } = render(<KeyboardHarness keyboard={[[button("one", "One")], [button("two", "Two")]]} />);
     const transfer = { effectAllowed: "", setData: vi.fn() };
@@ -113,9 +170,9 @@ describe("KeyboardComposer", () => {
   });
 });
 
-function KeyboardHarness({ keyboard }: { keyboard: ViewSpec["keyboard"] }) {
+function KeyboardHarness({ keyboard, fields }: { keyboard: ViewSpec["keyboard"]; fields?: readonly ContextFieldDefinition[] }) {
   const [value, setValue] = useState(keyboard);
-  return <KeyboardComposer viewId="home" keyboard={value} options={options} handlerActions={handlerActions} onChange={setValue} />;
+  return <KeyboardComposer viewId="home" keyboard={value} variableFields={fields} options={options} handlerActions={handlerActions} onChange={setValue} />;
 }
 
 function button(id: string, text: string) {

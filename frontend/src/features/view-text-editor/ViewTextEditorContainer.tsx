@@ -1,8 +1,9 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { BotContentDocument, ContentDiagnostic, TelegramCompileResult } from "../../domain/content";
-import type { CustomEmojiCapabilityResult, ResolvedCustomEmoji, SendPreviewMessageResult } from "../../studio/api";
-import { SYSTEM_CONTEXT_FIELDS } from "../template-composer/context-catalog";
+import type { CustomEmojiCapabilityResult, ResolvedCustomEmoji, SendPreviewMessageResult, StudioApiClient } from "../../studio/api";
+import { SYSTEM_CONTEXT_FIELDS, type ContextFieldDefinition } from "../template-composer/context-catalog";
+import { useResourceVariableFields } from "../template-composer/use-resource-variable-fields";
 import {
   displayStateFromResolvedCustomEmoji,
   loadCustomEmojiCapability,
@@ -67,6 +68,7 @@ export type ViewTextEditorContainerProps = {
       chatId: number | string;
       splitLongMessages?: boolean;
     }): Promise<SendPreviewMessageResult>;
+    getVariables?: StudioApiClient["getVariables"];
   };
   projectId: string;
   projectRoot: string;
@@ -104,7 +106,18 @@ export function ViewTextEditorContainer({
   const [customEmojiCapability, setCustomEmojiCapability] = useState<CustomEmojiCapabilitySnapshot | null>(
     () => loadCustomEmojiCapability(safeLocalStorage(), projectId),
   );
+  const variableApi = useMemo(
+    () => api.getVariables ? { getVariables: api.getVariables.bind(api) } : undefined,
+    [api],
+  );
+  const variableFields = useResourceVariableFields(variableApi, projectId, {
+    resourceType: "view",
+    resourceId: viewId,
+  });
   const [previewValues, setPreviewValues] = useState<RichEditorPreviewValues>(() => defaultPreviewValues());
+  useEffect(() => {
+    setPreviewValues((current) => ({ ...defaultPreviewValues(variableFields), ...current }));
+  }, [variableFields]);
   const [draftRecovered, setDraftRecovered] = useState(false);
   const draftKey = useMemo(() => contentDraftKey(projectRoot, viewId), [projectRoot, viewId]);
   const editorSessionId = useRef(createEditorSessionId());
@@ -336,6 +349,7 @@ export function ViewTextEditorContainer({
       ) : null}
       <Suspense fallback={<div className="view-rich-editor__boot" role="status">Loading rich editor…</div>}>
         <RichTextEditor
+          variableFields={variableFields}
           document={document}
           compileResult={compileResult ? {
             ...compileResult,
@@ -399,8 +413,10 @@ export function nestedPreviewValues(values: RichEditorPreviewValues): Record<str
   return root;
 }
 
-function defaultPreviewValues(): RichEditorPreviewValues {
-  return Object.fromEntries(SYSTEM_CONTEXT_FIELDS.map((field) => [field.path, field.example ?? ""]));
+function defaultPreviewValues(
+  fields: readonly ContextFieldDefinition[] = SYSTEM_CONTEXT_FIELDS,
+): RichEditorPreviewValues {
+  return Object.fromEntries(fields.map((field) => [field.path, field.example ?? ""]));
 }
 
 function readDraft(key: string, viewId: string, baseRevision: string): DraftEnvelope | null {

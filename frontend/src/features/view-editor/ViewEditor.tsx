@@ -6,6 +6,8 @@ import { KeyboardComposer } from "../keyboard-composer/KeyboardComposer";
 import { TemplateComposer } from "../template-composer/TemplateComposer";
 import { FormField, FormGrid, FormSectionDivider } from "../../shared/ui/Form";
 import { AccessSelect, type AccessLevel } from "../../shared/ui/AccessSelect";
+import type { StudioApiClient } from "../../studio/api";
+import { useResourceVariableFields } from "../template-composer/use-resource-variable-fields";
 
 export function ViewEditor({
   value,
@@ -20,6 +22,8 @@ export function ViewEditor({
   displayName,
   nameIsDefault = false,
   onRename,
+  api,
+  projectId,
 }: {
   value: ViewSpec;
   isNew: boolean;
@@ -33,10 +37,16 @@ export function ViewEditor({
   displayName?: string;
   nameIsDefault?: boolean;
   onRename?(name: string): void;
+  api?: StudioApiClient;
+  projectId?: string;
 }) {
   const [accessMockup, setAccessMockup] = useState<AccessLevel>("everyone");
   const [nameDraft, setNameDraft] = useState("");
   const effectiveName = displayName ?? value.id;
+  const variableFields = useResourceVariableFields(api, projectId ?? "", {
+    resourceType: "view",
+    resourceId: value.id,
+  });
   return (
     <section className="editor editor--wide" aria-label="View editor">
       <FormGrid columns={2} className="view-settings">
@@ -65,12 +75,13 @@ export function ViewEditor({
         </FormField>
         <FormSectionDivider />
         <div className="view-settings__content">
-          <TemplateComposer content={textContent} onContentChange={onTextContentChange} onOpenRichEditor={onOpenTextEditor} />
+          <TemplateComposer fields={variableFields} content={textContent} onContentChange={onTextContentChange} onOpenRichEditor={onOpenTextEditor} />
         </div>
         <FormSectionDivider />
         <KeyboardComposer
           viewId={value.id}
           keyboard={value.keyboard}
+          variableFields={variableFields}
           options={options}
           handlerActions={handlerActions}
           createOptions={isNew ? undefined : {

@@ -31,6 +31,8 @@ class FlowSession:
     state_id: str | None = None
     view_id: str | None = None
     variables: dict[str, Any] | None = None
+    resource_variables: dict[str, Any] | None = None
+    resource_instance_id: str | None = None
     status: str = "idle"
     revision: int = 0
     updated_at: datetime | None = None
@@ -84,6 +86,8 @@ class SqliteStore:
                     state_id TEXT,
                     view_id TEXT,
                     variables_json TEXT NOT NULL,
+                    resource_variables_json TEXT NOT NULL DEFAULT '{}',
+                    resource_instance_id TEXT,
                     status TEXT NOT NULL,
                     revision INTEGER NOT NULL,
                     updated_at REAL NOT NULL,
@@ -148,6 +152,7 @@ class SqliteStore:
                 """
             )
             await initialize_analytics_schema(connection)
+            await self._ensure_flow_session_columns(connection)
             await self._ensure_bot_user_columns(connection)
             await connection.commit()
 
@@ -161,7 +166,13 @@ class SqliteStore:
                 )
             ).fetchone()
         if row is None:
-            return FlowSession(bot_id=bot_id, actor=actor, variables={}, updated_at=utc_now())
+            return FlowSession(
+                bot_id=bot_id,
+                actor=actor,
+                variables={},
+                resource_variables={},
+                updated_at=utc_now(),
+            )
         return FlowSession(
             bot_id=bot_id,
             actor=Actor(
@@ -177,6 +188,8 @@ class SqliteStore:
             state_id=row["state_id"],
             view_id=row["view_id"],
             variables=json.loads(row["variables_json"]),
+            resource_variables=json.loads(row["resource_variables_json"]),
+            resource_instance_id=row["resource_instance_id"],
             status=row["status"],
             revision=row["revision"],
             updated_at=datetime.fromtimestamp(row["updated_at"], UTC),
@@ -185,14 +198,18 @@ class SqliteStore:
     async def save_session(self, session: FlowSession) -> FlowSession:
         now = utc_now()
         variables = json.dumps(session.variables or {}, ensure_ascii=False, allow_nan=False)
+        resource_variables = json.dumps(
+            session.resource_variables or {}, ensure_ascii=False, allow_nan=False
+        )
         async with aiosqlite.connect(self.path) as connection:
             if session.revision == 0:
                 try:
                     await connection.execute(
                         """INSERT INTO flow_sessions
                         (bot_id, user_id, chat_id, username, first_name, last_name, flow_id, state_id,
-                         view_id, variables_json, status, revision, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                         view_id, variables_json, resource_variables_json, resource_instance_id,
+                         status, revision, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             session.bot_id,
                             session.actor.user_id,
@@ -204,6 +221,8 @@ class SqliteStore:
                             session.state_id,
                             session.view_id,
                             variables,
+                            resource_variables,
+                            session.resource_instance_id,
                             session.status,
                             1,
                             to_timestamp(now),
@@ -215,7 +234,8 @@ class SqliteStore:
             else:
                 result = await connection.execute(
                     """UPDATE flow_sessions SET username=?, first_name=?, last_name=?, flow_id=?, state_id=?,
-                    view_id=?, variables_json=?, status=?, revision=?, updated_at=?
+                    view_id=?, variables_json=?, resource_variables_json=?, resource_instance_id=?,
+                    status=?, revision=?, updated_at=?
                     WHERE bot_id=? AND user_id=? AND chat_id=? AND revision=?""",
                     (
                         session.actor.username,
@@ -225,6 +245,8 @@ class SqliteStore:
                         session.state_id,
                         session.view_id,
                         variables,
+                        resource_variables,
+                        session.resource_instance_id,
                         session.status,
                         session.revision + 1,
                         to_timestamp(now),
@@ -393,6 +415,22 @@ class SqliteStore:
             data=bytes(row["avatar_data"]),
             mime_type=row["avatar_mime_type"] or "image/jpeg",
         )
+
+    @staticmethod
+    async def _ensure_flow_session_columns(connection: aiosqlite.Connection) -> None:
+        """Expand existing v3 session tables without rewriting user state."""
+
+        rows = await (await connection.execute("PRAGMA table_info(flow_sessions)")).fetchall()
+        existing = {row[1] for row in rows}
+        additions = {
+            "resource_variables_json": "TEXT NOT NULL DEFAULT '{}'",
+            "resource_instance_id": "TEXT",
+        }
+        for name, declaration in additions.items():
+            if name not in existing:
+                await connection.execute(
+                    f"ALTER TABLE flow_sessions ADD COLUMN {name} {declaration}"
+                )
 
     @staticmethod
     async def _ensure_bot_user_columns(connection: aiosqlite.Connection) -> None:

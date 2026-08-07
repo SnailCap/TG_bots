@@ -19,6 +19,7 @@ from tg_bot_core.content import (
     parse_content_document,
     serialize_legacy_template,
     validate_content_document,
+    VariableNode,
 )
 from tg_bot_core.events import UserRole
 from tg_bot_core.project import (
@@ -26,8 +27,19 @@ from tg_bot_core.project import (
     ProjectLoader,
     load_and_validate_project,
     validate_project,
+    VARIABLE_UNSET,
+    VARIABLE_OWNER_TYPES,
+    find_variable_usages,
 )
 from tg_bot_core.store import BotUser, SqliteStore, StoredUserAvatar
+from tg_bot_core.variables import (
+    ResourceVariableContext,
+    VariableCatalog,
+    generate_variable_module,
+    preview_variable_context,
+    set_render_alias,
+    UnknownVariableError,
+)
 try:
     from unidecode import unidecode as _unidecode
 except ModuleNotFoundError:
@@ -400,6 +412,180 @@ class ProjectService:
         self._save_json_and_parse(workspace, path, normalized, revision)
         return self.get_commands(project_id)
 
+    def get_variables(
+        self,
+        project_id: str,
+        *,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        flow_id: str | None = None,
+        state_id: str | None = None,
+        handler_id: str | None = None,
+    ) -> dict[str, Any]:
+        workspace = self.repository.workspace(project_id)
+        project = self._load(workspace)
+        if resource_type is not None and resource_type not in VARIABLE_OWNER_TYPES:
+            raise WorkspaceError(f"Unknown variable resource type '{resource_type}'.")
+        context_flow_id = resource_id if resource_type == "flow" else flow_id
+        context_state_id = resource_id if resource_type == "state" else state_id
+        if resource_type == "state" and resource_id:
+            qualified = next(
+                (
+                    (flow.id, state.id)
+                    for flow in project.flows.values()
+                    for state in flow.states.values()
+                    if resource_id == f"{flow.id}.{state.id}"
+                ),
+                None,
+            )
+            if qualified is not None:
+                context_flow_id, context_state_id = qualified
+            elif flow_id and resource_id.startswith(f"{flow_id}."):
+                context_state_id = resource_id.removeprefix(f"{flow_id}.")
+        path = workspace.resources / "variables.json"
+        if path.is_file():
+            detail = self.repository.detail(path, resource_root=workspace.resources)
+        else:
+            detail = {
+                "source_path": "variables.json",
+                "revision": None,
+                "payload": {"schema_version": 3, "variables": []},
+            }
+        context = ResourceVariableContext(
+            bot_id=project.manifest.id,
+            flow_id=context_flow_id,
+            state_id=context_state_id,
+            view_id=resource_id if resource_type == "view" else None,
+            handler_id=resource_id if resource_type == "handler" else handler_id,
+        )
+        catalog = VariableCatalog(project)
+        scoped = any(
+            value is not None
+            for value in (
+                resource_type,
+                resource_id,
+                flow_id,
+                state_id,
+                handler_id,
+            )
+        )
+        definitions = catalog.available(context) if scoped else catalog.all()
+        if resource_type == "view" and resource_id:
+            parent_contexts = [
+                ResourceVariableContext(
+                    bot_id=project.manifest.id,
+                    flow_id=flow.id,
+                    state_id=state.id,
+                    view_id=resource_id,
+                )
+                for flow in project.flows.values()
+                for state in flow.states.values()
+                if state.view == resource_id
+            ]
+            if parent_contexts:
+                common_ids = set.intersection(
+                    *(set(item.id for item in catalog.available(parent)) for parent in parent_contexts)
+                )
+                definitions = tuple(
+                    item for item in catalog.available(parent_contexts[0])
+                    if item.id in common_ids
+                )
+        return {
+            **detail,
+            "definitions": [self._variable_definition_detail(item) for item in definitions],
+        }
+
+    def save_variables(
+        self,
+        project_id: str,
+        payload: dict[str, Any],
+        revision: str | None,
+    ) -> dict[str, Any]:
+        workspace = self.repository.workspace(project_id)
+        path = workspace.resources / "variables.json"
+        generated_path = WorkspaceRepository.safe_path(
+            workspace.root,
+            Path("src").joinpath(*workspace.package.split("."), "_botstudio_variables.py"),
+            suffix=".py",
+        )
+        with self.repository.lock(workspace):
+            previous_project = self._load(workspace)
+            previous_by_id = previous_project.variable_definitions
+            values = payload.get("variables", [])
+            if not isinstance(values, list):
+                raise WorkspaceError("variables.json: variables must be an array.")
+            normalized_values: list[dict[str, Any]] = []
+            next_ids: set[str] = set()
+            for raw in values:
+                if not isinstance(raw, dict):
+                    raise WorkspaceError("variables.json: every variable must be an object.")
+                value = dict(raw)
+                variable_id = value.get("id")
+                if not isinstance(variable_id, str) or not variable_id:
+                    raise WorkspaceError("variables.json: every variable needs a non-empty id.")
+                next_ids.add(variable_id)
+                previous = previous_by_id.get(variable_id)
+                next_path = value.get("path")
+                aliases = value.get("legacyPaths", [])
+                if not isinstance(aliases, list):
+                    raise WorkspaceError("variables.json: legacyPaths must be an array.")
+                if previous is not None and isinstance(next_path, str) and next_path != previous.path:
+                    aliases = [*previous.legacy_paths, previous.path, *aliases]
+                value["legacyPaths"] = [
+                    alias
+                    for alias in dict.fromkeys(aliases)
+                    if alias != next_path
+                ]
+                normalized_values.append(value)
+            for removed_id in previous_by_id.keys() - next_ids:
+                usages = find_variable_usages(previous_project, removed_id)
+                if usages:
+                    raise ResourceInUse(
+                        f"Cannot delete variable '{removed_id}'; it is referenced {len(usages)} time(s)."
+                    )
+            normalized = {
+                "schema_version": 3,
+                "variables": normalized_values,
+            }
+            creating = not path.exists()
+            self.repository.assert_revision(path, revision, creating=creating)
+            before = path.read_bytes() if path.exists() else None
+            generated_before = generated_path.read_bytes() if generated_path.exists() else None
+            if generated_before is not None and not generated_before.startswith(
+                b'"""Generated from resources/variables.json.'
+            ):
+                raise WorkspaceError(
+                    f"Refusing to overwrite non-generated file '{generated_path.name}'."
+                )
+            try:
+                self.repository.atomic_write_json(path, normalized)
+                project = self._load(workspace)
+                variable_errors = [
+                    item
+                    for item in validate_project(project)
+                    if item.level == "error" and (
+                        "variable" in item.code or item.code == "protected_variable_definition"
+                    )
+                ]
+                if variable_errors:
+                    raise WorkspaceError("; ".join(item.message for item in variable_errors))
+                self.repository.atomic_write(
+                    generated_path,
+                    generate_variable_module(project).encode("utf-8"),
+                )
+            except BaseException:
+                self.repository.restore(path, before)
+                self.repository.restore(generated_path, generated_before)
+                raise
+        return self.get_variables(project_id)
+
+    def variable_usages(self, project_id: str, variable_id: str) -> list[dict[str, str]]:
+        workspace = self.repository.workspace(project_id)
+        project = self._load(workspace)
+        if variable_id not in project.variable_definitions:
+            raise ResourceNotFound(f"Variable '{variable_id}' does not exist.")
+        return [item.as_dict() for item in find_variable_usages(project, variable_id)]
+
     # File-per-entity resources --------------------------------------------------------
 
     def list_views(self, project_id: str) -> list[dict[str, Any]]:
@@ -757,13 +943,61 @@ class ProjectService:
     ) -> TelegramCompileResult:
         # Resolve the workspace first so neither compile nor send can be used as
         # an unscoped general-purpose Jinja evaluator.
-        self.repository.workspace(project_id)
+        workspace = self.repository.workspace(project_id)
+        project = self._load(workspace)
         parsed = self._parse_content_document_bytes(
             self.repository.json_bytes(document)
         )
+        view = next(
+            (
+                candidate
+                for candidate in project.views.values()
+                if candidate.id == parsed.id
+                or (
+                    candidate.text.document
+                    and project.content_documents.get(candidate.text.document, None)
+                    and project.content_documents[candidate.text.document].id == parsed.id
+                )
+            ),
+            None,
+        )
+        parent = next(
+            (
+                (flow.id, state.id)
+                for flow in project.flows.values()
+                for state in flow.states.values()
+                if view is not None and state.view == view.id
+            ),
+            (None, None),
+        )
+        catalog = VariableCatalog(project)
+        resolved_variables = preview_variable_context(
+            catalog,
+            ResourceVariableContext(
+                bot_id=project.manifest.id,
+                flow_id=parent[0],
+                state_id=parent[1],
+                view_id=view.id if view else None,
+            ),
+            variables,
+        )
+        for block in parsed.content:
+            for node in getattr(block, "content", ()):
+                if not isinstance(node, VariableNode) or not node.variable_reference.field_id:
+                    continue
+                try:
+                    definition = catalog.get(node.variable_reference.field_id)
+                except UnknownVariableError:
+                    continue
+                if node.variable_reference.path != definition.path:
+                    set_render_alias(
+                        resolved_variables,
+                        node.variable_reference.path,
+                        definition.path,
+                    )
         return compile_content_document(
             parsed,
-            variables,
+            resolved_variables,
             TelegramCompileOptions(split_long_messages=split_long_messages),
         )
 
@@ -2108,6 +2342,32 @@ class ProjectService:
             "status": "blocked" if user.blocked else "active",
             "note": user.note,
             "avatar_version": user.avatar_file_id,
+        }
+
+    @staticmethod
+    def _variable_definition_detail(definition) -> dict[str, Any]:
+        return {
+            "id": definition.id,
+            "owner": {"type": definition.owner.type, "id": definition.owner.id},
+            "path": definition.path,
+            "type": definition.type,
+            "source": definition.source,
+            "required": definition.required,
+            "writable": definition.writable,
+            **(
+                {"defaultValue": definition.default_value}
+                if definition.default_value is not VARIABLE_UNSET
+                else {}
+            ),
+            **(
+                {"exampleValue": definition.example_value}
+                if definition.example_value is not VARIABLE_UNSET
+                else {}
+            ),
+            **({"description": definition.description} if definition.description else {}),
+            "persistence": definition.persistence,
+            "exposedToTemplates": definition.exposed_to_templates,
+            "legacyPaths": list(definition.legacy_paths),
         }
 
     @staticmethod

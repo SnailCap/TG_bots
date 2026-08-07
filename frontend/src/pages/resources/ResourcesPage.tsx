@@ -1,4 +1,4 @@
-import { useOutletContext } from "react-router-dom";
+import { useNavigate, useOutletContext } from "react-router-dom";
 import { X } from "lucide-react";
 
 import { PreviewToolRail } from "../../features/telegram-preview/PreviewToolRail";
@@ -18,8 +18,10 @@ import {
 } from "../studio/editor-model";
 import type { StudioPageContext } from "../studio/studio-page-context";
 import { StudioEditor } from "../studio/StudioEditor";
+import type { VariableResourceContext } from "../../domain/project";
 
 export function ResourcesPage() {
+  const navigate = useNavigate();
   const {
     api,
     workspace,
@@ -60,8 +62,18 @@ export function ResourcesPage() {
     openViewTextEditor,
   } = useOutletContext<StudioPageContext>();
 
+  const openResourceVariables = (context: VariableResourceContext) => {
+    const query = new URLSearchParams();
+    if (context.resourceType) query.set("resourceType", context.resourceType);
+    if (context.resourceId) query.set("resourceId", context.resourceId);
+    if (context.flowId) query.set("flowId", context.flowId);
+    if (context.stateId) query.set("stateId", context.stateId);
+    if (context.handlerId) query.set("handlerId", context.handlerId);
+    navigate(`/variables?${query.toString()}`);
+  };
+
   return <>
-    <ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onOpenViewTextEditor={openViewTextEditor} onAdd={addResource} onRename={renameFromExplorer} onDelete={removeFromExplorer} />
+    <ProjectExplorer workspace={workspace} selection={selection} draft={explorerDraft} onSelect={select} onOpenViewTextEditor={openViewTextEditor} onOpenVariables={openResourceVariables} onAdd={addResource} onRename={renameFromExplorer} onDelete={removeFromExplorer} />
     <ResizeHandle className="workspace__resizer" axis="horizontal" label="Resize resource list" value={explorerWidth} min={180} max={() => maximumExplorerWidth(workspaceRef.current?.clientWidth ?? 0)} onResize={resizeExplorer} onResizeEnd={commitExplorerSize} />
     <section className="workspace__main" aria-busy={busy}>
       {tabs.length > 0 && <nav className="editor-tabs" aria-label="Open resources" role="tablist">
